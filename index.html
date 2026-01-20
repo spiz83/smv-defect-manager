@@ -1712,12 +1712,14 @@
         }
 
         function renderAllDefectsView() {
-            // Get ALL defects (including completed ones)
-            const allDefects = db.data.defects;
+            // Get only ACTIVE defects (not completed)
+            const activeDefects = db.data.defects.filter(d => !d.completed);
+            const totalDefects = db.data.defects.length;
+            const completedCount = totalDefects - activeDefects.length;
             
             // Group by address, then by contractor
             const groupedByAddress = {};
-            allDefects.forEach(defect => {
+            activeDefects.forEach(defect => {
                 const address = db.getAddress(defect.addressId);
                 const contractor = db.getContractor(defect.contractorId);
                 
@@ -1752,9 +1754,6 @@
                     contractors: groupedByAddress[key].contractors
                 }));
 
-            const totalDefects = allDefects.length;
-            const activeDefects = allDefects.filter(d => !d.completed).length;
-
             return `
                 <div class="defects-container">
                     <div class="app-header">
@@ -1767,7 +1766,7 @@
                         <div class="lot-title">
                             All Defects by Address
                             <div style="font-size: 13px; font-weight: 400; color: var(--text-secondary); margin-top: 5px;">
-                                ${totalDefects} total defects (${activeDefects} active, ${totalDefects - activeDefects} completed)
+                                ${activeDefects.length} active defects${completedCount > 0 ? ` (${completedCount} completed hidden)` : ''}
                             </div>
                         </div>
                         <div class="toolbar">
@@ -1780,9 +1779,9 @@
 
                     ${addressGroups.length === 0 ? `
                         <div class="empty-state">
-                            <div class="empty-state-icon">📭</div>
-                            <p>No defects in database</p>
-                            <p style="font-size: 14px; color: var(--text-secondary); margin-top: 10px;">Add some defects to get started!</p>
+                            <div class="empty-state-icon">✅</div>
+                            <p>No active defects!</p>
+                            <p style="font-size: 14px; color: var(--text-secondary); margin-top: 10px;">${completedCount > 0 ? `${completedCount} defect(s) completed` : 'Add some defects to get started'}</p>
                         </div>
                     ` : addressGroups.map(addressGroup => `
                         <div class="contractor-section">
@@ -1795,10 +1794,9 @@
                                         ${contractorName}
                                     </div>
                                     ${addressGroup.contractors[contractorName].map(defect => `
-                                        <div class="defect-item" style="${defect.completed ? 'opacity: 0.5; text-decoration: line-through;' : ''}">
+                                        <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
                                             <input type="checkbox" class="defect-checkbox" 
-                                                   ${defect.completed ? 'checked' : ''}
                                                    onchange="toggleDefectComplete(${defect.id})">
                                         </div>
                                     `).join('')}
