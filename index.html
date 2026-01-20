@@ -1052,7 +1052,9 @@
                 const grouped = this.getDefectsByAddress();
                 
                 grouped.forEach(group => {
-                    text += `${group.address.street}\n`;
+                    // Show FULL ADDRESS: Street, Suburb - Property Number
+                    const fullAddress = `${group.address.street}, ${group.address.suburb}${group.address.propertyNumber ? ' - ' + group.address.propertyNumber : ''}`;
+                    text += `${fullAddress}\n`;
                     group.defects.forEach(defect => {
                         text += `  * ${defect.description}\n`;
                     });
@@ -1629,8 +1631,8 @@
         }
 
         function renderAllDefectsView() {
-            // Get all defects grouped by address
-            const allDefects = db.data.defects.filter(d => !d.completed);
+            // Get ALL defects (including completed ones)
+            const allDefects = db.data.defects;
             
             // Group by address, then by trade
             const groupedByAddress = {};
@@ -1669,6 +1671,9 @@
                     trades: groupedByAddress[key].trades
                 }));
 
+            const totalDefects = allDefects.length;
+            const activeDefects = allDefects.filter(d => !d.completed).length;
+
             return `
                 <div class="defects-container">
                     <div class="app-header">
@@ -1678,7 +1683,12 @@
                     </div>
                     
                     <div class="defects-header">
-                        <div class="lot-title">All Defects by Address</div>
+                        <div class="lot-title">
+                            All Defects by Address
+                            <div style="font-size: 13px; font-weight: 400; color: var(--text-secondary); margin-top: 5px;">
+                                ${totalDefects} total defects (${activeDefects} active, ${totalDefects - activeDefects} completed)
+                            </div>
+                        </div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>
@@ -1690,23 +1700,24 @@
                     ${addressGroups.length === 0 ? `
                         <div class="empty-state">
                             <div class="empty-state-icon">📭</div>
-                            <p>No active defects</p>
+                            <p>No defects in database</p>
+                            <p style="font-size: 14px; color: var(--text-secondary); margin-top: 10px;">Add some defects to get started!</p>
                         </div>
                     ` : addressGroups.map(addressGroup => `
                         <div class="contractor-section">
-                            <div class="contractor-name" style="background: #f9f9f9; padding: 12px 15px; margin: -20px -20px 15px -20px; border-radius: 0; font-size: 18px; color: #000;">
+                            <div class="contractor-name" style="background: var(--bg-secondary); padding: 12px 15px; margin: -20px -20px 15px -20px; border-radius: 0; font-size: 18px; color: var(--text-primary);">
                                 📍 ${addressGroup.addressKey}
                             </div>
                             ${Object.keys(addressGroup.trades).sort().map(tradeName => `
                                 <div style="margin-bottom: 20px;">
-                                    <div style="font-size: 15px; font-weight: 600; color: #666; margin-bottom: 10px; padding-left: 10px; border-left: 3px solid #007AFF;">
+                                    <div style="font-size: 15px; font-weight: 600; color: #666; margin-bottom: 10px; padding-left: 10px; border-left: 3px solid var(--blue);">
                                         ${tradeName}
                                     </div>
                                     ${addressGroup.trades[tradeName].map(defect => `
-                                        <div class="defect-item">
+                                        <div class="defect-item" style="${defect.completed ? 'opacity: 0.5; text-decoration: line-through;' : ''}">
                                             <span class="defect-text">
                                                 ${defect.description}
-                                                <span style="color: #8e8e93; font-size: 13px;"> — ${defect.contractor.name}</span>
+                                                <span style="color: var(--text-secondary); font-size: 13px;"> — ${defect.contractor.name}</span>
                                             </span>
                                             <input type="checkbox" class="defect-checkbox" 
                                                    ${defect.completed ? 'checked' : ''}
@@ -2097,31 +2108,47 @@
                         if (aStreetMatch && !bStreetMatch) return -1;
                         if (!aStreetMatch && bStreetMatch) return 1;
                     } else {
-                        // When searching letters, check if match is in street vs suburb
+                        // When searching letters - PRIORITY ORDER:
+                        // 1st: Street FIRST WORD starts with letter
+                        // 2nd: Suburb FIRST WORD starts with letter
+                        // 3rd: Any other word in street starts with letter
+                        // 4th: Any other word in suburb starts with letter
+                        
+                        const aStreetFirst = a.street.toLowerCase().split(' ')[0];
+                        const bStreetFirst = b.street.toLowerCase().split(' ')[0];
+                        const aSuburbFirst = a.suburb.toLowerCase().split(' ')[0];
+                        const bSuburbFirst = b.suburb.toLowerCase().split(' ')[0];
+                        
+                        const aStreetFirstMatch = aStreetFirst.startsWith(value);
+                        const bStreetFirstMatch = bStreetFirst.startsWith(value);
+                        const aSuburbFirstMatch = aSuburbFirst.startsWith(value);
+                        const bSuburbFirstMatch = bSuburbFirst.startsWith(value);
+                        
+                        // Priority 1: Street first word
+                        if (aStreetFirstMatch && !bStreetFirstMatch) return -1;
+                        if (!aStreetFirstMatch && bStreetFirstMatch) return 1;
+                        
+                        // Priority 2: Suburb first word
+                        if (aSuburbFirstMatch && !bSuburbFirstMatch) return -1;
+                        if (!aSuburbFirstMatch && bSuburbFirstMatch) return 1;
+                        
+                        // Priority 3: Any word in street
                         const aStreetWords = a.street.toLowerCase().split(' ');
                         const bStreetWords = b.street.toLowerCase().split(' ');
+                        const aStreetAnyMatch = aStreetWords.some(word => word.startsWith(value));
+                        const bStreetAnyMatch = bStreetWords.some(word => word.startsWith(value));
+                        
+                        if (aStreetAnyMatch && !bStreetAnyMatch) return -1;
+                        if (!aStreetAnyMatch && bStreetAnyMatch) return 1;
+                        
+                        // Priority 4: Any word in suburb
                         const aSuburbWords = a.suburb.toLowerCase().split(' ');
                         const bSuburbWords = b.suburb.toLowerCase().split(' ');
+                        const aSuburbAnyMatch = aSuburbWords.some(word => word.startsWith(value));
+                        const bSuburbAnyMatch = bSuburbWords.some(word => word.startsWith(value));
                         
-                        const aStreetMatch = aStreetWords.some(word => word.startsWith(value));
-                        const bStreetMatch = bStreetWords.some(word => word.startsWith(value));
-                        const aSuburbMatch = aSuburbWords.some(word => word.startsWith(value));
-                        const bSuburbMatch = bSuburbWords.some(word => word.startsWith(value));
-                        
-                        // Prioritize street matches over suburb matches
-                        if (aStreetMatch && !bStreetMatch) return -1;
-                        if (!aStreetMatch && bStreetMatch) return 1;
-                        
-                        // Both are street matches - check if first word matches
-                        if (aStreetMatch && bStreetMatch) {
-                            const aFirstWord = aStreetWords[0].startsWith(value);
-                            const bFirstWord = bStreetWords[0].startsWith(value);
-                            
-                            if (aFirstWord && !bFirstWord) return -1;
-                            if (!aFirstWord && bFirstWord) return 1;
-                        }
-                        
-                        // Both are suburb matches - no special priority
+                        if (aSuburbAnyMatch && !bSuburbAnyMatch) return -1;
+                        if (!aSuburbAnyMatch && bSuburbAnyMatch) return 1;
                     }
                     
                     // If both equal priority, sort alphabetically
@@ -3194,7 +3221,9 @@
                 
                 textContent = `${contractor.name}\n\n`;
                 defectGroups.forEach(group => {
-                    textContent += `${group.address.street}\n`;
+                    // Show FULL ADDRESS: Street, Suburb - Property Number
+                    const fullAddress = `${group.address.street}, ${group.address.suburb}${group.address.propertyNumber ? ' - ' + group.address.propertyNumber : ''}`;
+                    textContent += `${fullAddress}\n`;
                     group.defects.forEach(defect => {
                         textContent += `  • ${defect.description}\n`;
                     });
@@ -3218,7 +3247,8 @@
                     byContractor[d.contractorId].defects.push(d);
                 });
                 
-                textContent = `Lot ${address.propertyNumber} [${address.street.split(' ')[0]}] ${address.street}, ${address.suburb}\n\n`;
+                // Show FULL ADDRESS as header
+                textContent = `${address.street}, ${address.suburb}${address.propertyNumber ? ' - ' + address.propertyNumber : ''}\n\n`;
                 Object.values(byContractor).forEach(group => {
                     textContent += `${group.contractorName}\n`;
                     group.defects.forEach(defect => {
@@ -3253,7 +3283,9 @@
                 Object.values(byContractor).forEach(contractorGroup => {
                     textContent += `${contractorGroup.contractor.name}\n`;
                     Object.values(contractorGroup.addresses).forEach(addressGroup => {
-                        textContent += `  ${addressGroup.address.street}, ${addressGroup.address.suburb}\n`;
+                        // Show FULL ADDRESS with property number
+                        const fullAddress = `${addressGroup.address.street}, ${addressGroup.address.suburb}${addressGroup.address.propertyNumber ? ' - ' + addressGroup.address.propertyNumber : ''}`;
+                        textContent += `  ${fullAddress}\n`;
                         addressGroup.defects.forEach(defect => {
                             textContent += `    • ${defect.description}\n`;
                         });
@@ -3316,7 +3348,9 @@
                 
                 textContent = `${contractor.name}\n\n`;
                 defectGroups.forEach(group => {
-                    textContent += `${group.address.street}\n`;
+                    // Show FULL ADDRESS with property number
+                    const fullAddress = `${group.address.street}, ${group.address.suburb}${group.address.propertyNumber ? ' - ' + group.address.propertyNumber : ''}`;
+                    textContent += `${fullAddress}\n`;
                     group.defects.forEach(defect => {
                         textContent += `  • ${defect.description}\n`;
                     });
@@ -3384,7 +3418,9 @@
                 Object.values(byContractor).forEach(contractorGroup => {
                     textContent += `${contractorGroup.contractor.name}\n`;
                     Object.values(contractorGroup.addresses).forEach(addressGroup => {
-                        textContent += `  ${addressGroup.address.street}, ${addressGroup.address.suburb}\n`;
+                        // Show FULL ADDRESS with property number
+                        const fullAddress = `${addressGroup.address.street}, ${addressGroup.address.suburb}${addressGroup.address.propertyNumber ? ' - ' + addressGroup.address.propertyNumber : ''}`;
+                        textContent += `  ${fullAddress}\n`;
                         addressGroup.defects.forEach(defect => {
                             textContent += `    • ${defect.description}\n`;
                         });
