@@ -5016,5 +5016,20 @@
         loadTheme();
         render();
     </script>
+
+    <!-- ====================================================================
+         Central database (Supabase). Until the two values below are filled
+         in, the app runs exactly as before (local-only, no login).
+         Replace them with your project's URL + anon key from
+         Supabase -> Project Settings -> API, then reload.
+    ===================================================================== -->
+    <script>
+      window.SUPABASE_CONFIG = {
+        url:     'YOUR_SUPABASE_URL',
+        anonKey: 'YOUR_SUPABASE_ANON_KEY'
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="cloud-sync.js"></script>
 </body>
 </html>
