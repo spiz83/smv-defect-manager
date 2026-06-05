@@ -29,6 +29,20 @@ Your current records live only inside your phone's browser. Get them out now:
    - Region: choose the one closest to you (e.g. Sydney for Australia).
 3. Wait ~2 minutes for it to finish provisioning.
 
+## STEP 1b — Turn off email confirmation (smoother first login)
+
+By default Supabase emails a confirmation link before a new account can log in.
+For this app it's simpler to skip that:
+
+1. Left sidebar → **Authentication** → **Sign In / Providers** (or **Providers**).
+2. Open the **Email** provider.
+3. Turn **OFF** "Confirm email" (sometimes labelled "Enable email confirmations").
+4. **Save**.
+
+Now sign-up logs you straight in — no email step.
+
+> You can re-enable this later if you ever open the app to outside users.
+
 ## STEP 2 — Create the database tables
 
 1. In your project: left sidebar → **SQL Editor** → **New query**.
