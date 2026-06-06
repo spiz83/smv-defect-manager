@@ -4643,7 +4643,7 @@
             }
             showToast('Preparing email…');
             const booking = db.getContractorBooking(contractorId, addressId);
-            const subject = 'Defects - ' + addr + ' - ' + c.name;
+            const subject = 'Defects - ' + addr;
             let body = addr + '\n\n' + c.name + '\n';
             const files = [];
             for (const d of defects) {
