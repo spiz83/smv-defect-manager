@@ -6061,7 +6061,7 @@
             { id:'framework', name:'Blueprint', sub:'Light · Professional (logistics)', vars:{'--acc':'#1E4DA8','--acc2':'#3D6FCC','--bg':'#EFEBE2','--sur':'#FFFFFF','--ele':'#F5F1E8','--inp':'#FFFFFF','--brd':'#A8A8A8','--brd2':'#D6D6D6','--t1':'#1A1A1A','--t2':'#4A4A4A','--t3':'#7A7A7A','--green':'#2D8030','--amber':'#D87E2E','--red':'#B81E2E','--accFg':'#FFFFFF'} },
             { id:'powershell', name:'Terminal', sub:'Retro · Console', vars:{'--acc':'#FFFF55','--acc2':'#FFFFAA','--bg':'#000000','--sur':'#000000','--ele':'#1A1A1A','--inp':'#000000','--brd':'#C0C0C0','--brd2':'#404040','--t1':'#FFFFFF','--t2':'#C0C0C0','--t3':'#808080','--green':'#55FF55','--amber':'#FFFF55','--red':'#FF5555','--accFg':'#000000'} }
         ];
-        function currentF1Theme() { return localStorage.getItem('f1Theme') || 'mercedes'; }
+        function currentF1Theme() { return localStorage.getItem('f1Theme') || 'framework'; }
         function applyF1Theme(id) {
             const t = F1_THEMES.find(x => x.id === id) || F1_THEMES[0];
             const b = document.body.style;
