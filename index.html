@@ -1959,6 +1959,7 @@
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList()" title="Email Defect List">📧</button>
                             <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
+                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">➕</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
@@ -2103,6 +2104,7 @@
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>
                             <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
+                            <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">➕</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
@@ -6316,15 +6318,17 @@
             const statusColor = { open: [239, 68, 68], pending: [245, 158, 11], completed: [34, 197, 94] };
             const ensureSpace = (h) => { if (y + h > pageH - M) { doc.addPage(); y = M; } };
 
+            let itemNo = 0;
             for (const gk of Object.keys(groups).sort()) {
                 ensureSpace(12);
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(20, 24, 40);
                 doc.text(gk, M, y); y += 6;
                 for (const d of groups[gk]) {
+                    itemNo++;
                     const st = defectStatusOf(d);
                     const c = db.getContractor(d.contractorId);
                     doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-                    const descLines = doc.splitTextToSize(d.description || '(no description)', contentW - 26);
+                    const descLines = doc.splitTextToSize('Item ' + itemNo + '.  ' + (d.description || '(no description)'), contentW - 26);
                     let imgs = [];
                     if (opts.photos && window.CloudPhotos) { try { imgs = await window.CloudPhotos.getForPdf(d.id); } catch (e) {} }
                     const photoH = imgs.length ? 32 : 0;
@@ -6360,6 +6364,16 @@
                 y += 4;
             }
             doc.save('Defect-Report-' + dateStr + '.pdf');
+        }
+
+        // One-tap PDF for the screen you're on — per job (address) or per supplier (contractor)
+        async function generateContextReport(opts) {
+            const o = Object.assign({ status: 'all', photos: true }, opts || {});
+            const list = reportFilteredDefects(o);
+            if (!list.length) { showToast('No defects here to report', true); return; }
+            showToast('Generating PDF…');
+            try { await generateDefectPDF(list, o); showToast('PDF report downloaded'); }
+            catch (e) { console.error(e); showToast('Could not generate PDF: ' + (e.message || e), true); }
         }
 
         // Initialize app
