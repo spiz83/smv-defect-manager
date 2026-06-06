@@ -5976,6 +5976,13 @@
             impOverlay(`
                 <div id="imp-head"><strong>📄 Add Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
+                    <div class="imp-field" style="margin-bottom:14px">
+                        <label>Report type</label>
+                        <select id="imp-type">
+                            <option value="BPI">BPI</option>
+                            <option value="Private Inspection">Private Inspection</option>
+                        </select>
+                    </div>
                     <div class="imp-drop" id="imp-drop">
                         <div style="font-size:40px">📎</div>
                         <div style="font-weight:600;margin-top:6px">Tap to choose a PDF or text file</div>
@@ -5993,10 +6000,12 @@
             fileInput.onchange = async (e) => {
                 const f = e.target.files && e.target.files[0];
                 if (!f) return;
+                const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
+                const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
                 impSetBusy('Reading ' + f.name + '…');
                 try {
                     const text = await extractReportText(f);
-                    await extractAndReview(text, f.name);
+                    await extractAndReview(text, f.name, reportType, useAI);
                 } catch (err) {
                     console.error(err);
                     impOverlayMessage('Could not read that file: ' + (err.message || err));
@@ -6005,14 +6014,14 @@
             document.getElementById('imp-extract').onclick = async () => {
                 const text = document.getElementById('imp-paste').value;
                 if (!text.trim()) { showToast('Paste some text or choose a file', true); return; }
-                await extractAndReview(text, 'Pasted report');
+                const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
+                const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
+                await extractAndReview(text, 'Pasted report', reportType, useAI);
             };
         }
 
         // Decide between AI extraction and the built-in parser, then review.
-        async function extractAndReview(rawText, sourceName) {
-            const aiCheckbox = document.getElementById('imp-ai');
-            const useAI = aiCheckbox && aiCheckbox.checked && window.CloudAI;
+        async function extractAndReview(rawText, sourceName, reportType, useAI) {
             let items = [];
             if (useAI) {
                 impSetBusy('🤖 Reading the report with AI…');
@@ -6027,7 +6036,7 @@
                 items = parseReportDefects(rawText);
             }
             if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
-            startReportReview(items, sourceName);
+            startReportReview(items, sourceName, reportType);
         }
 
         function impSetBusy(msg) {
@@ -6113,8 +6122,8 @@
 
         // ---- Step 2: review & assign each item ----
         let _review = null;
-        function startReportReview(items, reportName) {
-            _review = { items, index: 0, saved: 0, reportName, lastAddressId: null };
+        function startReportReview(items, reportName, reportType) {
+            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: null };
             renderReviewItem();
         }
         function renderReviewItem() {
@@ -6167,7 +6176,7 @@
             const r = _review || { saved: 0, reportName: 'Report', lastAddressId: null };
             impClose();
             if (r.saved > 0 && window.CloudReports) {
-                try { await window.CloudReports.add({ name: r.reportName, addressLegacyId: r.lastAddressId, defectCount: r.saved }); } catch (e) {}
+                try { await window.CloudReports.add({ name: r.reportName, addressLegacyId: r.lastAddressId, defectCount: r.saved, reportType: r.reportType }); } catch (e) {}
             }
             showToast(r.saved > 0 ? `Imported ${r.saved} defect(s) from the report` : 'No defects saved');
             render();
@@ -6190,8 +6199,9 @@
             body.innerHTML = reports.map(rp => {
                 const addr = rp.addressLegacyId != null ? formatAddress(db.getAddress(rp.addressLegacyId)) : '';
                 const date = (rp.created_at || '').slice(0, 10);
+                const typeBadge = rp.report_type ? `<span class="status-badge" style="background:#E3F2FD;color:#1565C0;margin-bottom:4px;display:inline-block">${rp.report_type}</span><br>` : '';
                 return `<div class="imp-report">
-                    <div><div style="font-weight:600">${(rp.name || 'Report').replace(/</g,'&lt;')}</div>
+                    <div>${typeBadge}<div style="font-weight:600">${(rp.name || 'Report').replace(/</g,'&lt;')}</div>
                     <small>${date} · ${rp.defect_count} defect(s)${addr ? ' · ' + addr : ''}</small></div>
                     <button class="imp-del" data-id="${rp.id}">Delete</button>
                 </div>`;

@@ -813,17 +813,17 @@
     return null;
   }
   window.CloudReports = {
-    add: async ({ name, addressLegacyId, defectCount }) => {
+    add: async ({ name, addressLegacyId, defectCount, reportType }) => {
       const address_id = (addressLegacyId != null) ? (idMap.addresses[addressLegacyId] || null) : null;
       const { data, error } = await sb.from('dm_reports')
-        .insert({ workspace_id: workspaceId, name: name || 'Report', address_id, defect_count: defectCount || 0 })
-        .select('id, name, defect_count, created_at, address_id').single();
+        .insert({ workspace_id: workspaceId, name: name || 'Report', address_id, defect_count: defectCount || 0, report_type: reportType || null })
+        .select('id, name, defect_count, created_at, address_id, report_type').single();
       if (error) { console.error('[CloudReports] add', error); return null; }
       return data;
     },
     list: async () => {
       const { data, error } = await sb.from('dm_reports')
-        .select('id, name, defect_count, created_at, address_id')
+        .select('id, name, defect_count, created_at, address_id, report_type')
         .eq('workspace_id', workspaceId).order('created_at', { ascending: false });
       if (error) { console.error('[CloudReports] list', error); return []; }
       return (data || []).map(r => ({ ...r, addressLegacyId: legacyForAddressUuid(r.address_id) }));
