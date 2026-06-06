@@ -1283,9 +1283,9 @@
             font-family: 'JetBrains Mono', monospace !important; text-transform: uppercase;
             letter-spacing: .06em; border-radius: 3px !important; box-shadow: none !important; font-weight: 700;
         }
-        body.design-f1 .status-open, body.design-f1 .defect-status.status-open { background: color-mix(in srgb, var(--red) 16%, transparent) !important; color: var(--red) !important; }
-        body.design-f1 .status-pending, body.design-f1 .defect-status.status-pending { background: color-mix(in srgb, var(--amber) 14%, transparent) !important; color: var(--amber) !important; }
-        body.design-f1 .status-completed, body.design-f1 .defect-status.status-completed { background: color-mix(in srgb, var(--green) 14%, transparent) !important; color: var(--green) !important; }
+        body.design-f1 .status-badge.status-open, body.design-f1 .defect-status.status-open { background: color-mix(in srgb, var(--red) 16%, transparent) !important; color: var(--red) !important; }
+        body.design-f1 .status-badge.status-pending, body.design-f1 .defect-status.status-pending { background: color-mix(in srgb, var(--amber) 14%, transparent) !important; color: var(--amber) !important; }
+        body.design-f1 .status-badge.status-completed, body.design-f1 .defect-status.status-completed { background: color-mix(in srgb, var(--green) 14%, transparent) !important; color: var(--green) !important; }
 
         /* Toolbar / icon buttons / magnifiers */
         body.design-f1 .icon-btn { color: var(--acc) !important; background: transparent !important; }
@@ -1369,9 +1369,9 @@
             position: absolute; left: 0; top: 0; bottom: 0; width: 7px;
             border: none; border-radius: 7px 0 0 7px; padding: 0; cursor: pointer;
         }
-        .status-tab.status-open      { background: #FF4D4F; }  /* logged, not booked */
-        .status-tab.status-pending   { background: #FFB020; }  /* booked, outstanding */
-        .status-tab.status-completed { background: #3FCB7E; }  /* completed */
+        .status-tab.status-open      { background: #FF4D4F !important; }  /* logged, not booked */
+        .status-tab.status-pending   { background: #FFC02E !important; }  /* booked, outstanding */
+        .status-tab.status-completed { background: #3FCB7E !important; }  /* completed */
         .defect-text { flex: 1 1 auto !important; min-width: 0; }
         .defect-actions { gap: 2px !important; align-items: center; flex-shrink: 0; }
         /* Bare, tiny icons — no box/background */
