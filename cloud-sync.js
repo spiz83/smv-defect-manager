@@ -161,9 +161,7 @@
       let email = $('cs-email').value.trim();
       // Allow a username shorthand (no @) — default the domain to hotmail.com
       if (email && !email.includes('@')) email += '@hotmail.com';
-      let pass = $('cs-pass').value;
-      // Supabase requires >=6 chars; accept the short "admin" shorthand on sign in
-      if (mode === 'signin' && pass === 'admin') pass = 'admin1';
+      const pass = $('cs-pass').value;
       const keep = $('cs-keep') ? $('cs-keep').checked : true;
       if (!email || !pass) { msg('Enter your email/username and password.'); return; }
       $('cs-go').disabled = true;
