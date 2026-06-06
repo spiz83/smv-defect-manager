@@ -925,6 +925,39 @@
         /* Toolbars / headers spacing */
         body.design-modern .defects-header { padding: 16px; }
         body.design-modern .lot-title { font-weight: 800; }
+
+        /* ============================================================
+           iPhone / notch-aware safe areas + small-screen tuning
+           ============================================================ */
+        /* Respect the Dynamic Island / notch and home indicator */
+        #cs-statusbar { padding-top: calc(4px + env(safe-area-inset-top)); }
+        body.cs-authed { padding-top: calc(26px + env(safe-area-inset-top)); }
+        body.design-modern .app-header.home-hero {
+            padding-top: calc(20px + env(safe-area-inset-top));
+        }
+        body.design-modern .home-container,
+        body.design-modern .defects-container {
+            padding-bottom: calc(24px + env(safe-area-inset-bottom));
+        }
+
+        /* Phones (iPhone 15 ≈ 393px): make the two columns fit comfortably */
+        @media (max-width: 440px) {
+            .home-container { padding: 16px 14px; }
+            .home-2col { gap: 10px; }
+            .home-2col .section-title {
+                font-size: 12px;
+                margin-bottom: 10px;
+            }
+            .home-2col .search-row { gap: 5px; margin-bottom: 9px; }
+            .home-2col .search-input-wrapper input {
+                padding: 11px 10px;
+                font-size: 15px;            /* >=16px-ish to limit iOS zoom-on-focus */
+            }
+            .home-2col .search-btn { width: 32px; height: 40px; font-size: 17px; }
+            /* Stop iOS auto-zoom when focusing inputs */
+            input, select, textarea { font-size: 16px; }
+            .home-2col .search-input-wrapper input { font-size: 16px; }
+        }
     </style>
 </head>
 <body>
