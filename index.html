@@ -640,9 +640,10 @@
         }
 
         /* ============================================================
-           MODERN POLISH LAYER — refined typography, depth & motion.
-           Uses existing classes + theme variables, so it works with
-           light/dark and every club colour theme.
+           MODERN DESIGN — toggled in Settings (body.design-modern).
+           When OFF the app shows the original "Classic" look. Built on
+           existing classes + theme vars, so it works with light/dark
+           and every club colour theme.
            ============================================================ */
         :root {
             --radius: 14px;
@@ -650,19 +651,20 @@
             --shadow-md: 0 4px 12px rgba(16,24,40,.10);
             --shadow-lg: 0 12px 28px rgba(16,24,40,.16);
         }
-        body {
+
+        body.design-modern {
             -webkit-font-smoothing: antialiased;
             -moz-osx-osx-font-smoothing: grayscale;
             text-rendering: optimizeLegibility;
-            font-feature-settings: "cv11", "ss01";
             letter-spacing: -0.01em;
         }
-        h1, h2, h3, .header-title, .lot-title {
+        body.design-modern h1, body.design-modern h2, body.design-modern h3,
+        body.design-modern .header-title, body.design-modern .lot-title {
             letter-spacing: -0.02em;
         }
 
         /* App header: frosted, sticky, subtle depth */
-        .app-header {
+        body.design-modern .app-header {
             position: sticky;
             top: 0;
             z-index: 50;
@@ -671,58 +673,102 @@
             background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
             box-shadow: 0 1px 0 var(--border-color);
         }
-        .header-title { font-weight: 700; }
-        .back-link { font-weight: 600; }
+        body.design-modern .header-title { font-weight: 700; }
+        body.design-modern .back-link { font-weight: 600; }
+
+        /* HOME hero: gradient banner with the app icon */
+        body.design-modern .app-header.home-hero {
+            background: linear-gradient(135deg, var(--blue), color-mix(in srgb, var(--blue) 50%, #7C3AED));
+            color: #fff;
+            box-shadow: var(--shadow-md);
+            border: none;
+            border-radius: 0 0 24px 24px;
+            padding: 20px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+        body.design-modern .app-header.home-hero::before {
+            content: "";
+            width: 40px; height: 40px; flex: 0 0 40px;
+            background: url('icon.svg') center/cover no-repeat;
+            border-radius: 11px;
+            box-shadow: 0 6px 14px rgba(0,0,0,.28);
+        }
+        body.design-modern .app-header.home-hero .header-title {
+            color: #fff; font-size: 22px; font-weight: 800;
+        }
+
+        /* Section titles: accent bar */
+        body.design-modern .section-title {
+            position: relative;
+            padding-left: 12px;
+            font-weight: 800;
+        }
+        body.design-modern .section-title::before {
+            content: "";
+            position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+            width: 4px; height: 1.05em; border-radius: 4px; background: var(--blue);
+        }
+
+        /* Search rows become soft cards */
+        body.design-modern .search-input-wrapper {
+            border-radius: var(--radius);
+        }
 
         /* Buttons: soft depth + tactile motion */
-        .btn-primary, .btn-secondary {
+        body.design-modern .btn-primary, body.design-modern .btn-secondary {
             border-radius: var(--radius);
             font-weight: 600;
             transition: transform .06s ease, box-shadow .15s ease, filter .15s ease;
             box-shadow: var(--shadow-sm);
         }
-        .btn-primary { box-shadow: 0 6px 16px color-mix(in srgb, var(--blue) 35%, transparent); }
-        .btn-primary:hover, .btn-secondary:hover { filter: brightness(1.03); box-shadow: var(--shadow-md); }
-        .btn-primary:active, .btn-secondary:active { transform: translateY(1px) scale(.997); }
+        body.design-modern .btn-primary { box-shadow: 0 6px 16px color-mix(in srgb, var(--blue) 35%, transparent); }
+        body.design-modern .btn-primary:hover, body.design-modern .btn-secondary:hover { filter: brightness(1.03); box-shadow: var(--shadow-md); }
+        body.design-modern .btn-primary:active, body.design-modern .btn-secondary:active { transform: translateY(1px) scale(.997); }
 
         /* Cards / sections: rounder, softer, lift on hover */
-        .contractor-section, .manage-container > div, .import-section {
+        body.design-modern .contractor-section,
+        body.design-modern .manage-container > div,
+        body.design-modern .import-section {
             border-radius: var(--radius);
             box-shadow: var(--shadow-sm);
         }
-        .defect-item {
+        body.design-modern .defect-item {
             border-radius: 12px;
             transition: box-shadow .15s ease, transform .06s ease, border-color .15s ease;
         }
-        .defect-item:hover { box-shadow: var(--shadow-md); }
+        body.design-modern .defect-item:hover { box-shadow: var(--shadow-md); }
 
         /* Icon buttons in toolbars: pill, hover tint */
-        .icon-btn {
+        body.design-modern .icon-btn {
             border-radius: 12px;
             transition: background .15s ease, transform .06s ease;
         }
-        .icon-btn:hover { background: color-mix(in srgb, var(--blue) 12%, transparent); }
-        .icon-btn:active { transform: scale(.94); }
+        body.design-modern .icon-btn:hover { background: color-mix(in srgb, var(--blue) 12%, transparent); }
+        body.design-modern .icon-btn:active { transform: scale(.94); }
 
         /* Inputs: modern focus ring */
-        input, select, textarea {
+        body.design-modern input, body.design-modern select, body.design-modern textarea {
             border-radius: 12px;
             transition: border-color .15s ease, box-shadow .15s ease;
         }
-        input:focus, select:focus, textarea:focus {
+        body.design-modern input:focus, body.design-modern select:focus, body.design-modern textarea:focus {
             outline: none;
             border-color: var(--blue);
             box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 18%, transparent);
         }
 
         /* Status pills + actions: a touch more depth */
-        .defect-status { box-shadow: var(--shadow-sm); }
-        .photo-btn { transition: transform .06s ease, background .15s ease; }
-        .photo-btn:active { transform: scale(.92); }
+        body.design-modern .defect-status { box-shadow: var(--shadow-sm); }
+        body.design-modern .photo-btn { transition: transform .06s ease, background .15s ease; }
+        body.design-modern .photo-btn:active { transform: scale(.92); }
 
         /* Respect users who prefer reduced motion */
         @media (prefers-reduced-motion: reduce) {
-            * { transition: none !important; }
+            body.design-modern * { transition: none !important; }
         }
     </style>
 </head>
@@ -1342,7 +1388,7 @@
         // View Components
         function renderHomeView() {
             return `
-                <div class="app-header">
+                <div class="app-header home-hero">
                     <div class="header-title">SMV Defect Manager Pro</div>
                 </div>
                 <div class="home-container">
@@ -2028,6 +2074,22 @@
                                             onclick="setTheme('dark')">
                                         🌙 Dark
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- App Design -->
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">✨ App Design</div>
+                                    <div style="font-size: 14px; color: var(--text-secondary);">Switch between the Classic and Modern look</div>
+                                </div>
+                                <div style="display: flex; gap: 10px;">
+                                    <button class="btn ${currentDesign() === 'classic' ? 'btn-primary' : 'btn-secondary'}"
+                                            style="padding: 10px 20px; font-size: 14px;" onclick="setDesign('classic')">Classic</button>
+                                    <button class="btn ${currentDesign() === 'modern' ? 'btn-primary' : 'btn-secondary'}"
+                                            style="padding: 10px 20px; font-size: 14px;" onclick="setDesign('modern')">Modern</button>
                                 </div>
                             </div>
                         </div>
@@ -5303,9 +5365,27 @@
             applyClubTheme(currentClubTheme());
         }
 
+        // ---- App design: Classic vs Modern (toggle in Manage) ----
+        function currentDesign() {
+            return localStorage.getItem('appDesign') || 'modern';
+        }
+        function applyDesign(d) {
+            document.body.classList.toggle('design-modern', d === 'modern');
+        }
+        function setDesign(d) {
+            localStorage.setItem('appDesign', d);
+            applyDesign(d);
+            render();
+            showToast(d === 'modern' ? 'Modern design enabled' : 'Classic design enabled');
+        }
+        function loadDesign() {
+            applyDesign(currentDesign());
+        }
+
         // Initialize app
         loadTheme();
         loadClubTheme();
+        loadDesign();
         render();
     </script>
 
