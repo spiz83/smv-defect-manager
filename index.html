@@ -1354,6 +1354,35 @@
         .contractor-name.contractor-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .supplier-email-btn { flex-shrink: 0; border: none; background: transparent; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 8px; }
         .supplier-email-btn:active { transform: scale(.9); }
+
+        /* ============================================================
+           ROW v2 — left-edge status tab, tiny bare icons, max text room
+           ============================================================ */
+        .defect-item { position: relative; align-items: center !important; gap: 6px !important; padding-left: 16px !important; }
+        .status-tab {
+            position: absolute; left: 0; top: 0; bottom: 0; width: 7px;
+            border: none; border-radius: 7px 0 0 7px; padding: 0; cursor: pointer;
+        }
+        .status-tab.status-open      { background: #E5484D; }  /* logged, not booked */
+        .status-tab.status-pending   { background: #F5A623; }  /* booked, outstanding */
+        .status-tab.status-completed { background: #30A46C; }  /* completed */
+        .defect-text { flex: 1 1 auto !important; min-width: 0; }
+        .defect-actions { gap: 2px !important; align-items: center; flex-shrink: 0; }
+        /* Bare, tiny icons — no box/background */
+        .loc-btn, .comms-btn, .photo-btn {
+            border: none !important; background: transparent !important;
+            padding: 2px !important; font-size: 13px !important; line-height: 1; cursor: pointer;
+        }
+        .loc-btn { opacity: .45; }
+        .loc-btn.has-loc { opacity: 1; }
+        .photo-count { margin-left: 0 !important; font-size: 9px !important; font-weight: 700; }
+        /* Location picker grid */
+        .loc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .loc-opt { padding: 11px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; cursor: pointer; text-align: left; }
+        .loc-opt.sel { border-color: var(--blue); color: var(--blue); font-weight: 700; }
+        /* Title left-aligned so the F1 theme picker doesn't cover it */
+        .app-header .header-title { flex: 1; text-align: left; }
+        body.design-f1 .app-header { padding-right: 136px; }
     </style>
 </head>
 <body>
@@ -1986,7 +2015,7 @@
         function renderHomeView() {
             return `
                 <div class="app-header home-hero">
-                    <div class="header-title">SMV Defect Manager Pro</div>
+                    <div class="header-title">Defect Manager</div>
                 </div>
                 <div class="home-container">
                     <div class="home-2col">
@@ -2172,8 +2201,8 @@
                             <div class="contractor-name">${formatAddress(group.address)}</div>
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
-                                    <span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                    ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                    <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2236,8 +2265,8 @@
                                     <div class="contractor-name">${contractorGroup.contractor.name}</div>
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
-                                            <span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                            ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2295,8 +2324,8 @@
                             </div>
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
-                                    <span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                    ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                    <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2532,8 +2561,8 @@
                                     </div>
                                     ${byAddressThenContractor[addressKey].contractors[contractorName].map(defect => `
                                         <div class="defect-item">
-                                            <span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                            ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2636,8 +2665,8 @@
                                     </div>
                                     ${addressGroup.contractors[contractorName].map(defect => `
                                         <div class="defect-item">
-                                            <span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                            ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -4171,32 +4200,45 @@
             return defect.status || (defect.completed ? 'completed' : 'open');
         }
 
-        // Inline dropdown used in every defect list to change a defect's status.
-        function statusControl(defect) {
+        // Left-edge status tab. Red = logged (not booked), Amber = booked in
+        // (outstanding), Green = completed. Tap to advance (confirm on complete).
+        function statusTab(defect) {
             const s = defectStatusOf(defect);
-            const opt = (v, label) => `<option value="${v}" ${s === v ? 'selected' : ''}>${label}</option>`;
-            return `<select class="defect-status status-${s}"
-                        onclick="event.stopPropagation()"
-                        onchange="setDefectStatus(${defect.id}, this.value)">
-                        ${opt('open', 'Open')}${opt('pending', 'Pending')}${opt('completed', 'Completed')}
-                    </select>`;
+            const title = s === 'open' ? 'Logged — tap to book in'
+                : (s === 'pending' ? 'Booked in — tap to complete'
+                : 'Completed — tap to re-open');
+            return `<button class="status-tab status-${s}" title="${title}" onclick="event.stopPropagation(); advanceStatus(${defect.id})"></button>`;
+        }
+        function advanceStatus(defectId) {
+            const d = db.data.defects.find(x => x.id === defectId);
+            if (!d) return;
+            const s = defectStatusOf(d);
+            if (s === 'open') { db.setDefectStatus(defectId, 'pending'); render(); showToast('Booked in'); }
+            else if (s === 'pending') {
+                if (confirm('Mark this item as completed? It will be removed from the active list.')) {
+                    db.setDefectStatus(defectId, 'completed'); render(); showToast('Item completed');
+                }
+            } else { db.setDefectStatus(defectId, 'open'); render(); showToast('Re-opened'); }
         }
 
         // Location / area of the house, per defect
         const DEFECT_LOCATIONS = ['Kitchen','Living','Lounge','Dining','Family','Meals','Master Bedroom','Bed 2','Bed 3','Bed 4','Ensuite','Bathroom','Powder Room','WC / Toilet','Laundry','WIR / Robe','Hallway','Entry','Stairs','Study','Garage','Alfresco','Porch','Balcony','Facade / External','Roof','Driveway','Backyard','Other'];
         function locationControl(defect) {
             const cur = defect.location || '';
-            const opts = ['<option value="">📍 Loc</option>']
-                .concat(DEFECT_LOCATIONS.map(l => `<option value="${l}" ${cur === l ? 'selected' : ''}>${l}</option>`))
-                .join('');
-            return `<select class="defect-loc ${cur ? 'has-loc' : ''}"
-                        onclick="event.stopPropagation()"
-                        onchange="setDefectLocation(${defect.id}, this.value)">${opts}</select>`;
+            return `<button class="loc-btn ${cur ? 'has-loc' : ''}" title="${cur || 'Set location'}" onclick="event.stopPropagation(); openLocationPicker(${defect.id})">📍</button>`;
         }
-        function setDefectLocation(defectId, loc) {
+        function openLocationPicker(defectId) {
+            const d = db.data.defects.find(x => x.id === defectId); if (!d) return;
+            const cur = d.location || '';
+            const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" onclick="pickLocation(${defectId}, '${String(val).replace(/'/g, "\\'")}')">${label}</button>`;
+            const items = opt('', '— None —') + DEFECT_LOCATIONS.map(l => opt(l, l)).join('');
+            impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body"><div class="loc-grid">${items}</div></div>`);
+        }
+        function pickLocation(defectId, loc) {
             db.setDefectLocation(defectId, loc);
-            render();
-            if (loc) showToast('Location: ' + loc);
+            impClose(); render();
+            showToast(loc ? ('Location: ' + loc) : 'Location cleared');
         }
 
         function setDefectStatus(defectId, status) {
@@ -4230,7 +4272,7 @@
             const cs = commsState(defect);
             const cls = cs.overdue ? 'comms-overdue' : (cs.any ? 'comms-set' : '');
             return `<button class="comms-btn ${cls}" title="Communication log"
-                        onclick="event.stopPropagation(); openDefectComms(${defect.id})">📇${cs.overdue ? '<span class="comms-dot"></span>' : ''}</button>`;
+                        onclick="event.stopPropagation(); openDefectComms(${defect.id})">📅</button>`;
         }
         function fmtDate(v) { return v ? String(v).slice(0, 10) : '—'; }
         function openDefectComms(defectId) {
