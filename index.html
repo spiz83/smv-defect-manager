@@ -147,6 +147,59 @@
             padding: 20px;
         }
 
+        /* View Defects / Add Defects shown side-by-side */
+        .home-2col {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+        .home-2col .home-col {
+            flex: 1;
+            min-width: 0;
+        }
+        .home-2col .section-title {
+            margin-top: 0;
+        }
+        /* Each field: a rounded box with an inline label, magnifier alongside */
+        .home-2col .search-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+        .home-2col .search-label {
+            min-width: 0;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .home-2col .search-input-wrapper {
+            flex: 1;
+            min-width: 0;
+            gap: 0;
+            display: flex;
+            align-items: center;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--input-bg);
+            padding-left: 8px;
+        }
+        .home-2col .search-input-wrapper input {
+            border: none;
+            background: transparent;
+            padding: 9px 2px;
+            font-size: 14px;
+            min-width: 0;
+        }
+        .home-2col .search-btn {
+            width: 26px;
+            height: 30px;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
         .section-title {
             font-size: 22px;
             font-weight: 700;
@@ -1474,12 +1527,14 @@
                     <div class="header-title">SMV Defect Manager Pro</div>
                 </div>
                 <div class="home-container">
+                    <div class="home-2col">
+                    <div class="home-col">
                     <div class="section-title">View Defects</div>
-                    
+
                     <div class="search-row">
                         <div class="search-label">Address</div>
                         <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="search-address" placeholder="Search" 
+                            <input type="text" id="search-address" placeholder="Search"
                                    oninput="handleAutocomplete(this, 'address')" 
                                    onfocus="handleAutocomplete(this, 'address')">
                             <div id="search-address-dropdown" class="autocomplete-dropdown"></div>
@@ -1509,12 +1564,14 @@
                         </div>
                     </div>
 
+                    </div>
+                    <div class="home-col">
                     <div class="section-title">Add Defects</div>
-                    
+
                     <div class="search-row">
                         <div class="search-label">Address</div>
                         <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="add-address" placeholder="Search" 
+                            <input type="text" id="add-address" placeholder="Search"
                                    oninput="handleAutocomplete(this, 'address', 'add-address')" 
                                    onfocus="handleAutocomplete(this, 'address', 'add-address')">
                             <div id="add-address-dropdown" class="autocomplete-dropdown"></div>
@@ -1531,6 +1588,8 @@
                             <div id="add-contractor-dropdown" class="autocomplete-dropdown"></div>
                             <button class="search-btn" onclick="addDefectsByContractor()">🔍</button>
                         </div>
+                    </div>
+                    </div>
                     </div>
 
                     <div class="section-title">Multiple Contractors</div>
@@ -1583,6 +1642,7 @@
                     <div class="reports-actions">
                         <a href="#" class="report-link" onclick="event.preventDefault(); openRecentReports()"><span>🗂️</span> View Recent Reports</a>
                         <a href="#" class="report-link" onclick="event.preventDefault(); openReportImport()"><span>📄</span> Add Report</a>
+                        <a href="#" class="report-link" onclick="event.preventDefault(); openReportBuilder()"><span>📑</span> Generate PDF Report</a>
                         <a href="#" class="report-link" onclick="event.preventDefault(); openDeleteReports()"><span>🗑️</span> Delete Report</a>
                     </div>
 
@@ -2093,6 +2153,7 @@
                         </div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="toggleShowCompleted()" title="${state.showCompleted ? 'Hide completed' : 'Show completed'}" style="${state.showCompleted ? 'background: var(--blue); color: #fff;' : ''}">${state.showCompleted ? '🙈' : '👁️'}</button>
+                            <button class="icon-btn" onclick="openReportBuilder()" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>
                             <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
@@ -5755,6 +5816,153 @@
                 padding:14px;background:var(--card-bg);box-shadow:var(--shadow-sm);}`;
             document.head.appendChild(s);
         })();
+
+        /* ================================================================
+           PDF REPORT GENERATION (#5) — filter by address/contractor/trade/
+           status/date range, group by address, embed photos.
+           ================================================================ */
+        let _jspdfReady = null;
+        function ensureJsPdf() {
+            if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+            if (_jspdfReady) return _jspdfReady;
+            _jspdfReady = new Promise((res, rej) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+                s.onload = () => res();
+                s.onerror = () => rej(new Error('Could not load the PDF library'));
+                document.head.appendChild(s);
+            });
+            return _jspdfReady;
+        }
+
+        function openReportBuilder() {
+            const addrOpts = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
+                .map(a => `<option value="${a.id}">${formatAddress(a)}</option>`).join('');
+            const contrOpts = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            const tradeOpts = db.data.trades.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+            impOverlay(`
+                <div id="imp-head"><strong>📑 Generate Report</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <div class="imp-field"><label>Status</label>
+                        <select id="rb-status"><option value="all">All statuses</option><option value="open">Open</option><option value="pending">Pending</option><option value="completed">Completed</option></select></div>
+                    <div class="imp-field"><label>Address (optional)</label>
+                        <select id="rb-address"><option value="">Any address</option>${addrOpts}</select></div>
+                    <div class="imp-field"><label>Contractor (optional)</label>
+                        <select id="rb-contractor"><option value="">Any contractor</option>${contrOpts}</select></div>
+                    <div class="imp-field"><label>Trade (optional)</label>
+                        <select id="rb-trade"><option value="">Any trade</option>${tradeOpts}</select></div>
+                    <div class="imp-row">
+                        <div class="imp-field"><label>From date</label><input type="date" id="rb-from"></div>
+                        <div class="imp-field"><label>To date</label><input type="date" id="rb-to"></div>
+                    </div>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0 4px"><input type="checkbox" id="rb-photos" checked style="width:auto"> Include photos</label>
+                    <button class="imp-btn" id="rb-go">Generate PDF →</button>
+                </div>`);
+            document.getElementById('rb-go').onclick = runReportBuilder;
+        }
+
+        function reportFilteredDefects(o) {
+            let list = db.data.defects.slice();
+            if (o.addressId) list = list.filter(d => d.addressId === o.addressId);
+            if (o.contractorId) list = list.filter(d => d.contractorId === o.contractorId);
+            if (o.tradeId) list = list.filter(d => { const c = db.getContractor(d.contractorId); return c && (c.tradeIds || []).includes(o.tradeId); });
+            if (o.status && o.status !== 'all') list = list.filter(d => defectStatusOf(d) === o.status);
+            if (o.from) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) >= o.from);
+            if (o.to) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) <= o.to);
+            return list;
+        }
+
+        async function runReportBuilder() {
+            const o = {
+                status: document.getElementById('rb-status').value,
+                addressId: parseInt(document.getElementById('rb-address').value) || null,
+                contractorId: parseInt(document.getElementById('rb-contractor').value) || null,
+                tradeId: parseInt(document.getElementById('rb-trade').value) || null,
+                from: document.getElementById('rb-from').value || null,
+                to: document.getElementById('rb-to').value || null,
+                photos: document.getElementById('rb-photos').checked
+            };
+            const list = reportFilteredDefects(o);
+            if (!list.length) { showToast('No defects match those filters', true); return; }
+            impSetBusy('Generating PDF… (' + list.length + ' defect' + (list.length > 1 ? 's' : '') + ')' + (o.photos ? ' with photos' : ''));
+            try { await generateDefectPDF(list, o); impClose(); showToast('PDF report downloaded'); }
+            catch (e) { console.error(e); impOverlayMessage('Could not generate PDF: ' + (e.message || e)); }
+        }
+
+        async function generateDefectPDF(list, opts) {
+            await ensureJsPdf();
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+            const pageW = 210, pageH = 297, M = 14, contentW = pageW - 2 * M, descX = M + 26;
+            const dateStr = new Date().toISOString().slice(0, 10);
+            let y = M + 2;
+
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20, 24, 40);
+            doc.text('Defect Report', M, y + 4); y += 11;
+
+            const parts = [];
+            if (opts.status && opts.status !== 'all') parts.push('Status: ' + opts.status);
+            if (opts.addressId) parts.push('Address: ' + formatAddress(db.getAddress(opts.addressId)));
+            if (opts.contractorId) { const c = db.getContractor(opts.contractorId); parts.push('Contractor: ' + (c ? c.name : '')); }
+            if (opts.tradeId) { const t = db.data.trades.find(x => x.id === opts.tradeId); parts.push('Trade: ' + (t ? t.name : '')); }
+            if (opts.from || opts.to) parts.push('Dates: ' + (opts.from || '…') + ' → ' + (opts.to || '…'));
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(120, 128, 140);
+            doc.text('Generated ' + dateStr + (parts.length ? '   ·   ' + parts.join('   ·   ') : ''), M, y);
+            doc.text(list.length + ' defect(s)', M, y + 5); y += 9;
+            doc.setDrawColor(225, 228, 235); doc.line(M, y, pageW - M, y); y += 7;
+
+            const groups = {};
+            list.forEach(d => { const a = db.getAddress(d.addressId); const k = a ? formatAddress(a) : '(no address)'; (groups[k] = groups[k] || []).push(d); });
+            const statusColor = { open: [239, 68, 68], pending: [245, 158, 11], completed: [34, 197, 94] };
+            const ensureSpace = (h) => { if (y + h > pageH - M) { doc.addPage(); y = M; } };
+
+            for (const gk of Object.keys(groups).sort()) {
+                ensureSpace(12);
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(20, 24, 40);
+                doc.text(gk, M, y); y += 6;
+                for (const d of groups[gk]) {
+                    const st = defectStatusOf(d);
+                    const c = db.getContractor(d.contractorId);
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+                    const descLines = doc.splitTextToSize(d.description || '(no description)', contentW - 26);
+                    let imgs = [];
+                    if (opts.photos && window.CloudPhotos) { try { imgs = await window.CloudPhotos.getForPdf(d.id); } catch (e) {} }
+                    const photoH = imgs.length ? 32 : 0;
+                    const blockH = Math.max(6, descLines.length * 4.7) + 5 + photoH + 5;
+                    ensureSpace(blockH);
+
+                    const col = statusColor[st] || [120, 120, 120];
+                    doc.setFillColor(col[0], col[1], col[2]);
+                    doc.roundedRect(M, y - 3.4, 22, 5.4, 1.5, 1.5, 'F');
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255);
+                    doc.text(st.toUpperCase(), M + 11, y, { align: 'center' });
+
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(20, 24, 40);
+                    doc.text(descLines, descX, y);
+                    y += Math.max(5, descLines.length * 4.7);
+
+                    doc.setFontSize(9); doc.setTextColor(120, 128, 140);
+                    const meta = [c ? ('Contractor: ' + c.name) : 'Unassigned', (c && c.email) ? c.email : ''].filter(Boolean).join('    ');
+                    doc.text(meta, descX, y); y += 4;
+
+                    if (imgs.length) {
+                        let px = descX;
+                        for (const im of imgs) {
+                            const w = 28, h = im.w ? Math.min(30, w * (im.h / im.w)) : 22;
+                            try { doc.addImage(im.dataUrl, 'JPEG', px, y, w, h); } catch (e) {}
+                            px += w + 4;
+                        }
+                        y += photoH;
+                    }
+                    y += 4;
+                    doc.setDrawColor(238, 240, 244); doc.line(descX, y - 2, pageW - M, y - 2);
+                }
+                y += 4;
+            }
+            doc.save('Defect-Report-' + dateStr + '.pdf');
+        }
 
         // Initialize app
         loadTheme();

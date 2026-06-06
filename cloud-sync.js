@@ -292,6 +292,7 @@
         status: d.status,                       // open | pending | completed
         completed: d.status === 'completed',     // keep current UI working
         unassigned: !!d.unassigned,
+        createdAt: d.created_at,                  // for report date-range filter
         lastEmailAt: d.last_email_at, lastSmsAt: d.last_sms_at,
         lastUpdateAt: d.last_update_at, followupAt: d.followup_at
       });
@@ -735,10 +736,33 @@
     if (typeof render === 'function') render();
   }
 
+  // Fetch a defect's photos as data URLs (for embedding into a PDF report).
+  async function photoDataUrlsForDefect(legacyId, limit = 3) {
+    const uuid = idMap.defects[legacyId];
+    if (!uuid) return [];
+    const { data: rows } = await sb.from('dm_defect_photos')
+      .select('storage_path').eq('defect_id', uuid).limit(limit);
+    if (!rows || !rows.length) return [];
+    const { data: signed } = await sb.storage.from(PHOTO_BUCKET)
+      .createSignedUrls(rows.map(r => r.storage_path), 600);
+    const out = [];
+    for (const s of (signed || [])) {
+      if (!s.signedUrl) continue;
+      try {
+        const blob = await (await fetch(s.signedUrl)).blob();
+        const dataUrl = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
+        const dim = await new Promise(res => { const im = new Image(); im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = () => res({ w: 0, h: 0 }); im.src = dataUrl; });
+        out.push({ dataUrl, w: dim.w, h: dim.h });
+      } catch (e) { /* skip a bad image */ }
+    }
+    return out;
+  }
+
   // Public API used by the per-defect camera button in index.html
   window.CloudPhotos = {
     count: (legacyId) => photoCounts[legacyId] || 0,
-    openGallery: (legacyId) => openGallery(legacyId)
+    openGallery: (legacyId) => openGallery(legacyId),
+    getForPdf: (legacyId) => photoDataUrlsForDefect(legacyId)
   };
 
   // ----- Imported report history (for View Recent / Delete Report) -----
