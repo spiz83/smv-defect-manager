@@ -781,7 +781,16 @@
   window.CloudPhotos = {
     count: (legacyId) => photoCounts[legacyId] || 0,
     openGallery: (legacyId) => openGallery(legacyId),
-    getForPdf: (legacyId) => photoDataUrlsForDefect(legacyId)
+    getForPdf: (legacyId) => photoDataUrlsForDefect(legacyId),
+    // Used by the Add Defects flow: wait until the just-created defect has been
+    // synced (has a cloud id), then upload the held photo.
+    uploadWhenReady: async (legacyId, file) => {
+      for (let i = 0; i < 40 && !idMap.defects[legacyId]; i++) {
+        await new Promise(r => setTimeout(r, 300));
+      }
+      if (!idMap.defects[legacyId]) { showToastSafe('Could not attach a photo (not synced yet)'); return; }
+      await uploadDefectPhoto(legacyId, file);
+    }
   };
 
   // ----- Imported report history (for View Recent / Delete Report) -----

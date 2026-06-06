@@ -611,7 +611,20 @@
 
         .defect-input-row input {
             flex: 1;
+            min-width: 0;
         }
+        .row-photo-btn {
+            flex-shrink: 0;
+            border: none;
+            background: var(--bg-secondary, #eee);
+            border-radius: 8px;
+            padding: 9px 11px;
+            font-size: 16px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .row-photo-btn.has { background: #E3F2FD; }
+        .row-photo-btn .cnt { font-size: 11px; font-weight: 700; margin-left: 2px; color: var(--blue); }
 
         /* Toast */
         .toast {
@@ -3085,11 +3098,12 @@
             let savedCount = 0;
             defectInputs.forEach(input => {
                 if (input.value.trim()) {
-                    db.addDefect({
+                    const d = db.addDefect({
                         addressId,
                         contractorId,
                         description: input.value.trim()
                     });
+                    uploadRowPhotos(input.closest('.defect-input-row'), d.id);
                     savedCount++;
                 }
             });
@@ -3123,11 +3137,12 @@
             let savedCount = 0;
             defectInputs.forEach(input => {
                 if (input.value.trim()) {
-                    db.addDefect({
+                    const d = db.addDefect({
                         addressId,
                         contractorId,
                         description: input.value.trim()
                     });
+                    uploadRowPhotos(input.closest('.defect-input-row'), d.id);
                     savedCount++;
                 }
             });
@@ -3233,13 +3248,44 @@
             }
         }
 
+        // Attach a photo to a defect input row BEFORE it is saved. Files are
+        // held on the row element and uploaded after the defect saves + syncs.
+        function pickRowPhoto(btn) {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.setAttribute('capture', 'environment');
+            input.onchange = () => {
+                const f = input.files && input.files[0];
+                if (!f) return;
+                const row = btn.closest('.defect-input-row');
+                if (!row) return;
+                row._photos = row._photos || [];
+                row._photos.push(f);
+                btn.classList.add('has');
+                btn.innerHTML = '📷' + (row._photos.length > 1 ? `<span class="cnt">${row._photos.length}</span>` : '');
+                showToast('Photo attached — it saves with this defect');
+            };
+            input.click();
+        }
+
+        // Upload any row photos once the defect exists in the cloud.
+        function uploadRowPhotos(row, legacyId) {
+            if (!row || !row._photos || !row._photos.length) return;
+            if (!(window.CloudPhotos && window.CloudPhotos.uploadWhenReady)) {
+                showToast('Log in to attach photos', true);
+                return;
+            }
+            row._photos.forEach(file => window.CloudPhotos.uploadWhenReady(legacyId, file));
+        }
+
         function addQuickDefectRow() {
             const container = document.getElementById('quick-defects-container');
             const row = document.createElement('div');
             row.className = 'defect-input-row';
             row.innerHTML = `
                 <span>•</span>
-                <input type="text" class="quick-defect-input" placeholder="Enter defect">
+                <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
             `;
             container.appendChild(row);
         }
@@ -3250,7 +3296,7 @@
             row.className = 'defect-input-row';
             row.innerHTML = `
                 <span>•</span>
-                <input type="text" class="quick-defect-input-address" placeholder="Enter defect">
+                <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
             `;
             container.appendChild(row);
         }
@@ -4443,27 +4489,27 @@
                             <div id="quick-defects-container">
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                             </div>
                         </div>
@@ -4503,27 +4549,27 @@
                             <div id="quick-defects-container-address">
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
                                     <span>•</span>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect">
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                             </div>
                         </div>
