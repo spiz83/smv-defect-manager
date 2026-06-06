@@ -573,8 +573,8 @@
   // ===========================================================================
   //  PHOTOS (#4) — capture, compress (<=500KB), upload, gallery, auto-delete
   // ===========================================================================
-  const MAX_BYTES = 500 * 1024;
-  const MAX_DIM = 1280;            // "medium resolution"
+  const MAX_BYTES = 120 * 1024;   // cap each photo at 120 KB
+  const MAX_DIM = 1024;            // start resolution (long edge)
 
   function loadImageFromFile(file) {
     return new Promise((resolve, reject) => {
