@@ -1875,9 +1875,9 @@
                     const addressGroup = byAddress[addressKey];
                     
                     Object.keys(addressGroup.contractors).sort().forEach(contractorName => {
-                        text += `\n  ${contractorName}\n`;
+                        text += `\n${contractorName}\n`;
                         addressGroup.contractors[contractorName].forEach(defect => {
-                            text += `    • ${defect.description}\n`;
+                            text += `• ${defect.description}\n`;
                         });
                     });
                     text += '\n';
@@ -4243,9 +4243,9 @@
                 
                 defectGroups.forEach(group => {
                     textContent += `${formatAddress(group.address)}\n`;
-                    textContent += `\n  ${contractor.name}\n`;
+                    textContent += `\n${contractor.name}\n`;
                     group.defects.forEach(defect => {
-                        textContent += `    • ${defect.description}\n`;
+                        textContent += `• ${defect.description}\n`;
                     });
                     textContent += '\n';
                 });
@@ -4269,9 +4269,9 @@
                 textContent += `${formatAddress(address)}\n`;
                 
                 Object.keys(byContractor).sort().forEach(contractorName => {
-                    textContent += `\n  ${contractorName}\n`;
+                    textContent += `\n${contractorName}\n`;
                     byContractor[contractorName].forEach(defect => {
-                        textContent += `    • ${defect.description}\n`;
+                        textContent += `• ${defect.description}\n`;
                     });
                 });
                 textContent += '\n';
@@ -4301,9 +4301,9 @@
                 Object.keys(byAddress).sort().forEach(addressKey => {
                     textContent += `${addressKey}\n`;
                     Object.keys(byAddress[addressKey].contractors).sort().forEach(contractorName => {
-                        textContent += `\n  ${contractorName}\n`;
+                        textContent += `\n${contractorName}\n`;
                         byAddress[addressKey].contractors[contractorName].forEach(defect => {
-                            textContent += `    • ${defect.description}\n`;
+                            textContent += `• ${defect.description}\n`;
                         });
                     });
                     textContent += '\n';
@@ -4332,9 +4332,9 @@
                 Object.keys(byAddress).sort().forEach(addressKey => {
                     textContent += `${addressKey}\n`;
                     Object.keys(byAddress[addressKey].contractors).sort().forEach(contractorName => {
-                        textContent += `\n  ${contractorName}\n`;
+                        textContent += `\n${contractorName}\n`;
                         byAddress[addressKey].contractors[contractorName].forEach(defect => {
-                            textContent += `    • ${defect.description}\n`;
+                            textContent += `• ${defect.description}\n`;
                         });
                     });
                     textContent += '\n';
