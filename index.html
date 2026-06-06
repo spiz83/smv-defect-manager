@@ -20,6 +20,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- F1 Telemetry design fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,900&family=JetBrains+Mono:wght@400;700&family=Bebas+Neue&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-primary: #ffffff;
@@ -1183,6 +1185,123 @@
         @media (max-width: 600px) {
             .home-container { padding: 16px 12px !important; }
         }
+
+        /* ============================================================
+           F1 TELEMETRY DESIGN — ported from the CH Tracker app.
+           Near-black carbon-fibre surfaces, Titillium Web + JetBrains
+           Mono, teal accent with glow, uppercase data labels,
+           telemetry red/amber/green. Activated via body.design-f1.
+           Placed last so it overrides Modern + dark-mode + club themes.
+           ============================================================ */
+        body.design-f1 {
+            /* CH telemetry tokens */
+            --bg:#08090A; --sur:#14171A; --ele:#1E2227; --inp:#0F1114; --brd:#2A2F36; --brd2:#1A1D22;
+            --t1:#F5F6F8; --t2:#9CA3AD; --t3:#5C6470;
+            --acc:#00A19A; --acc2:#00C9C0; --accfg:#fff; --glow:rgba(0,161,154,.18);
+            --tg:#00D26A; --ta:#FFD800; --tr:#FF3B5C;
+            /* remap DefFixer's existing variables onto the telemetry palette */
+            --bg-primary: var(--sur); --bg-secondary: var(--bg); --card-bg: var(--sur);
+            --text-primary: var(--t1); --text-secondary: var(--t2);
+            --border-color: var(--brd); --input-bg: var(--inp); --blue: var(--acc); --page-bg: var(--bg);
+            color: var(--t1);
+            font-family: 'Titillium Web','DM Sans',system-ui,sans-serif !important;
+            background:
+                repeating-linear-gradient(45deg, transparent 0 2px, rgba(255,255,255,.012) 2px 3px),
+                repeating-linear-gradient(-45deg, transparent 0 2px, rgba(255,255,255,.008) 2px 3px),
+                radial-gradient(circle at 50% 0%, var(--glow), transparent 50%),
+                var(--bg) !important;
+        }
+        body.design-f1 #app { background: transparent !important; box-shadow: none !important; max-width: 440px; }
+
+        /* App header → telemetry top bar */
+        body.design-f1 .app-header {
+            background: linear-gradient(180deg, rgba(255,255,255,.03), var(--bg)) !important;
+            border-bottom: 1px solid var(--brd) !important;
+            backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+        }
+        body.design-f1 .app-header.home-hero {
+            background: linear-gradient(135deg, var(--acc) 0%, #0a3f3b 100%) !important;
+            border-radius: 0 !important;
+        }
+        body.design-f1 .header-title, body.design-f1 .app-header.home-hero .header-title {
+            font-family: 'Titillium Web', sans-serif !important; font-weight: 900 !important;
+            font-style: italic; text-transform: uppercase; letter-spacing: .005em; color: var(--t1) !important;
+        }
+        body.design-f1 .app-header.home-hero .header-title { color: #fff !important; }
+        body.design-f1 .lot-title, body.design-f1 .pg-title {
+            font-family: 'Titillium Web', sans-serif !important; font-weight: 900 !important;
+            font-style: italic; text-transform: uppercase; color: var(--t1) !important;
+        }
+
+        /* Section labels → mono accent (pg-lbl) */
+        body.design-f1 .section-title {
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 11px !important; font-weight: 700 !important;
+            color: var(--acc) !important; text-transform: uppercase; letter-spacing: .2em !important;
+        }
+        body.design-f1 .section-title::before { display: none !important; }
+
+        /* Buttons */
+        body.design-f1 .btn {
+            font-family: 'DM Sans', sans-serif !important; text-transform: uppercase;
+            letter-spacing: .08em; font-size: 12px !important; font-weight: 600 !important;
+            border-radius: 4px !important; border: 1px solid var(--brd) !important;
+            background: var(--sur) !important; color: var(--t1) !important; box-shadow: none !important;
+        }
+        body.design-f1 .btn-primary { background: var(--acc) !important; border-color: var(--acc) !important; color: #fff !important; }
+        body.design-f1 .btn-primary:hover { background: var(--acc2) !important; border-color: var(--acc2) !important; filter: none; }
+        body.design-f1 .btn-secondary { background: var(--sur) !important; color: var(--t1) !important; }
+
+        /* Inputs / selects */
+        body.design-f1 input, body.design-f1 select, body.design-f1 textarea {
+            background: var(--inp) !important; border: 1px solid var(--brd) !important;
+            border-radius: 4px !important; color: var(--t1) !important;
+            font-family: 'Titillium Web', sans-serif !important;
+        }
+        body.design-f1 input::placeholder, body.design-f1 textarea::placeholder { color: var(--t3) !important; }
+        body.design-f1 input:focus, body.design-f1 select:focus, body.design-f1 textarea:focus {
+            border-color: var(--acc) !important; box-shadow: 0 0 0 2px var(--glow) !important;
+        }
+
+        /* Defect rows → job rows */
+        body.design-f1 .defect-item {
+            background: var(--sur) !important; border: 1px solid var(--brd) !important;
+            border-radius: 6px !important; box-shadow: none !important;
+        }
+        body.design-f1 .defect-item:hover { background: var(--ele) !important; }
+        body.design-f1 .defect-text { color: var(--t1) !important; font-weight: 600 !important; }
+        body.design-f1 .contractor-section {
+            background: var(--sur) !important; border: 1px solid var(--brd) !important; box-shadow: none !important;
+        }
+        body.design-f1 .contractor-name, body.design-f1 .sg-name {
+            font-family: 'Bebas Neue', sans-serif !important; letter-spacing: .06em; color: var(--acc) !important;
+        }
+
+        /* Status pills / badges → telemetry flags (mono, glow-less) */
+        body.design-f1 .defect-status, body.design-f1 .status-badge {
+            font-family: 'JetBrains Mono', monospace !important; text-transform: uppercase;
+            letter-spacing: .06em; border-radius: 3px !important; box-shadow: none !important; font-weight: 700;
+        }
+        body.design-f1 .status-open, body.design-f1 .defect-status.status-open { background: rgba(255,59,92,.14) !important; color: var(--tr) !important; }
+        body.design-f1 .status-pending, body.design-f1 .defect-status.status-pending { background: rgba(255,216,0,.12) !important; color: var(--ta) !important; }
+        body.design-f1 .status-completed, body.design-f1 .defect-status.status-completed { background: rgba(0,210,106,.12) !important; color: var(--tg) !important; }
+
+        /* Toolbar / icon buttons / magnifiers */
+        body.design-f1 .icon-btn { color: var(--acc) !important; background: transparent !important; }
+        body.design-f1 .icon-btn:hover { background: var(--ele) !important; }
+        body.design-f1 .search-btn { background: var(--acc) !important; color: #fff !important; box-shadow: none !important; }
+
+        /* Home report/action links + manage row */
+        body.design-f1 .report-link { background: var(--sur) !important; border: 1px solid var(--brd) !important; color: var(--t1) !important; box-shadow: none !important; }
+        body.design-f1 .manage-link, body.design-f1 .view-all-link { color: var(--acc) !important; }
+        body.design-f1 .manage-row { border-top: 1px solid var(--brd) !important; }
+
+        /* Modals + sync bar */
+        body.design-f1 .modal { background: rgba(0,0,0,.72) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+        body.design-f1 .modal-content { background: var(--sur) !important; border: 1px solid var(--brd) !important; border-radius: 8px !important; box-shadow: 0 16px 48px rgba(0,0,0,.7) !important; }
+        body.design-f1 .modal-header { font-family: 'Titillium Web', sans-serif !important; font-weight: 900 !important; font-style: italic; text-transform: uppercase; }
+        body.design-f1 #cs-statusbar { background: var(--sur) !important; border-bottom: 1px solid var(--brd); }
+        body.design-f1 .defects-header { background: linear-gradient(180deg, rgba(0,161,154,.06), var(--sur)) !important; border-bottom: 1px solid var(--brd) !important; }
     </style>
 </head>
 <body>
@@ -2521,13 +2640,15 @@
                             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                                 <div>
                                     <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">✨ App Design</div>
-                                    <div style="font-size: 14px; color: var(--text-secondary);">Switch between the Classic and Modern look</div>
+                                    <div style="font-size: 14px; color: var(--text-secondary);">Classic, Modern, or F1 Telemetry (CH Tracker style)</div>
                                 </div>
-                                <div style="display: flex; gap: 10px;">
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                                     <button class="btn ${currentDesign() === 'classic' ? 'btn-primary' : 'btn-secondary'}"
-                                            style="padding: 10px 20px; font-size: 14px;" onclick="setDesign('classic')">Classic</button>
+                                            style="padding: 10px 16px; font-size: 14px;" onclick="setDesign('classic')">Classic</button>
                                     <button class="btn ${currentDesign() === 'modern' ? 'btn-primary' : 'btn-secondary'}"
-                                            style="padding: 10px 20px; font-size: 14px;" onclick="setDesign('modern')">Modern</button>
+                                            style="padding: 10px 16px; font-size: 14px;" onclick="setDesign('modern')">Modern</button>
+                                    <button class="btn ${currentDesign() === 'f1' ? 'btn-primary' : 'btn-secondary'}"
+                                            style="padding: 10px 16px; font-size: 14px;" onclick="setDesign('f1')">🏎️ F1</button>
                                 </div>
                             </div>
                         </div>
@@ -5902,6 +6023,7 @@
         }
         function applyDesign(d) {
             document.body.classList.toggle('design-modern', d === 'modern');
+            document.body.classList.toggle('design-f1', d === 'f1');
         }
         function setDesign(d) {
             localStorage.setItem('appDesign', d);
