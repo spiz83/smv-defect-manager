@@ -147,8 +147,8 @@ create table if not exists public.dm_defect_photos (
     storage_path  text not null,            -- path within the 'defect-photos' bucket
     bytes         integer,                  -- enforced <= 500 KB client-side
     created_at    timestamptz not null default now(),
-    -- auto-expire 50 days after upload (a scheduled job sweeps these)
-    expires_at    timestamptz not null default (now() + interval '50 days')
+    -- auto-expire 30 days after upload (swept on login / after changes)
+    expires_at    timestamptz not null default (now() + interval '30 days')
 );
 
 -- Helpful indexes
