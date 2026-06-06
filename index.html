@@ -2240,7 +2240,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
+                                    <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2304,7 +2304,7 @@
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2366,7 +2366,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
+                                    <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2598,7 +2598,7 @@
                                     ${byAddressThenContractor[addressKey].contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2702,7 +2702,7 @@
                                     ${addressGroup.contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -4395,15 +4395,11 @@
                         title="Set the date this supplier will attend to fix all their items">📅${dt ? `<span class="book-lbl">${fmtDateNice(dt)}</span>` : ''}</button>`;
         }
         function openSupplierBooking(contractorId, addressId) {
-            const c = db.getContractor(contractorId);
             const cur = db.getContractorBooking(contractorId, addressId);
-            const name = (c ? c.name : 'this supplier').replace(/</g, '&lt;');
             impOverlay(`
                 <div id="imp-head"><strong>📅 Booking date</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
-                    <div style="font-size:14px;color:var(--text-secondary);margin-bottom:14px">The date <strong>${name}</strong> is booked to attend and complete all of their items at this property.</div>
-                    <div class="imp-field"><label>Attendance date</label>
-                        <input type="date" id="bk-date" value="${cur ? String(cur).slice(0,10) : ''}"></div>
+                    <div class="imp-field"><input type="date" id="bk-date" value="${cur ? String(cur).slice(0,10) : ''}"></div>
                     <button class="imp-btn" id="bk-save">Save</button>
                     <button class="imp-btn secondary" id="bk-clear" style="margin-top:8px">Clear date</button>
                 </div>`);
