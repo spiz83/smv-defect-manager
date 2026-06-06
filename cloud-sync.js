@@ -766,6 +766,17 @@
     return out;
   }
 
+  // AI report extraction via the secure edge function (key stays server-side)
+  window.CloudAI = {
+    available: () => true,
+    extract: async (text) => {
+      const { data, error } = await sb.functions.invoke('extract-defects', { body: { text } });
+      if (error) throw new Error(error.message || 'AI extraction failed');
+      if (data && data.error) throw new Error(data.error);
+      return (data && data.defects) || [];
+    }
+  };
+
   // Public API used by the per-defect camera button in index.html
   window.CloudPhotos = {
     count: (legacyId) => photoCounts[legacyId] || 0,

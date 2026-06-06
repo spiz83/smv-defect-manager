@@ -5712,6 +5712,7 @@
 
         // ---- Step 1: choose a file or paste text ----
         function openReportImport() {
+            const aiOn = window.CloudAI ? 'checked' : '';
             impOverlay(`
                 <div id="imp-head"><strong>📄 Add Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
@@ -5723,6 +5724,8 @@
                     </div>
                     <div class="imp-or">— or paste the report text —</div>
                     <textarea id="imp-paste" placeholder="Paste defect text here..."></textarea>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:12px 0 4px">
+                        <input type="checkbox" id="imp-ai" ${aiOn} style="width:auto"> 🤖 Use AI extraction (more accurate)</label>
                     <button class="imp-btn" id="imp-extract">Extract defects →</button>
                 </div>`);
             const fileInput = document.getElementById('imp-file');
@@ -5733,20 +5736,38 @@
                 impSetBusy('Reading ' + f.name + '…');
                 try {
                     const text = await extractReportText(f);
-                    const items = parseReportDefects(text);
-                    if (!items.length) { impOverlayMessage('No defects found in that file. Try pasting the text instead.'); return; }
-                    startReportReview(items, f.name);
+                    await extractAndReview(text, f.name);
                 } catch (err) {
                     console.error(err);
                     impOverlayMessage('Could not read that file: ' + (err.message || err));
                 }
             };
-            document.getElementById('imp-extract').onclick = () => {
+            document.getElementById('imp-extract').onclick = async () => {
                 const text = document.getElementById('imp-paste').value;
-                const items = parseReportDefects(text);
-                if (!items.length) { showToast('No defect lines detected', true); return; }
-                startReportReview(items, 'Pasted report');
+                if (!text.trim()) { showToast('Paste some text or choose a file', true); return; }
+                await extractAndReview(text, 'Pasted report');
             };
+        }
+
+        // Decide between AI extraction and the built-in parser, then review.
+        async function extractAndReview(rawText, sourceName) {
+            const aiCheckbox = document.getElementById('imp-ai');
+            const useAI = aiCheckbox && aiCheckbox.checked && window.CloudAI;
+            let items = [];
+            if (useAI) {
+                impSetBusy('🤖 Reading the report with AI…');
+                try {
+                    items = await window.CloudAI.extract(rawText);
+                } catch (err) {
+                    console.error('[AI extract]', err);
+                    showToast('AI extraction failed — using basic parser', true);
+                    items = parseReportDefects(rawText);
+                }
+            } else {
+                items = parseReportDefects(rawText);
+            }
+            if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
+            startReportReview(items, sourceName);
         }
 
         function impSetBusy(msg) {
