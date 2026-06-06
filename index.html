@@ -2,8 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Construction Defect Tracker</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>DefFixer — Defect Manager</title>
+
+    <!-- App icons / install-to-home-screen -->
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png">
+    <link rel="apple-touch-icon" href="icon-180.png">
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DefFixer">
+    <meta name="mobile-web-app-capable" content="yes">
     <style>
         :root {
             --bg-primary: #ffffff;
@@ -626,6 +637,92 @@
             .search-label {
                 min-width: auto;
             }
+        }
+
+        /* ============================================================
+           MODERN POLISH LAYER — refined typography, depth & motion.
+           Uses existing classes + theme variables, so it works with
+           light/dark and every club colour theme.
+           ============================================================ */
+        :root {
+            --radius: 14px;
+            --shadow-sm: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10);
+            --shadow-md: 0 4px 12px rgba(16,24,40,.10);
+            --shadow-lg: 0 12px 28px rgba(16,24,40,.16);
+        }
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+            font-feature-settings: "cv11", "ss01";
+            letter-spacing: -0.01em;
+        }
+        h1, h2, h3, .header-title, .lot-title {
+            letter-spacing: -0.02em;
+        }
+
+        /* App header: frosted, sticky, subtle depth */
+        .app-header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            backdrop-filter: saturate(180%) blur(14px);
+            -webkit-backdrop-filter: saturate(180%) blur(14px);
+            background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+            box-shadow: 0 1px 0 var(--border-color);
+        }
+        .header-title { font-weight: 700; }
+        .back-link { font-weight: 600; }
+
+        /* Buttons: soft depth + tactile motion */
+        .btn-primary, .btn-secondary {
+            border-radius: var(--radius);
+            font-weight: 600;
+            transition: transform .06s ease, box-shadow .15s ease, filter .15s ease;
+            box-shadow: var(--shadow-sm);
+        }
+        .btn-primary { box-shadow: 0 6px 16px color-mix(in srgb, var(--blue) 35%, transparent); }
+        .btn-primary:hover, .btn-secondary:hover { filter: brightness(1.03); box-shadow: var(--shadow-md); }
+        .btn-primary:active, .btn-secondary:active { transform: translateY(1px) scale(.997); }
+
+        /* Cards / sections: rounder, softer, lift on hover */
+        .contractor-section, .manage-container > div, .import-section {
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+        }
+        .defect-item {
+            border-radius: 12px;
+            transition: box-shadow .15s ease, transform .06s ease, border-color .15s ease;
+        }
+        .defect-item:hover { box-shadow: var(--shadow-md); }
+
+        /* Icon buttons in toolbars: pill, hover tint */
+        .icon-btn {
+            border-radius: 12px;
+            transition: background .15s ease, transform .06s ease;
+        }
+        .icon-btn:hover { background: color-mix(in srgb, var(--blue) 12%, transparent); }
+        .icon-btn:active { transform: scale(.94); }
+
+        /* Inputs: modern focus ring */
+        input, select, textarea {
+            border-radius: 12px;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--blue);
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 18%, transparent);
+        }
+
+        /* Status pills + actions: a touch more depth */
+        .defect-status { box-shadow: var(--shadow-sm); }
+        .photo-btn { transition: transform .06s ease, background .15s ease; }
+        .photo-btn:active { transform: scale(.92); }
+
+        /* Respect users who prefer reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            * { transition: none !important; }
         }
     </style>
 </head>
