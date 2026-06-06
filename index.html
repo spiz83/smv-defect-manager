@@ -1139,6 +1139,48 @@
         .home-2col .home-col:first-child .autocomplete-dropdown { left: 0; }
         .home-2col .home-col:last-child .autocomplete-dropdown { left: auto; right: 0; }
         .autocomplete-item { white-space: normal; overflow-wrap: anywhere; }
+
+        /* ============================================================
+           CONDENSE TO FIT — everything stays inside the phone width,
+           no horizontal scrolling. Overrides the oversized premium
+           magnifier buttons and lets multi-search inputs shrink.
+           ============================================================ */
+        html, body { overflow-x: hidden !important; max-width: 100vw !important; }
+        body.design-modern #app { max-width: 100vw; }
+
+        /* Compact home magnifier buttons (beat the premium 44px + glow) */
+        body.design-modern .home-2col .search-btn,
+        .home-2col .search-btn {
+            width: 30px !important;
+            height: 38px !important;
+            font-size: 15px !important;
+            border-radius: 9px !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            flex-shrink: 0;
+        }
+        .home-2col .search-row { gap: 6px !important; }
+        .home-2col .search-input-wrapper { gap: 6px !important; min-width: 0; }
+        .home-2col .search-input-wrapper input { padding: 11px 9px !important; min-width: 0 !important; }
+
+        /* Multiple Contractors / Trades — let inputs shrink, compact button */
+        .multi-select-wrapper { gap: 6px !important; flex-wrap: nowrap; }
+        .multi-select-wrapper input,
+        .multi-select-wrapper .autocomplete-container { min-width: 0 !important; }
+        .multi-select-wrapper input { padding: 11px 8px !important; }
+        body.design-modern .multi-select-wrapper .search-btn,
+        .multi-select-wrapper .search-btn {
+            width: 30px !important;
+            height: 38px !important;
+            box-shadow: none !important;
+            border-radius: 9px !important;
+            padding: 0 !important;
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 600px) {
+            .home-container { padding: 16px 12px !important; }
+        }
     </style>
 </head>
 <body>
