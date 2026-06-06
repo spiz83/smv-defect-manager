@@ -271,6 +271,34 @@
             flex-shrink: 0;
         }
 
+        /* Open / Pending / Completed status selector */
+        .defect-status {
+            flex-shrink: 0;
+            border: none;
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            text-align: center;
+        }
+        .defect-status.status-open      { background: #FEE2E2; color: #B91C1C; }
+        .defect-status.status-pending   { background: #FEF3C7; color: #B45309; }
+        .defect-status.status-completed { background: #DCFCE7; color: #15803D; }
+        .status-badge {
+            display: inline-block;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 999px;
+            vertical-align: middle;
+        }
+        .status-badge.status-open      { background: #FEE2E2; color: #B91C1C; }
+        .status-badge.status-pending   { background: #FEF3C7; color: #B45309; }
+        .status-badge.status-completed { background: #DCFCE7; color: #15803D; }
+
         /* Modal Styles */
         .modal {
             display: none;
@@ -1009,7 +1037,7 @@
 
             addDefect(defect) {
                 const id = Math.max(0, ...this.data.defects.map(d => d.id)) + 1;
-                const newDefect = { id, ...defect, completed: false };
+                const newDefect = { id, status: 'open', ...defect, completed: false };
                 this.data.defects.push(newDefect);
                 this.save();
                 return newDefect;
@@ -1024,6 +1052,16 @@
                 const defect = this.data.defects.find(d => d.id === id);
                 if (defect) {
                     defect.completed = true;
+                    defect.status = 'completed';
+                    this.save();
+                }
+            }
+
+            setDefectStatus(id, status) {
+                const defect = this.data.defects.find(d => d.id === id);
+                if (defect) {
+                    defect.status = status;
+                    defect.completed = (status === 'completed');
                     this.save();
                 }
             }
@@ -1316,8 +1354,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     <span class="defect-text">${defect.description}</span>
-                                    <input type="checkbox" class="defect-checkbox" 
-                                           onchange="toggleDefectComplete(${defect.id})">
+                                    ${statusControl(defect)}
                                 </div>
                             `).join('')}
                         </div>
@@ -1383,8 +1420,7 @@
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            <input type="checkbox" class="defect-checkbox" 
-                                                   onchange="toggleDefectComplete(${defect.id})">
+                                            ${statusControl(defect)}
                                         </div>
                                     `).join('')}
                                 </div>
@@ -1441,8 +1477,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     <span class="defect-text">${defect.description}</span>
-                                    <input type="checkbox" class="defect-checkbox" 
-                                           onchange="toggleDefectComplete(${defect.id})">
+                                    ${statusControl(defect)}
                                 </div>
                             `).join('')}
                         </div>
@@ -1681,8 +1716,7 @@
                                     ${byAddressThenContractor[addressKey].contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            <input type="checkbox" class="defect-checkbox" 
-                                                   onchange="toggleDefectComplete(${defect.id})">
+                                            ${statusControl(defect)}
                                         </div>
                                     `).join('')}
                                 </div>
@@ -1698,6 +1732,8 @@
             const activeDefects = db.data.defects.filter(d => !d.completed);
             const totalDefects = db.data.defects.length;
             const completedCount = totalDefects - activeDefects.length;
+            const pendingCount = activeDefects.filter(d => defectStatusOf(d) === 'pending').length;
+            const openCount = activeDefects.length - pendingCount;
             
             // Group by address, then by contractor
             const groupedByAddress = {};
@@ -1748,7 +1784,8 @@
                         <div class="lot-title">
                             All Defects by Address
                             <div style="font-size: 13px; font-weight: 400; color: var(--text-secondary); margin-top: 5px;">
-                                ${activeDefects.length} active defects${completedCount > 0 ? ` (${completedCount} completed hidden)` : ''}
+                                <span class="status-badge status-open">${openCount} Open</span>
+                                <span class="status-badge status-pending">${pendingCount} Pending</span>${completedCount > 0 ? ` <span class="status-badge status-completed">${completedCount} Completed</span>` : ''}
                             </div>
                         </div>
                         <div class="toolbar">
@@ -1778,8 +1815,7 @@
                                     ${addressGroup.contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            <input type="checkbox" class="defect-checkbox" 
-                                                   onchange="toggleDefectComplete(${defect.id})">
+                                            ${statusControl(defect)}
                                         </div>
                                     `).join('')}
                                 </div>
@@ -3239,6 +3275,29 @@
             db.markDefectComplete(defectId);
             render();
             showToast('Defect marked as complete');
+        }
+
+        // Status helpers (Open -> Pending -> Completed)
+        function defectStatusOf(defect) {
+            return defect.status || (defect.completed ? 'completed' : 'open');
+        }
+
+        // Inline dropdown used in every defect list to change a defect's status.
+        function statusControl(defect) {
+            const s = defectStatusOf(defect);
+            const opt = (v, label) => `<option value="${v}" ${s === v ? 'selected' : ''}>${label}</option>`;
+            return `<select class="defect-status status-${s}"
+                        onclick="event.stopPropagation()"
+                        onchange="setDefectStatus(${defect.id}, this.value)">
+                        ${opt('open', 'Open')}${opt('pending', 'Pending')}${opt('completed', 'Completed')}
+                    </select>`;
+        }
+
+        function setDefectStatus(defectId, status) {
+            db.setDefectStatus(defectId, status);
+            render();
+            const labels = { open: 'Open', pending: 'Pending', completed: 'Completed' };
+            showToast('Status set to ' + (labels[status] || status));
         }
 
         // Unified function to generate defect text for clipboard/export/email
