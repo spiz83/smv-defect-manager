@@ -633,20 +633,22 @@
         }
 
         .defect-input-row input {
-            flex: 1;
+            flex: 1 1 100% !important;   /* own full-width line below pin/camera */
             min-width: 0;
+            order: 3;
         }
         .row-photo-btn {
-            flex-shrink: 0;
+            order: 2; flex-shrink: 0;
             border: none;
-            background: var(--bg-secondary, #eee);
+            background: transparent;
             border-radius: 8px;
-            padding: 9px 11px;
-            font-size: 16px;
+            padding: 0 2px;
+            font-size: 14px;
             cursor: pointer;
-            line-height: 1;
+            line-height: 1.2;
+            opacity: .65;
         }
-        .row-photo-btn.has { background: #E3F2FD; }
+        .row-photo-btn.has { opacity: 1; }
         .row-photo-btn .cnt { font-size: 11px; font-weight: 700; margin-left: 2px; color: var(--blue); }
 
         /* Toast */
@@ -1394,11 +1396,10 @@
         .app-header .header-title { flex: 1; text-align: left; }
         body.design-f1 .app-header { padding-right: 136px; }
 
-        /* Location pin in the Add Defects rows (replaces the bullet) */
-        /* Location sits on its own line ABOVE the description, freeing the
-           full row width for the defect text box. */
+        /* Location pin + camera share the top line; the description gets the
+           full width on its own line below — maximises text room. */
         .row-loc-btn {
-            order: -1; flex: 0 0 100%;
+            order: 1; flex: 0 0 auto;
             border: none; background: transparent; cursor: pointer;
             font-size: 12px; line-height: 1.2; padding: 0 2px;
             display: inline-flex; align-items: center; gap: 4px;
