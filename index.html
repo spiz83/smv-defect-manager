@@ -1125,6 +1125,20 @@
         /* …except the full-screen Add Defects sheets, which stay edge-to-edge */
         #quick-add-defects-address-modal .modal-content,
         #quick-add-defects-modal .modal-content { max-width: 100% !important; width: 100% !important; }
+
+        /* Wide address/contractor/trade predictions on the 2-column home
+           — the dropdown spans the full width instead of the narrow column */
+        .home-2col .autocomplete-dropdown {
+            right: auto;
+            width: calc(200% + 10px);
+            max-width: calc(100vw - 24px);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 12px 28px rgba(16,24,40,.18);
+        }
+        .home-2col .home-col:first-child .autocomplete-dropdown { left: 0; }
+        .home-2col .home-col:last-child .autocomplete-dropdown { left: auto; right: 0; }
+        .autocomplete-item { white-space: normal; overflow-wrap: anywhere; }
     </style>
 </head>
 <body>
