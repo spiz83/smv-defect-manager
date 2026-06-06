@@ -218,6 +218,7 @@
   // ===========================================================================
   async function resolveWorkspace() {
     const { data: { user } } = await sb.auth.getUser();
+    if (!user) throw new Error('SESSION_EXPIRED');
     userEmail = user ? user.email : null;
     // The signup trigger creates a workspace automatically; pick the first one
     // the user is a member of (owner workspace).
@@ -850,6 +851,12 @@
       subscribeRealtime();
     } catch (err) {
       console.error('[CloudSync] init failed', err);
+      // Stale/expired session (e.g. password changed): clear it and re-show login
+      if (String(err && err.message).indexOf('SESSION_EXPIRED') !== -1) {
+        try { await sb.auth.signOut(); } catch (e) {}
+        showLogin();
+        return;
+      }
       setStatus('Offline', 'offline');
       alert('Could not connect to the central database:\n' + (err.message || err) +
             '\n\nThe app is still usable on this device.');
@@ -858,9 +865,15 @@
 
   async function boot() {
     const { data: { session } } = await sb.auth.getSession();
-    if (session) {
+    if (!session) { showLogin(); return; }
+    // Validate the saved session still works (a password change elsewhere
+    // revokes it). If not, clear it and show the login screen instead of crashing.
+    let user = null;
+    try { ({ data: { user } } = await sb.auth.getUser()); } catch (e) { user = null; }
+    if (user) {
       await onAuthed();
     } else {
+      try { await sb.auth.signOut(); } catch (e) {}
       showLogin();
     }
   }
