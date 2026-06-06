@@ -1108,6 +1108,23 @@
             background: rgba(15,23,42,.92);
             box-shadow: var(--soft-3);
         }
+
+        /* ============================================================
+           MOBILE FIT — stop anything spilling past the screen edge
+           ============================================================ */
+        html, body { overflow-x: hidden; max-width: 100%; }
+        /* Long defect descriptions must wrap and let the row shrink */
+        .defect-text { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+        .defect-item { flex-wrap: wrap; row-gap: 6px; }
+        /* Keep every modal inside the viewport (some set a wide max-width) */
+        @media (max-width: 440px) {
+            .modal-content { max-width: calc(100vw - 18px) !important; width: auto !important; }
+            .home-container { padding-left: 14px !important; padding-right: 14px !important; }
+            .defects-header { padding-left: 14px !important; padding-right: 14px !important; }
+        }
+        /* …except the full-screen Add Defects sheets, which stay edge-to-edge */
+        #quick-add-defects-address-modal .modal-content,
+        #quick-add-defects-modal .modal-content { max-width: 100% !important; width: 100% !important; }
     </style>
 </head>
 <body>
