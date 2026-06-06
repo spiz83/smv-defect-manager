@@ -1326,10 +1326,13 @@
            COMPACT DEFECT ROW — small status pill, location dropdown,
            and maximum room for the description.
            ============================================================ */
-        .defect-actions { gap: 5px !important; align-items: center; flex-shrink: 0; }
+        .defect-actions { gap: 4px !important; align-items: center; flex-shrink: 0; }
         .defect-text { flex: 1 1 auto !important; min-width: 0; }
         /* Status pill ~1/4 of its old size */
         .defect-status { padding: 3px 8px !important; font-size: 10px !important; }
+        /* Compact camera/comms icons — keep the count, smaller footprint */
+        .comms-btn, .photo-btn { padding: 2px 4px !important; font-size: 11px !important; }
+        .photo-count { margin-left: 1px !important; font-size: 9px !important; }
         /* Location dropdown pill */
         .defect-loc {
             -webkit-appearance: none; appearance: none;
@@ -1343,8 +1346,14 @@
             cursor: pointer; flex-shrink: 0;
         }
         .defect-loc.has-loc { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
-        .comms-btn, .photo-btn { padding: 4px 6px !important; font-size: 13px !important; }
+        .comms-btn, .photo-btn { padding: 1px 4px !important; font-size: 11px !important; }
+        .photo-count { margin-left: 1px !important; font-size: 9px !important; }
         body.design-f1 .defect-loc { font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .04em; border-radius: 3px; }
+
+        /* Per-supplier email button on the contractor header */
+        .contractor-name.contractor-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .supplier-email-btn { flex-shrink: 0; border: none; background: transparent; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 8px; }
+        .supplier-email-btn:active { transform: scale(.9); }
     </style>
 </head>
 <body>
@@ -1906,7 +1915,7 @@
                     Object.keys(addressGroup.contractors).sort().forEach(contractorName => {
                         text += `\n${contractorName}\n`;
                         addressGroup.contractors[contractorName].forEach(defect => {
-                            text += `• ${defect.description}\n`;
+                            text += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                         });
                     });
                     text += '\n';
@@ -2126,9 +2135,7 @@
                         <div class="lot-title">${contractor.name}</div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email Defect List">📧</button>
-                            <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
-                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="emailDefectList()" title="Email Defect List">📧</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">➕</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
@@ -2210,9 +2217,7 @@
                         <div class="lot-title">${tradeName}</div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>
-                            <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
-                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2271,8 +2276,6 @@
                         <div class="lot-title">${formatAddress(address)}</div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>
-                            <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
                             <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">➕</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
@@ -2286,7 +2289,10 @@
                         </div>
                     ` : Object.values(byContractor).map(group => `
                         <div class="contractor-section">
-                            <div class="contractor-name">${group.contractor.name}</div>
+                            <div class="contractor-name contractor-hdr">
+                                <span>${group.contractor.name}</span>
+                                <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier their items + photos">✉️</button>
+                            </div>
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     <span class="defect-text">${defect.description}</span>
@@ -2505,9 +2511,7 @@
                         <div class="lot-title">Search Multiple Contractors:<br><span style="font-size: 14px; font-weight: 400; color: #666;">${contractorNames}</span></div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>
-                            <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
-                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2610,9 +2614,7 @@
                             <button class="icon-btn" onclick="toggleShowCompleted()" title="${state.showCompleted ? 'Hide completed' : 'Show completed'}" style="${state.showCompleted ? 'background: var(--blue); color: #fff;' : ''}">${state.showCompleted ? '🙈' : '👁️'}</button>
                             <button class="icon-btn" onclick="openReportBuilder()" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>
-                            <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
-                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -4291,7 +4293,7 @@
                     textContent += `${formatAddress(group.address)}\n`;
                     textContent += `\n${contractor.name}\n`;
                     group.defects.forEach(defect => {
-                        textContent += `• ${defect.description}\n`;
+                        textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                     });
                     textContent += '\n';
                 });
@@ -4317,7 +4319,7 @@
                 Object.keys(byContractor).sort().forEach(contractorName => {
                     textContent += `\n${contractorName}\n`;
                     byContractor[contractorName].forEach(defect => {
-                        textContent += `• ${defect.description}\n`;
+                        textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                     });
                 });
                 textContent += '\n';
@@ -4349,7 +4351,7 @@
                     Object.keys(byAddress[addressKey].contractors).sort().forEach(contractorName => {
                         textContent += `\n${contractorName}\n`;
                         byAddress[addressKey].contractors[contractorName].forEach(defect => {
-                            textContent += `• ${defect.description}\n`;
+                            textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                         });
                     });
                     textContent += '\n';
@@ -4380,7 +4382,7 @@
                     Object.keys(byAddress[addressKey].contractors).sort().forEach(contractorName => {
                         textContent += `\n${contractorName}\n`;
                         byAddress[addressKey].contractors[contractorName].forEach(defect => {
-                            textContent += `• ${defect.description}\n`;
+                            textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                         });
                     });
                     textContent += '\n';
@@ -4461,6 +4463,31 @@
             }
             
             document.body.removeChild(textarea);
+        }
+
+        // Email ONE supplier their open items (with photo links) for this address
+        async function emailSupplier(contractorId, addressId) {
+            const c = db.getContractor(contractorId);
+            const addr = formatAddress(db.getAddress(addressId));
+            const defects = (db.data.defects || []).filter(d =>
+                d.addressId === addressId && d.contractorId === contractorId && !d.completed);
+            if (!defects.length) { showToast('No open items for this supplier', true); return; }
+            if (!c || !c.email) { showToast('No email on file for ' + (c ? c.name : 'this supplier'), true); return; }
+            showToast('Preparing email…');
+            let body = addr + '\n\n' + c.name + '\n';
+            for (const d of defects) {
+                body += '• ' + (d.location ? d.location + ' - ' : '') + d.description + '\n';
+                if (window.CloudPhotos && window.CloudPhotos.getLinks) {
+                    try {
+                        const links = await window.CloudPhotos.getLinks(d.id);
+                        links.forEach((u, i) => { body += '    Photo ' + (i + 1) + ': ' + u + '\n'; });
+                    } catch (e) {}
+                }
+                body += '\n';
+            }
+            const subject = 'Defects - ' + addr + ' - ' + c.name;
+            window.location.href = 'mailto:' + encodeURIComponent(c.email) +
+                '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
         }
 
         function emailDefectList() {
@@ -6579,7 +6606,7 @@
                     const st = defectStatusOf(d);
                     const c = db.getContractor(d.contractorId);
                     doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-                    const descLines = doc.splitTextToSize('Item ' + itemNo + '.  ' + (d.description || '(no description)'), contentW - 26);
+                    const descLines = doc.splitTextToSize('Item ' + itemNo + '.  ' + (d.location ? d.location + ' - ' : '') + (d.description || '(no description)'), contentW - 26);
                     let imgs = [];
                     if (opts.photos && window.CloudPhotos) { try { imgs = await window.CloudPhotos.getForPdf(d.id); } catch (e) {} }
                     const photoH = imgs.length ? 32 : 0;

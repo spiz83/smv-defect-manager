@@ -799,6 +799,15 @@
     count: (legacyId) => photoCounts[legacyId] || 0,
     openGallery: (legacyId) => openGallery(legacyId),
     getForPdf: (legacyId) => photoDataUrlsForDefect(legacyId),
+    // Signed URLs (valid 7 days) for emailing photo links to a supplier
+    getLinks: async (legacyId) => {
+      const uuid = idMap.defects[legacyId];
+      if (!uuid) return [];
+      const { data: rows } = await sb.from('dm_defect_photos').select('storage_path').eq('defect_id', uuid);
+      if (!rows || !rows.length) return [];
+      const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(rows.map(r => r.storage_path), 604800);
+      return (signed || []).map(s => s.signedUrl).filter(Boolean);
+    },
     // Used by the Add Defects flow: wait until the just-created defect has been
     // synced (has a cloud id), then upload the held photo.
     uploadWhenReady: async (legacyId, file) => {
