@@ -309,7 +309,8 @@
         location: d.location || '',               // room/area of the house
         createdAt: d.created_at,                  // for report date-range filter
         lastEmailAt: d.last_email_at, lastSmsAt: d.last_sms_at,
-        lastUpdateAt: d.last_update_at, followupAt: d.followup_at
+        lastUpdateAt: d.last_update_at, followupAt: d.followup_at,
+        bookingAt: d.booking_at                    // supplier attendance/booking date
       });
     });
 
@@ -426,7 +427,8 @@
         last_email_at: d.lastEmailAt || null,
         last_sms_at: d.lastSmsAt || null,
         last_update_at: d.lastUpdateAt || null,
-        followup_at: d.followupAt || null
+        followup_at: d.followupAt || null,
+        booking_at: d.bookingAt || null
       }),
       changed: (a, b) =>
         a.description !== b.description || a.addressId !== b.addressId ||
@@ -436,7 +438,8 @@
         (a.lastEmailAt || '') !== (b.lastEmailAt || '') ||
         (a.lastSmsAt || '') !== (b.lastSmsAt || '') ||
         (a.lastUpdateAt || '') !== (b.lastUpdateAt || '') ||
-        (a.followupAt || '') !== (b.followupAt || '')
+        (a.followupAt || '') !== (b.followupAt || '') ||
+        (a.bookingAt || '') !== (b.bookingAt || '')
     });
 
     // ---- Contractor <-> Trade links ----

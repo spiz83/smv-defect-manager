@@ -1354,6 +1354,11 @@
         .contractor-name.contractor-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .supplier-email-btn { flex-shrink: 0; border: none; background: transparent; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 8px; }
         .supplier-email-btn:active { transform: scale(.9); }
+        .supplier-actions { flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
+        .supplier-book-btn { flex-shrink: 0; border: none; background: transparent; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 8px; display: inline-flex; align-items: center; gap: 3px; opacity: .55; }
+        .supplier-book-btn.has-booking { opacity: 1; }
+        .supplier-book-btn:active { transform: scale(.9); }
+        .book-lbl { font-size: 11px; font-weight: 700; color: var(--blue); }
 
         /* ============================================================
            ROW v2 — left-edge status tab, tiny bare icons, max text room
@@ -1909,6 +1914,22 @@
                 if (defect) { defect.location = location; this.save(); }
             }
 
+            // One attendance/booking date per supplier at a property: stamp every
+            // open item for that contractor+address so it syncs with the defects.
+            setContractorBooking(contractorId, addressId, date) {
+                (this.data.defects || []).forEach(d => {
+                    if (d.contractorId === contractorId && d.addressId === addressId && !d.completed) {
+                        d.bookingAt = date || null;
+                    }
+                });
+                this.save();
+            }
+            getContractorBooking(contractorId, addressId) {
+                const d = (this.data.defects || []).find(x =>
+                    x.contractorId === contractorId && x.addressId === addressId && !x.completed && x.bookingAt);
+                return d ? d.bookingAt : '';
+            }
+
             // Export functions
             exportToText(defects) {
                 let text = '';
@@ -1951,8 +1972,10 @@
                     const addressGroup = byAddress[addressKey];
                     
                     Object.keys(addressGroup.contractors).sort().forEach(contractorName => {
-                        text += `\n${contractorName}\n`;
-                        addressGroup.contractors[contractorName].forEach(defect => {
+                        const ds = addressGroup.contractors[contractorName];
+                        const bk = ds[0] ? this.getContractorBooking(ds[0].contractorId, ds[0].addressId) : '';
+                        text += `\n${contractorName}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
+                        ds.forEach(defect => {
                             text += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                         });
                     });
@@ -2329,7 +2352,10 @@
                         <div class="contractor-section">
                             <div class="contractor-name contractor-hdr">
                                 <span>${group.contractor.name}</span>
-                                <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier their items + photos">✉️</button>
+                                <span class="supplier-actions">
+                                    ${supplierBookingBtn(group.contractor.id, addressId)}
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier their items + photos">✉️</button>
+                                </span>
                             </div>
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
@@ -4352,6 +4378,45 @@
             };
         }
 
+        // Friendly DD/MM/YYYY for display + reports
+        function fmtDateNice(v) {
+            if (!v) return '';
+            const s = String(v).slice(0, 10);
+            const p = s.split('-');
+            return (p.length === 3) ? `${p[2]}/${p[1]}/${p[0]}` : s;
+        }
+
+        // ---- Supplier attendance / booking date (per contractor, per property) ----
+        function supplierBookingBtn(contractorId, addressId) {
+            const dt = db.getContractorBooking(contractorId, addressId);
+            return `<button class="supplier-book-btn ${dt ? 'has-booking' : ''}"
+                        onclick="openSupplierBooking(${contractorId}, ${addressId})"
+                        title="Set the date this supplier will attend to fix all their items">📅${dt ? `<span class="book-lbl">${fmtDateNice(dt)}</span>` : ''}</button>`;
+        }
+        function openSupplierBooking(contractorId, addressId) {
+            const c = db.getContractor(contractorId);
+            const cur = db.getContractorBooking(contractorId, addressId);
+            const name = (c ? c.name : 'this supplier').replace(/</g, '&lt;');
+            impOverlay(`
+                <div id="imp-head"><strong>📅 Booking date</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <div style="font-size:14px;color:var(--text-secondary);margin-bottom:14px">The date <strong>${name}</strong> is booked to attend and complete all of their items at this property.</div>
+                    <div class="imp-field"><label>Attendance date</label>
+                        <input type="date" id="bk-date" value="${cur ? String(cur).slice(0,10) : ''}"></div>
+                    <button class="imp-btn" id="bk-save">Save</button>
+                    <button class="imp-btn secondary" id="bk-clear" style="margin-top:8px">Clear date</button>
+                </div>`);
+            document.getElementById('bk-save').onclick = () => {
+                const v = document.getElementById('bk-date').value || null;
+                db.setContractorBooking(contractorId, addressId, v);
+                impClose(); render(); showToast(v ? ('Booking date set: ' + fmtDateNice(v)) : 'Booking date cleared');
+            };
+            document.getElementById('bk-clear').onclick = () => {
+                db.setContractorBooking(contractorId, addressId, null);
+                impClose(); render(); showToast('Booking date cleared');
+            };
+        }
+
         function toggleShowCompleted() {
             state.showCompleted = !state.showCompleted;
             render();
@@ -4361,15 +4426,18 @@
         // Unified function to generate defect text for clipboard/export/email
         function generateDefectText() {
             let textContent = '';
-            
+            const bookingDates = new Set();   // attendance dates seen, for the closing line
+
             if (state.currentView === 'view-defects-contractor' && state.filters.contractorId) {
                 // Contractor view - group by address
                 const contractor = db.getContractor(state.filters.contractorId);
                 const defectGroups = db.getDefectsByAddress({ contractorId: state.filters.contractorId });
-                
+
                 defectGroups.forEach(group => {
+                    const bk = group.address ? db.getContractorBooking(contractor.id, group.address.id) : '';
+                    if (bk) bookingDates.add(fmtDateNice(bk));
                     textContent += `${formatAddress(group.address)}\n`;
-                    textContent += `\n${contractor.name}\n`;
+                    textContent += `\n${contractor.name}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
                     group.defects.forEach(defect => {
                         textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                     });
@@ -4395,8 +4463,11 @@
                 textContent += `${formatAddress(address)}\n`;
                 
                 Object.keys(byContractor).sort().forEach(contractorName => {
-                    textContent += `\n${contractorName}\n`;
-                    byContractor[contractorName].forEach(defect => {
+                    const ds = byContractor[contractorName];
+                    const bk = ds[0] ? db.getContractorBooking(ds[0].contractorId, ds[0].addressId) : '';
+                    if (bk) bookingDates.add(fmtDateNice(bk));
+                    textContent += `\n${contractorName}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
+                    ds.forEach(defect => {
                         textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                     });
                 });
@@ -4427,8 +4498,11 @@
                 Object.keys(byAddress).sort().forEach(addressKey => {
                     textContent += `${addressKey}\n`;
                     Object.keys(byAddress[addressKey].contractors).sort().forEach(contractorName => {
-                        textContent += `\n${contractorName}\n`;
-                        byAddress[addressKey].contractors[contractorName].forEach(defect => {
+                        const ds = byAddress[addressKey].contractors[contractorName];
+                        const bk = ds[0] ? db.getContractorBooking(ds[0].contractorId, ds[0].addressId) : '';
+                        if (bk) bookingDates.add(fmtDateNice(bk));
+                        textContent += `\n${contractorName}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
+                        ds.forEach(defect => {
                             textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                         });
                     });
@@ -4458,8 +4532,11 @@
                 Object.keys(byAddress).sort().forEach(addressKey => {
                     textContent += `${addressKey}\n`;
                     Object.keys(byAddress[addressKey].contractors).sort().forEach(contractorName => {
-                        textContent += `\n${contractorName}\n`;
-                        byAddress[addressKey].contractors[contractorName].forEach(defect => {
+                        const ds = byAddress[addressKey].contractors[contractorName];
+                        const bk = ds[0] ? db.getContractorBooking(ds[0].contractorId, ds[0].addressId) : '';
+                        if (bk) bookingDates.add(fmtDateNice(bk));
+                        textContent += `\n${contractorName}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
+                        ds.forEach(defect => {
                             textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
                         });
                     });
@@ -4470,7 +4547,14 @@
                 // All defects view or fallback
                 textContent = db.exportToText();
             }
-            
+
+            // Closing prompt for the supplier(s) to confirm their attendance date.
+            if (bookingDates.size === 1) {
+                textContent += `\nPlease confirm booking date of ${[...bookingDates][0]}.\n`;
+            } else if (bookingDates.size > 1) {
+                textContent += `\nPlease confirm the booking dates noted above.\n`;
+            }
+
             return textContent;
         }
 
@@ -4550,8 +4634,18 @@
             const defects = (db.data.defects || []).filter(d =>
                 d.addressId === addressId && d.contractorId === contractorId && !d.completed);
             if (!defects.length) { showToast('No open items for this supplier', true); return; }
-            if (!c || !c.email) { showToast('No email on file for ' + (c ? c.name : 'this supplier'), true); return; }
+            if (!c) { showToast('Supplier not found', true); return; }
+            // No email on file? Ask for it, validate, save so we don't ask again.
+            if (!c.email) {
+                const entered = prompt('No email on file for ' + c.name + '.\n\nEnter their email address — it will be saved for next time:', '');
+                if (entered === null) return;                       // cancelled
+                const email = entered.trim();
+                if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showToast('That doesn’t look like a valid email', true); return; }
+                c.email = email; db.save();                          // persists locally + syncs to cloud
+                showToast('Email saved for ' + c.name);
+            }
             showToast('Preparing email…');
+            const booking = db.getContractorBooking(contractorId, addressId);
             let body = addr + '\n\n' + c.name + '\n';
             for (const d of defects) {
                 body += '• ' + (d.location ? d.location + ' - ' : '') + d.description + '\n';
@@ -4563,6 +4657,7 @@
                 }
                 body += '\n';
             }
+            if (booking) body += 'Please confirm booking date of ' + fmtDateNice(booking) + '.\n';
             const subject = 'Defects - ' + addr + ' - ' + c.name;
             window.location.href = 'mailto:' + encodeURIComponent(c.email) +
                 '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
@@ -6675,6 +6770,7 @@
             const ensureSpace = (h) => { if (y + h > pageH - M) { doc.addPage(); y = M; } };
 
             let itemNo = 0;
+            const bookingDates = new Set();
             for (const gk of Object.keys(groups).sort()) {
                 ensureSpace(12);
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(20, 24, 40);
@@ -6702,7 +6798,9 @@
                     y += Math.max(5, descLines.length * 4.7);
 
                     doc.setFontSize(9); doc.setTextColor(120, 128, 140);
-                    const meta = [c ? ('Contractor: ' + c.name) : 'Unassigned', (c && c.email) ? c.email : ''].filter(Boolean).join('    ');
+                    if (d.bookingAt) bookingDates.add(fmtDateNice(d.bookingAt));
+                    const meta = [c ? ('Contractor: ' + c.name) : 'Unassigned', (c && c.email) ? c.email : '',
+                                  d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : ''].filter(Boolean).join('    ');
                     doc.text(meta, descX, y); y += 4;
 
                     if (imgs.length) {
@@ -6718,6 +6816,14 @@
                     doc.setDrawColor(238, 240, 244); doc.line(descX, y - 2, pageW - M, y - 2);
                 }
                 y += 4;
+            }
+            if (bookingDates.size) {
+                ensureSpace(12);
+                const note = bookingDates.size === 1
+                    ? 'Please confirm booking date of ' + [...bookingDates][0] + '.'
+                    : 'Please confirm the booking dates noted above.';
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(20, 24, 40);
+                doc.text(note, M, y + 2);
             }
             doc.save('Defect-Report-' + dateStr + '.pdf');
         }
