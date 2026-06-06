@@ -505,6 +505,10 @@
             margin-bottom: 20px;
             text-align: center;
         }
+        /* Modal "menus" get a top-left back arrow like the main pages */
+        .modal-header.has-back { display: flex !important; align-items: center; gap: 8px; text-align: left; }
+        .modal-header.has-back > span { flex: 1; }
+        .modal-back { flex: 0 0 auto; background: none; border: none; padding: 0; cursor: pointer; }
 
         .modal-actions {
             display: flex;
@@ -2042,7 +2046,24 @@
         }
 
         function openModal(modalId) {
-            document.getElementById(modalId).classList.add('active');
+            const m = document.getElementById(modalId);
+            if (!m) return;
+            ensureModalBack(m, modalId);
+            m.classList.add('active');
+        }
+
+        // Give every modal "menu" a top-left back arrow (‹) matching the pages,
+        // so it's not just the × close in the corner. Injected once per modal.
+        function ensureModalBack(modalEl, modalId) {
+            const header = modalEl.querySelector('.modal-header');
+            if (!header || header.querySelector('.modal-back')) return;
+            header.classList.add('has-back');
+            const back = document.createElement('button');
+            back.type = 'button';
+            back.className = 'modal-back back-link';
+            back.setAttribute('aria-label', 'Back');
+            back.onclick = () => closeModal(modalId);
+            header.insertBefore(back, header.firstChild);
         }
 
         function closeModal(modalId) {
