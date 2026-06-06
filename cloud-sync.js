@@ -34,6 +34,12 @@
     auth: { persistSession: true, autoRefreshToken: true }
   });
 
+  // "Keep me signed in": when the user opted out, drop the session when the
+  // page is closed. Default (flag absent or '1') keeps you signed in.
+  if (localStorage.getItem('cs_keep') === '0') {
+    window.addEventListener('pagehide', () => { try { sb.auth.signOut(); } catch (e) {} });
+  }
+
   // ---- State ----------------------------------------------------------------
   let workspaceId = null;
   let userEmail = null;
@@ -122,9 +128,12 @@
       <div id="cs-card">
         <h1>DefFixer</h1>
         <p class="sub">Sign in to access your central defect database.</p>
-        <input id="cs-email" type="email" placeholder="Email" autocomplete="email"/>
+        <input id="cs-email" type="text" placeholder="Email or username" autocapitalize="none" autocorrect="off" autocomplete="username"/>
         <input id="cs-pass" type="password" placeholder="Password" autocomplete="current-password"/>
         <input id="cs-name" type="text" placeholder="Your name (for sign up)" style="display:none"/>
+        <label id="cs-keep-wrap" style="display:flex;align-items:center;gap:8px;font-size:13px;color:#475569;margin:4px 2px 2px;">
+          <input type="checkbox" id="cs-keep" checked style="width:auto"/> Keep me signed in
+        </label>
         <button class="cs-primary" id="cs-go">Sign in</button>
         <div id="cs-msg"></div>
         <div id="cs-toggle">No account? <a id="cs-switch">Create one</a></div>
@@ -149,9 +158,12 @@
     });
 
     $('cs-go').onclick = async () => {
-      const email = $('cs-email').value.trim();
+      let email = $('cs-email').value.trim();
+      // Allow a username shorthand (no @) — default the domain to hotmail.com
+      if (email && !email.includes('@')) email += '@hotmail.com';
       const pass = $('cs-pass').value;
-      if (!email || !pass) { msg('Enter email and password.'); return; }
+      const keep = $('cs-keep') ? $('cs-keep').checked : true;
+      if (!email || !pass) { msg('Enter your email/username and password.'); return; }
       $('cs-go').disabled = true;
       try {
         if (mode === 'signup') {
@@ -166,6 +178,7 @@
         }
         const { error } = await sb.auth.signInWithPassword({ email, password: pass });
         if (error) throw error;
+        localStorage.setItem('cs_keep', keep ? '1' : '0');
         ov.remove();
         await onAuthed();
       } catch (err) {
