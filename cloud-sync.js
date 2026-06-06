@@ -306,6 +306,7 @@
         status: d.status,                       // open | pending | completed
         completed: d.status === 'completed',     // keep current UI working
         unassigned: !!d.unassigned,
+        location: d.location || '',               // room/area of the house
         createdAt: d.created_at,                  // for report date-range filter
         lastEmailAt: d.last_email_at, lastSmsAt: d.last_sms_at,
         lastUpdateAt: d.last_update_at, followupAt: d.followup_at
@@ -421,6 +422,7 @@
         description: d.description,
         status: d.status || (d.completed ? 'completed' : 'open'),
         unassigned: !!d.unassigned,
+        location: d.location || null,
         last_email_at: d.lastEmailAt || null,
         last_sms_at: d.lastSmsAt || null,
         last_update_at: d.lastUpdateAt || null,
@@ -430,6 +432,7 @@
         a.description !== b.description || a.addressId !== b.addressId ||
         a.contractorId !== b.contractorId || a.completed !== b.completed ||
         (a.status || '') !== (b.status || '') ||
+        (a.location || '') !== (b.location || '') ||
         (a.lastEmailAt || '') !== (b.lastEmailAt || '') ||
         (a.lastSmsAt || '') !== (b.lastSmsAt || '') ||
         (a.lastUpdateAt || '') !== (b.lastUpdateAt || '') ||

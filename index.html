@@ -1321,6 +1321,30 @@
             font-size: 11px !important; text-transform: uppercase; letter-spacing: .04em;
             padding: 2px 2px !important; max-width: 150px;
         }
+
+        /* ============================================================
+           COMPACT DEFECT ROW — small status pill, location dropdown,
+           and maximum room for the description.
+           ============================================================ */
+        .defect-actions { gap: 5px !important; align-items: center; flex-shrink: 0; }
+        .defect-text { flex: 1 1 auto !important; min-width: 0; }
+        /* Status pill ~1/4 of its old size */
+        .defect-status { padding: 3px 8px !important; font-size: 10px !important; }
+        /* Location dropdown pill */
+        .defect-loc {
+            -webkit-appearance: none; appearance: none;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 3px 8px;
+            font-size: 10px; font-weight: 600;
+            max-width: 104px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            cursor: pointer; flex-shrink: 0;
+        }
+        .defect-loc.has-loc { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
+        .comms-btn, .photo-btn { padding: 4px 6px !important; font-size: 13px !important; }
+        body.design-f1 .defect-loc { font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .04em; border-radius: 3px; }
     </style>
 </head>
 <body>
@@ -1833,6 +1857,11 @@
                 }
             }
 
+            setDefectLocation(id, location) {
+                const defect = this.data.defects.find(d => d.id === id);
+                if (defect) { defect.location = location; this.save(); }
+            }
+
             // Export functions
             exportToText(defects) {
                 let text = '';
@@ -2137,7 +2166,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     <span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                    <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2203,7 +2232,7 @@
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2261,7 +2290,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     <span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                    <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2500,7 +2529,7 @@
                                     ${byAddressThenContractor[addressKey].contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2606,7 +2635,7 @@
                                     ${addressGroup.contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
+                                            <span class="defect-actions">${locationControl(defect)}${commsIcon(defect)}${photoIcon(defect)}${statusControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -4149,6 +4178,23 @@
                         onchange="setDefectStatus(${defect.id}, this.value)">
                         ${opt('open', 'Open')}${opt('pending', 'Pending')}${opt('completed', 'Completed')}
                     </select>`;
+        }
+
+        // Location / area of the house, per defect
+        const DEFECT_LOCATIONS = ['Kitchen','Living','Lounge','Dining','Family','Meals','Master Bedroom','Bed 2','Bed 3','Bed 4','Ensuite','Bathroom','Powder Room','WC / Toilet','Laundry','WIR / Robe','Hallway','Entry','Stairs','Study','Garage','Alfresco','Porch','Balcony','Facade / External','Roof','Driveway','Backyard','Other'];
+        function locationControl(defect) {
+            const cur = defect.location || '';
+            const opts = ['<option value="">📍 Loc</option>']
+                .concat(DEFECT_LOCATIONS.map(l => `<option value="${l}" ${cur === l ? 'selected' : ''}>${l}</option>`))
+                .join('');
+            return `<select class="defect-loc ${cur ? 'has-loc' : ''}"
+                        onclick="event.stopPropagation()"
+                        onchange="setDefectLocation(${defect.id}, this.value)">${opts}</select>`;
+        }
+        function setDefectLocation(defectId, loc) {
+            db.setDefectLocation(defectId, loc);
+            render();
+            if (loc) showToast('Location: ' + loc);
         }
 
         function setDefectStatus(defectId, status) {
