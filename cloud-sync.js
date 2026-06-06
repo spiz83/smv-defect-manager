@@ -741,6 +741,34 @@
     openGallery: (legacyId) => openGallery(legacyId)
   };
 
+  // ----- Imported report history (for View Recent / Delete Report) -----
+  function legacyForAddressUuid(uuid) {
+    for (const lid in idMap.addresses) if (idMap.addresses[lid] === uuid) return Number(lid);
+    return null;
+  }
+  window.CloudReports = {
+    add: async ({ name, addressLegacyId, defectCount }) => {
+      const address_id = (addressLegacyId != null) ? (idMap.addresses[addressLegacyId] || null) : null;
+      const { data, error } = await sb.from('dm_reports')
+        .insert({ workspace_id: workspaceId, name: name || 'Report', address_id, defect_count: defectCount || 0 })
+        .select('id, name, defect_count, created_at, address_id').single();
+      if (error) { console.error('[CloudReports] add', error); return null; }
+      return data;
+    },
+    list: async () => {
+      const { data, error } = await sb.from('dm_reports')
+        .select('id, name, defect_count, created_at, address_id')
+        .eq('workspace_id', workspaceId).order('created_at', { ascending: false });
+      if (error) { console.error('[CloudReports] list', error); return []; }
+      return (data || []).map(r => ({ ...r, addressLegacyId: legacyForAddressUuid(r.address_id) }));
+    },
+    remove: async (id) => {
+      const { error } = await sb.from('dm_reports').delete().eq('id', id);
+      if (error) { console.error('[CloudReports] remove', error); return false; }
+      return true;
+    }
+  };
+
   // ===========================================================================
   //  Boot
   // ===========================================================================

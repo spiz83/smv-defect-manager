@@ -1497,6 +1497,13 @@
                         <button class="search-btn" onclick="searchMultipleTrades()">🔍</button>
                     </div>
 
+                    <div class="section-title">Reports</div>
+                    <div class="reports-actions">
+                        <a href="#" class="report-link" onclick="event.preventDefault(); openRecentReports()"><span>🗂️</span> View Recent Reports</a>
+                        <a href="#" class="report-link" onclick="event.preventDefault(); openReportImport()"><span>📄</span> Add Report</a>
+                        <a href="#" class="report-link" onclick="event.preventDefault(); openDeleteReports()"><span>🗑️</span> Delete Report</a>
+                    </div>
+
                     <div class="manage-row">
                         <a href="#" class="manage-link" onclick="event.preventDefault(); showManageScreen()">
                             <span>⚙️</span>
@@ -5381,6 +5388,291 @@
         function loadDesign() {
             applyDesign(currentDesign());
         }
+
+        /* ================================================================
+           REPORT IMPORT (smart extraction) — upload PDF/text, auto-split
+           into defect items, review & assign each, save to the database.
+           ================================================================ */
+        function impInjectStyles() {
+            if (document.getElementById('imp-styles')) return;
+            const s = document.createElement('style');
+            s.id = 'imp-styles';
+            s.textContent = `
+              #imp-ov{position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.55);
+                display:flex;align-items:center;justify-content:center;padding:14px;}
+              #imp-card{background:var(--bg-primary,#fff);color:var(--text-primary,#111);
+                width:min(96vw,560px);max-height:90vh;border-radius:18px;overflow:hidden;
+                display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.45);}
+              #imp-head{display:flex;align-items:center;justify-content:space-between;
+                padding:16px 18px;border-bottom:1px solid var(--border-color,#eee);}
+              #imp-head strong{font-size:18px;}
+              #imp-head button{background:none;border:none;font-size:22px;cursor:pointer;color:inherit;}
+              #imp-body{overflow:auto;padding:18px;}
+              .imp-drop{border:2px dashed var(--border-color,#ccc);border-radius:14px;
+                padding:26px;text-align:center;cursor:pointer;}
+              .imp-drop:hover{border-color:var(--blue,#2563eb);}
+              .imp-or{text-align:center;color:var(--text-secondary,#888);margin:14px 0 6px;font-size:13px;}
+              #imp-paste{width:100%;min-height:110px;box-sizing:border-box;padding:12px;
+                border:1px solid var(--border-color,#ccc);border-radius:12px;font:inherit;}
+              .imp-btn{display:block;width:100%;box-sizing:border-box;margin-top:14px;padding:13px;
+                border:0;border-radius:12px;background:var(--blue,#2563eb);color:#fff;
+                font-size:16px;font-weight:700;cursor:pointer;}
+              .imp-btn.secondary{background:var(--bg-secondary,#eee);color:var(--text-primary,#111);}
+              .imp-progress{font-size:13px;color:var(--text-secondary,#777);margin-bottom:8px;}
+              .imp-bar{height:6px;border-radius:6px;background:var(--bg-secondary,#eee);overflow:hidden;margin-bottom:16px;}
+              .imp-bar > i{display:block;height:100%;background:var(--blue,#2563eb);transition:width .2s;}
+              .imp-field{margin-bottom:12px;}
+              .imp-field label{display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:var(--text-secondary,#666);}
+              .imp-field textarea,.imp-field select{width:100%;box-sizing:border-box;padding:11px;
+                border:1px solid var(--border-color,#ccc);border-radius:12px;font:inherit;background:var(--input-bg,#fff);color:var(--text-primary,#111);}
+              .imp-field textarea{min-height:80px;}
+              .imp-row{display:flex;gap:10px;}
+              .imp-row > *{flex:1;}
+              .imp-report{display:flex;align-items:center;justify-content:space-between;gap:10px;
+                padding:12px;border:1px solid var(--border-color,#eee);border-radius:12px;margin-bottom:8px;}
+              .imp-report small{color:var(--text-secondary,#888);}
+              .imp-del{background:#FF3B30;color:#fff;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;}
+            `;
+            document.head.appendChild(s);
+        }
+
+        function impClose() { const o = document.getElementById('imp-ov'); if (o) o.remove(); }
+        function impOverlay(inner) {
+            impInjectStyles(); impClose();
+            const ov = document.createElement('div');
+            ov.id = 'imp-ov';
+            ov.innerHTML = `<div id="imp-card">${inner}</div>`;
+            document.body.appendChild(ov);
+            ov.addEventListener('click', (e) => { if (e.target === ov) impClose(); });
+            const x = document.getElementById('imp-close'); if (x) x.onclick = impClose;
+            return ov;
+        }
+
+        // ---- Step 1: choose a file or paste text ----
+        function openReportImport() {
+            impOverlay(`
+                <div id="imp-head"><strong>📄 Add Report</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <div class="imp-drop" id="imp-drop">
+                        <div style="font-size:40px">📎</div>
+                        <div style="font-weight:600;margin-top:6px">Tap to choose a PDF or text file</div>
+                        <div style="font-size:13px;color:var(--text-secondary,#888);margin-top:4px">Your inspection report</div>
+                        <input type="file" id="imp-file" accept=".pdf,.txt,text/plain,application/pdf" style="display:none">
+                    </div>
+                    <div class="imp-or">— or paste the report text —</div>
+                    <textarea id="imp-paste" placeholder="Paste defect text here..."></textarea>
+                    <button class="imp-btn" id="imp-extract">Extract defects →</button>
+                </div>`);
+            const fileInput = document.getElementById('imp-file');
+            document.getElementById('imp-drop').onclick = () => fileInput.click();
+            fileInput.onchange = async (e) => {
+                const f = e.target.files && e.target.files[0];
+                if (!f) return;
+                impSetBusy('Reading ' + f.name + '…');
+                try {
+                    const text = await extractReportText(f);
+                    const items = parseReportDefects(text);
+                    if (!items.length) { impOverlayMessage('No defects found in that file. Try pasting the text instead.'); return; }
+                    startReportReview(items, f.name);
+                } catch (err) {
+                    console.error(err);
+                    impOverlayMessage('Could not read that file: ' + (err.message || err));
+                }
+            };
+            document.getElementById('imp-extract').onclick = () => {
+                const text = document.getElementById('imp-paste').value;
+                const items = parseReportDefects(text);
+                if (!items.length) { showToast('No defect lines detected', true); return; }
+                startReportReview(items, 'Pasted report');
+            };
+        }
+
+        function impSetBusy(msg) {
+            const body = document.getElementById('imp-body');
+            if (body) body.innerHTML = `<div style="padding:30px;text-align:center;color:var(--text-secondary,#888)">${msg}</div>`;
+        }
+        function impOverlayMessage(msg) {
+            const body = document.getElementById('imp-body');
+            if (body) body.innerHTML = `<div style="padding:24px;text-align:center">${msg}</div>
+                <button class="imp-btn secondary" onclick="openReportImport()">Try again</button>`;
+        }
+
+        // ---- Text extraction ----
+        let _pdfjsReady = null;
+        function ensurePdfJs() {
+            if (window.pdfjsLib) return Promise.resolve();
+            if (_pdfjsReady) return _pdfjsReady;
+            _pdfjsReady = new Promise((res, rej) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+                s.onload = () => {
+                    try { window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+                        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
+                    res();
+                };
+                s.onerror = () => rej(new Error('Could not load the PDF reader'));
+                document.head.appendChild(s);
+            });
+            return _pdfjsReady;
+        }
+        async function extractReportText(file) {
+            const name = (file.name || '').toLowerCase();
+            if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+                await ensurePdfJs();
+                const buf = await file.arrayBuffer();
+                const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+                let text = '';
+                for (let p = 1; p <= pdf.numPages; p++) {
+                    const page = await pdf.getPage(p);
+                    const content = await page.getTextContent();
+                    let lastY = null, line = '', out = [];
+                    for (const it of content.items) {
+                        const y = it.transform[5];
+                        if (lastY !== null && Math.abs(y - lastY) > 3) { out.push(line); line = ''; }
+                        line += (line && !line.endsWith(' ') ? ' ' : '') + it.str;
+                        lastY = y;
+                    }
+                    if (line) out.push(line);
+                    text += out.join('\n') + '\n';
+                }
+                return text;
+            }
+            return await file.text();
+        }
+
+        // ---- Heuristic parser: text -> defect line items ----
+        function parseReportDefects(text) {
+            if (!text) return [];
+            const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+            const looksLikeDefect = (s) => s && s.length >= 4 && s.length <= 300
+                && /[a-zA-Z]/.test(s) && !/^\d+$/.test(s) && !/^page\s+\d+/i.test(s);
+            const bulletRe = /^\s*(?:[-*•·▪◦‣]|\(?\d+[\.\):]|\(?[a-zA-Z][\.\)])\s+/;
+            const lines = text.replace(/\r/g, '').split('\n');
+            const items = [];
+            let buf = '';
+            const flush = () => { const s = clean(buf); if (looksLikeDefect(s)) items.push(s); buf = ''; };
+            for (const raw of lines) {
+                const line = raw.trim();
+                if (!line) { flush(); continue; }
+                if (bulletRe.test(raw)) { flush(); buf = line.replace(bulletRe, ''); }
+                else if (buf) { buf += ' ' + line; }
+                else { buf = line; }
+            }
+            flush();
+            // Fallback: if almost nothing detected, split into sentences
+            if (items.length < 2) {
+                const sentences = clean(text).split(/(?<=[.;])\s+/).map(clean).filter(looksLikeDefect);
+                if (sentences.length > items.length) return dedupe(sentences);
+            }
+            return dedupe(items);
+            function dedupe(arr) { const seen = new Set(); return arr.filter(x => { const k = x.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }); }
+        }
+
+        // ---- Step 2: review & assign each item ----
+        let _review = null;
+        function startReportReview(items, reportName) {
+            _review = { items, index: 0, saved: 0, reportName, lastAddressId: null };
+            renderReviewItem();
+        }
+        function renderReviewItem() {
+            const r = _review;
+            if (r.index >= r.items.length) return finishReview();
+            const addrOpts = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
+                .map(a => `<option value="${a.id}" ${a.id === r.lastAddressId ? 'selected' : ''}>${formatAddress(a)}</option>`).join('');
+            const contrOpts = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => `<option value="${c.id}">${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</option>`).join('');
+            const pct = Math.round((r.index / r.items.length) * 100);
+            impOverlay(`
+                <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <div class="imp-progress">${r.saved} saved · ${r.items.length - r.index} to review</div>
+                    <div class="imp-bar"><i style="width:${pct}%"></i></div>
+                    <div class="imp-field">
+                        <label>Defect description</label>
+                        <textarea id="rv-desc">${(r.items[r.index] || '').replace(/</g, '&lt;')}</textarea>
+                    </div>
+                    <div class="imp-field">
+                        <label>Address (property)</label>
+                        <select id="rv-address"><option value="">— Select address —</option>${addrOpts}</select>
+                    </div>
+                    <div class="imp-field">
+                        <label>Assign to contractor / trade</label>
+                        <select id="rv-contractor"><option value="">— Not assigned yet —</option>${contrOpts}</select>
+                    </div>
+                    <div class="imp-row">
+                        <button class="imp-btn secondary" id="rv-skip">Skip</button>
+                        <button class="imp-btn" id="rv-save">Save &amp; next →</button>
+                    </div>
+                    <button class="imp-btn secondary" id="rv-finish" style="margin-top:10px">Finish &amp; close</button>
+                </div>`);
+            document.getElementById('rv-skip').onclick = () => { r.index++; renderReviewItem(); };
+            document.getElementById('rv-finish').onclick = finishReview;
+            document.getElementById('rv-save').onclick = () => {
+                const desc = document.getElementById('rv-desc').value.trim();
+                const addressId = parseInt(document.getElementById('rv-address').value) || null;
+                const contractorId = parseInt(document.getElementById('rv-contractor').value) || null;
+                if (!desc) { showToast('Enter a description', true); return; }
+                if (!addressId) { showToast('Pick an address', true); return; }
+                if (!contractorId) { showToast('Pick a contractor/trade to assign (or Skip)', true); return; }
+                db.addDefect({ addressId, contractorId, description: desc, status: 'open', unassigned: false });
+                r.lastAddressId = addressId;
+                r.saved++; r.index++;
+                renderReviewItem();
+            };
+        }
+        async function finishReview() {
+            const r = _review || { saved: 0, reportName: 'Report', lastAddressId: null };
+            impClose();
+            if (r.saved > 0 && window.CloudReports) {
+                try { await window.CloudReports.add({ name: r.reportName, addressLegacyId: r.lastAddressId, defectCount: r.saved }); } catch (e) {}
+            }
+            showToast(r.saved > 0 ? `Imported ${r.saved} defect(s) from the report` : 'No defects saved');
+            render();
+            _review = null;
+        }
+
+        // ---- Recent reports / delete ----
+        async function openRecentReports() { await renderReportsList('🗂️ Recent Reports'); }
+        async function openDeleteReports() { await renderReportsList('🗑️ Delete Reports'); }
+        async function renderReportsList(title) {
+            impOverlay(`<div id="imp-head"><strong>${title}</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body"><div style="padding:20px;text-align:center;color:#888">Loading…</div></div>`);
+            if (!window.CloudReports) {
+                document.getElementById('imp-body').innerHTML = '<div style="padding:20px;text-align:center">Log in to view reports.</div>';
+                return;
+            }
+            const reports = await window.CloudReports.list();
+            const body = document.getElementById('imp-body');
+            if (!reports.length) { body.innerHTML = '<div style="padding:24px;text-align:center;color:#888">No reports imported yet.</div>'; return; }
+            body.innerHTML = reports.map(rp => {
+                const addr = rp.addressLegacyId != null ? formatAddress(db.getAddress(rp.addressLegacyId)) : '';
+                const date = (rp.created_at || '').slice(0, 10);
+                return `<div class="imp-report">
+                    <div><div style="font-weight:600">${(rp.name || 'Report').replace(/</g,'&lt;')}</div>
+                    <small>${date} · ${rp.defect_count} defect(s)${addr ? ' · ' + addr : ''}</small></div>
+                    <button class="imp-del" data-id="${rp.id}">Delete</button>
+                </div>`;
+            }).join('');
+            body.querySelectorAll('.imp-del').forEach(btn => {
+                btn.onclick = async () => {
+                    if (!confirm('Delete this report from history? (Your defects are kept.)')) return;
+                    await window.CloudReports.remove(btn.getAttribute('data-id'));
+                    renderReportsList(title);
+                };
+            });
+        }
+
+        /* Reports section link styling */
+        (function(){
+            const s = document.createElement('style');
+            s.textContent = `.reports-actions{display:flex;flex-direction:column;gap:2px;margin:6px 0 18px;}
+              .report-link{display:flex;align-items:center;gap:10px;padding:12px 6px;font-size:17px;font-weight:600;
+                color:var(--text-primary);text-decoration:none;border-bottom:1px solid var(--border-color);}
+              .report-link span{font-size:18px;}
+              body.design-modern .report-link{border:1px solid var(--border-color);border-radius:12px;margin-bottom:6px;
+                padding:14px;background:var(--card-bg);box-shadow:var(--shadow-sm);}`;
+            document.head.appendChild(s);
+        })();
 
         // Initialize app
         loadTheme();
