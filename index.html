@@ -15,6 +15,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="DefFixer">
     <meta name="mobile-web-app-capable" content="yes">
+
+    <!-- Premium font for Modern design -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-primary: #ffffff;
@@ -770,6 +775,83 @@
         @media (prefers-reduced-motion: reduce) {
             body.design-modern * { transition: none !important; }
         }
+
+        /* ============================================================
+           PREMIUM LAYOUT — centred, phone-width column (Instagram-like),
+           no horizontal drift, refined surfaces. Modern design only.
+           ============================================================ */
+        :root { --page-bg: #eceff4; }
+        body.dark-mode { --page-bg: #000000; }
+
+        html, body { overflow-x: hidden; }
+
+        body.design-modern {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--page-bg);
+        }
+        /* The app lives in a fixed-width centred column */
+        body.design-modern #app {
+            max-width: 460px;
+            margin: 0 auto;
+            min-height: 100vh;
+            background: var(--bg-primary);
+            box-shadow: 0 0 0 1px rgba(2,6,23,.05), 0 24px 60px rgba(2,6,23,.18);
+        }
+        /* Keep the sync bar aligned to the column */
+        body.design-modern #cs-statusbar {
+            left: 50%; right: auto; transform: translateX(-50%);
+            width: 100%; max-width: 460px;
+            border-radius: 0 0 14px 14px;
+        }
+
+        /* Refined home surfaces */
+        body.design-modern .home-container { padding: 18px 16px 30px; }
+        body.design-modern .section-title {
+            font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+            color: var(--text-secondary); font-weight: 800; margin: 22px 0 10px;
+        }
+        body.design-modern .section-title::before { height: .9em; }
+
+        /* Search rows: soft input + accent magnifier */
+        body.design-modern .search-row { margin-bottom: 12px; }
+        body.design-modern .search-input-wrapper input,
+        body.design-modern .search-row input,
+        body.design-modern .multi-select-wrapper input {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 15px;
+        }
+        body.design-modern .search-btn {
+            background: var(--blue); color: #fff; border: none;
+            border-radius: 12px; width: 44px; height: 44px;
+            box-shadow: 0 6px 14px color-mix(in srgb, var(--blue) 32%, transparent);
+        }
+        body.design-modern .search-btn:active { transform: scale(.94); }
+
+        /* Manage row: tidy pills */
+        body.design-modern .manage-row {
+            margin-top: 22px; padding-top: 18px;
+            border-top: 1px solid var(--border-color);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        body.design-modern .manage-link, body.design-modern .view-all-link {
+            font-weight: 700; color: var(--blue); text-decoration: none;
+        }
+
+        /* Defect rows: cleaner cards */
+        body.design-modern .defect-item {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            padding: 12px 14px;
+            margin-bottom: 8px;
+        }
+        body.design-modern .defect-text { font-weight: 500; }
+
+        /* Toolbars / headers spacing */
+        body.design-modern .defects-header { padding: 16px; }
+        body.design-modern .lot-title { font-weight: 800; }
     </style>
 </head>
 <body>
