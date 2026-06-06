@@ -1164,10 +1164,12 @@
         .home-2col .search-input-wrapper input { padding: 11px 9px !important; min-width: 0 !important; }
 
         /* Multiple Contractors / Trades — let inputs shrink, compact button */
-        .multi-select-wrapper { gap: 6px !important; flex-wrap: nowrap; }
+        .multi-select-wrapper { gap: 6px !important; flex-wrap: nowrap; width: 100%; max-width: 100%; }
         .multi-select-wrapper input,
         .multi-select-wrapper .autocomplete-container { min-width: 0 !important; }
-        .multi-select-wrapper input { padding: 11px 8px !important; }
+        /* Inputs must fill their flex:1 container, not their intrinsic ~170px
+           width — otherwise 3 inputs push the search button off the screen. */
+        .multi-select-wrapper input { padding: 11px 8px !important; width: 100% !important; }
         body.design-modern .multi-select-wrapper .search-btn,
         .multi-select-wrapper .search-btn {
             width: 30px !important;
