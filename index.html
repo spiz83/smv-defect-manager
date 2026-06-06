@@ -150,7 +150,7 @@
         /* View Defects / Add Defects shown side-by-side */
         .home-2col {
             display: flex;
-            gap: 12px;
+            gap: 14px;
             align-items: flex-start;
         }
         .home-2col .home-col {
@@ -159,45 +159,36 @@
         }
         .home-2col .section-title {
             margin-top: 0;
+            margin-bottom: 12px;
         }
-        /* Each field: a rounded box with an inline label, magnifier alongside */
+        /* Field name is shown as the input placeholder, not a separate label */
+        .home-2col .search-label { display: none; }
         .home-2col .search-row {
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
             margin-bottom: 10px;
-        }
-        .home-2col .search-label {
-            min-width: 0;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            white-space: nowrap;
-            flex-shrink: 0;
         }
         .home-2col .search-input-wrapper {
             flex: 1;
             min-width: 0;
-            gap: 0;
+            gap: 6px;
             display: flex;
             align-items: center;
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            background: var(--input-bg);
-            padding-left: 8px;
         }
         .home-2col .search-input-wrapper input {
-            border: none;
-            background: transparent;
-            padding: 9px 2px;
-            font-size: 14px;
+            flex: 1;
+            width: 100%;
             min-width: 0;
+            padding: 11px 12px;
+            font-size: 14px;
         }
         .home-2col .search-btn {
-            width: 26px;
-            height: 30px;
-            font-size: 16px;
+            width: 34px;
+            height: 38px;
+            font-size: 18px;
             flex-shrink: 0;
+            padding: 0;
         }
 
         .section-title {
@@ -1571,7 +1562,7 @@
                     <div class="search-row">
                         <div class="search-label">Address</div>
                         <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="search-address" placeholder="Search"
+                            <input type="text" id="search-address" placeholder="Address"
                                    oninput="handleAutocomplete(this, 'address')" 
                                    onfocus="handleAutocomplete(this, 'address')">
                             <div id="search-address-dropdown" class="autocomplete-dropdown"></div>
@@ -1582,7 +1573,7 @@
                     <div class="search-row">
                         <div class="search-label">Contractor</div>
                         <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="search-contractor" placeholder="Search" 
+                            <input type="text" id="search-contractor" placeholder="Contractor" 
                                    oninput="handleAutocomplete(this, 'contractor')" 
                                    onfocus="handleAutocomplete(this, 'contractor')">
                             <div id="search-contractor-dropdown" class="autocomplete-dropdown"></div>
@@ -1593,7 +1584,7 @@
                     <div class="search-row">
                         <div class="search-label">Trade</div>
                         <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="search-trade" placeholder="Search" 
+                            <input type="text" id="search-trade" placeholder="Trade" 
                                    oninput="handleAutocomplete(this, 'trade')" 
                                    onfocus="handleAutocomplete(this, 'trade')">
                             <div id="search-trade-dropdown" class="autocomplete-dropdown"></div>
@@ -1608,7 +1599,7 @@
                     <div class="search-row">
                         <div class="search-label">Address</div>
                         <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="add-address" placeholder="Search"
+                            <input type="text" id="add-address" placeholder="Address"
                                    oninput="handleAutocomplete(this, 'address', 'add-address')" 
                                    onfocus="handleAutocomplete(this, 'address', 'add-address')">
                             <div id="add-address-dropdown" class="autocomplete-dropdown"></div>
@@ -1619,7 +1610,7 @@
                     <div class="search-row">
                         <div class="search-label">Contractor</div>
                         <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="add-contractor" placeholder="Search" 
+                            <input type="text" id="add-contractor" placeholder="Contractor" 
                                    oninput="handleAutocomplete(this, 'contractor', 'add-contractor')" 
                                    onfocus="handleAutocomplete(this, 'contractor', 'add-contractor')">
                             <div id="add-contractor-dropdown" class="autocomplete-dropdown"></div>
