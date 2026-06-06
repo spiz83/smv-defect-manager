@@ -27,6 +27,46 @@
             --blue: #0a84ff;
         }
 
+        /* ---- Premier League club themes (override the accent colour) ---- */
+        /* Declared AFTER dark-mode so the club accent wins in either mode.   */
+        body.theme-arsenal   { --blue: #EF0107; }  /* Arsenal red       */
+        body.theme-chelsea   { --blue: #034694; }  /* Chelsea blue      */
+        body.theme-liverpool { --blue: #C8102E; }  /* Liverpool red     */
+        body.theme-mancity   { --blue: #1C7FC0; }  /* Man City sky blue */
+        body.theme-spurs     { --blue: #132257; }  /* Tottenham navy    */
+        body.theme-newcastle { --blue: #101010; }  /* Newcastle black   */
+
+        /* Theme picker swatches */
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 8px;
+        }
+        .theme-swatch {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 600;
+            transition: border-color .15s, transform .05s;
+        }
+        .theme-swatch:active { transform: scale(0.98); }
+        .theme-swatch.active { border-color: var(--blue); }
+        .theme-dot {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            border: 1px solid rgba(0,0,0,.15);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -351,7 +391,7 @@
         }
 
         .btn-primary {
-            background: #007AFF;
+            background: var(--blue);
             color: white;
         }
 
@@ -1126,6 +1166,7 @@
         // Application State
         const state = {
             currentView: 'home',
+            showCompleted: false,
             filters: {},
             selectedContractors: [],
             selectedTrades: [],
@@ -1734,10 +1775,15 @@
             const completedCount = totalDefects - activeDefects.length;
             const pendingCount = activeDefects.filter(d => defectStatusOf(d) === 'pending').length;
             const openCount = activeDefects.length - pendingCount;
-            
+
+            // Which defects to show depends on the "Show completed" toggle
+            const defectsToShow = state.showCompleted
+                ? db.data.defects.slice()
+                : activeDefects;
+
             // Group by address, then by contractor
             const groupedByAddress = {};
-            activeDefects.forEach(defect => {
+            defectsToShow.forEach(defect => {
                 const address = db.getAddress(defect.addressId);
                 const contractor = db.getContractor(defect.contractorId);
                 
@@ -1789,6 +1835,7 @@
                             </div>
                         </div>
                         <div class="toolbar">
+                            <button class="icon-btn" onclick="toggleShowCompleted()" title="${state.showCompleted ? 'Hide completed' : 'Show completed'}" style="${state.showCompleted ? 'background: var(--blue); color: #fff;' : ''}">${state.showCompleted ? '🙈' : '👁️'}</button>
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>
                             <button class="icon-btn" onclick="exportDefects()" title="Export">📄</button>
@@ -1861,6 +1908,13 @@
                                     </button>
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- Colour Theme -->
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                            <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">🎨 Colour Theme</div>
+                            <div style="font-size: 14px; color: var(--text-secondary);">Pick a look — including Premier League club colours</div>
+                            ${renderThemePicker()}
                         </div>
 
                         <div class="import-section" onclick="document.getElementById('excel-import').click()">
@@ -3300,6 +3354,12 @@
             showToast('Status set to ' + (labels[status] || status));
         }
 
+        function toggleShowCompleted() {
+            state.showCompleted = !state.showCompleted;
+            render();
+            showToast(state.showCompleted ? 'Showing completed defects' : 'Hiding completed defects');
+        }
+
         // Unified function to generate defect text for clipboard/export/email
         function generateDefectText() {
             let textContent = '';
@@ -4066,7 +4126,7 @@
                                         <div style="font-size: 14px; font-weight: 400; color: #666;">${a.suburb} • ${a.propertyNumber || 'No Prop #'}</div>
                                     </div>
                                     <div style="display: flex; gap: 8px;">
-                                        <button onclick="openEditAddressModal(${a.id})" style="background: #007AFF; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer;">✏️ Edit</button>
+                                        <button onclick="openEditAddressModal(${a.id})" style="background: var(--blue); color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer;">✏️ Edit</button>
                                         <button onclick="confirmDeleteAddress(${a.id})" style="background: #FF3B30; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer;">🗑️</button>
                                     </div>
                                 </div>
@@ -4132,7 +4192,7 @@
                                         </div>
                                         <div style="display: flex; flex-direction: column; gap: 5px;">
                                             ${c.phone ? `<button onclick="callContractor('${c.phone}', event)" style="background: #34C759; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;">📞 Call</button>` : ''}
-                                            ${c.email ? `<button onclick="emailContractor('${c.email}', '${c.name}', event)" style="background: #007AFF; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;">📧 Email</button>` : ''}
+                                            ${c.email ? `<button onclick="emailContractor('${c.email}', '${c.name}', event)" style="background: var(--blue); color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;">📧 Email</button>` : ''}
                                         </div>
                                     </div>
                                 </div>
@@ -5071,8 +5131,49 @@
             }
         }
 
+        // ---- Colour themes (incl. Premier League clubs) ----
+        const CLUB_THEMES = [
+            { id: 'default',   name: 'Default',   dot: '#007AFF' },
+            { id: 'arsenal',   name: 'Arsenal',   dot: '#EF0107' },
+            { id: 'liverpool', name: 'Liverpool', dot: '#C8102E' },
+            { id: 'mancity',   name: 'Man City',  dot: '#1C7FC0' },
+            { id: 'chelsea',   name: 'Chelsea',   dot: '#034694' },
+            { id: 'spurs',     name: 'Tottenham', dot: '#132257' },
+            { id: 'newcastle', name: 'Newcastle', dot: 'linear-gradient(90deg,#101010 50%,#ffffff 50%)' }
+        ];
+
+        function currentClubTheme() {
+            return localStorage.getItem('clubTheme') || 'default';
+        }
+
+        function renderThemePicker() {
+            const cur = currentClubTheme();
+            return `<div class="theme-grid">` + CLUB_THEMES.map(t => `
+                <div class="theme-swatch ${t.id === cur ? 'active' : ''}" onclick="setClubTheme('${t.id}')">
+                    <span class="theme-dot" style="background:${t.dot};"></span>${t.name}
+                </div>`).join('') + `</div>`;
+        }
+
+        function applyClubTheme(id) {
+            CLUB_THEMES.forEach(t => document.body.classList.remove('theme-' + t.id));
+            if (id && id !== 'default') document.body.classList.add('theme-' + id);
+        }
+
+        function setClubTheme(id) {
+            localStorage.setItem('clubTheme', id);
+            applyClubTheme(id);
+            render();
+            const name = (CLUB_THEMES.find(t => t.id === id) || {}).name || 'Default';
+            showToast(name + ' theme applied');
+        }
+
+        function loadClubTheme() {
+            applyClubTheme(currentClubTheme());
+        }
+
         // Initialize app
         loadTheme();
+        loadClubTheme();
         render();
     </script>
 
