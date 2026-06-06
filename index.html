@@ -481,6 +481,22 @@
             overflow-y: auto;
         }
 
+        /* Add Defects (from a property) opens as a full-screen sheet */
+        #quick-add-defects-address-modal .modal-content,
+        #quick-add-defects-modal .modal-content {
+            width: 100% !important;
+            max-width: 100% !important;
+            height: 100% !important;
+            max-height: 100% !important;
+            border-radius: 0 !important;
+            padding-top: calc(20px + env(safe-area-inset-top));
+            padding-bottom: calc(24px + env(safe-area-inset-bottom));
+        }
+        body.design-modern #quick-add-defects-address-modal .modal-content,
+        body.design-modern #quick-add-defects-modal .modal-content {
+            border-radius: 0 !important;
+        }
+
         .modal-header {
             font-size: 20px;
             font-weight: 600;
