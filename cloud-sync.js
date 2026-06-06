@@ -45,6 +45,11 @@
   let realtimeChannel = null;
   let suppressPush = false;       // true while we apply a remote pull locally
 
+  // Photos (#4)
+  const PHOTO_BUCKET = 'defect-photos';
+  let photoCounts = {};               // legacyDefectId -> number of photos
+  const defectUuidToLegacy = {};      // cloud uuid -> legacy defect id
+
   function emptySnap() {
     return { trades: {}, contractors: {}, addresses: {}, defects: {} };
   }
@@ -84,6 +89,26 @@
       #cs-statusbar button{background:transparent;border:1px solid #475569;color:#e2e8f0;
         border-radius:6px;padding:2px 8px;cursor:pointer;font-size:11px;}
       body.cs-authed{padding-top:26px;}
+
+      /* Photo gallery */
+      #cs-gallery{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);
+        display:flex;align-items:center;justify-content:center;padding:16px;}
+      #cs-gallery-card{background:var(--bg-primary,#fff);color:var(--text-primary,#111);
+        width:min(96vw,520px);max-height:88vh;border-radius:16px;overflow:hidden;
+        display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.4);}
+      #cs-gallery-head{display:flex;align-items:center;justify-content:space-between;
+        padding:14px 16px;border-bottom:1px solid var(--border-color,#eee);font-size:17px;}
+      #cs-gallery-head button{background:none;border:none;font-size:20px;cursor:pointer;color:inherit;}
+      #cs-gallery-body{overflow:auto;padding:12px;}
+      #cs-gallery-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;}
+      .cs-photo{border:1px solid var(--border-color,#eee);border-radius:10px;overflow:hidden;background:#000;}
+      .cs-photo img{width:100%;height:130px;object-fit:cover;display:block;}
+      .cs-photo-meta{display:flex;align-items:center;justify-content:space-between;
+        padding:5px 8px;background:var(--bg-primary,#fff);color:var(--text-secondary,#777);font-size:12px;}
+      .cs-photo-del{background:none;border:none;cursor:pointer;font-size:14px;}
+      #cs-gallery-foot{padding:12px 16px;border-top:1px solid var(--border-color,#eee);text-align:center;}
+      .cs-addphoto{display:inline-block;background:var(--blue,#2563eb);color:#fff;
+        padding:11px 18px;border-radius:10px;font-weight:600;cursor:pointer;font-size:15px;}
     `;
     document.head.appendChild(s);
   }
@@ -258,6 +283,7 @@
     defects.data.forEach(d => {
       const lid = d.legacy_id != null ? d.legacy_id : hashId(d.id);
       idMap.defects[lid] = d.id;
+      defectUuidToLegacy[d.id] = lid;
       newData.defects.push({
         id: lid,
         addressId: uuidToLegacy.addresses[d.address_id],
@@ -278,6 +304,23 @@
     suppressPush = false;
     snapshot = cloneSnap(db.data);
     if (typeof render === 'function') render();
+    refreshPhotoCounts();      // load photo badges (async, re-renders when ready)
+  }
+
+  // Load the per-defect photo counts so the camera badge shows a number.
+  async function refreshPhotoCounts() {
+    try {
+      const { data, error } = await sb.from('dm_defect_photos')
+        .select('defect_id').eq('workspace_id', workspaceId);
+      if (error) throw error;
+      const counts = {};
+      (data || []).forEach(p => {
+        const lid = defectUuidToLegacy[p.defect_id];
+        if (lid != null) counts[lid] = (counts[lid] || 0) + 1;
+      });
+      photoCounts = counts;
+      if (typeof render === 'function') render();
+    } catch (e) { console.warn('[CloudSync] photo counts', e); }
   }
 
   // Deterministic small int from a uuid (only used if legacy_id is missing)
@@ -461,7 +504,7 @@
 
   function runSync() {
     setStatus('Saving…', 'syncing');
-    syncing = syncing.then(pushDiff).then(
+    syncing = syncing.then(pushDiff).then(reconcilePhotos).then(
       () => setStatus('Synced'),
       (err) => {
         console.error('[CloudSync] push failed', err);
@@ -505,6 +548,200 @@
   }
 
   // ===========================================================================
+  //  PHOTOS (#4) — capture, compress (<=500KB), upload, gallery, auto-delete
+  // ===========================================================================
+  const MAX_BYTES = 500 * 1024;
+  const MAX_DIM = 1280;            // "medium resolution"
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    });
+  }
+
+  // Compress to JPEG, scaling down + lowering quality until <= 500 KB.
+  async function compressImage(file) {
+    const img = await loadImageFromFile(file);
+    let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const longest = Math.max(w, h);
+    if (longest > MAX_DIM) { const s = MAX_DIM / longest; w = Math.round(w * s); h = Math.round(h * s); }
+
+    const toBlob = (cw, ch, q) => new Promise((res) => {
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      c.getContext('2d').drawImage(img, 0, 0, cw, ch);
+      c.toBlob(res, 'image/jpeg', q);
+    });
+
+    let blob = await toBlob(w, h, 0.85);
+    let q = 0.85;
+    while (blob && blob.size > MAX_BYTES && q > 0.3) { q -= 0.12; blob = await toBlob(w, h, q); }
+    // Still too big? shrink dimensions and retry once.
+    let guard = 0;
+    while (blob && blob.size > MAX_BYTES && guard < 4) {
+      w = Math.round(w * 0.8); h = Math.round(h * 0.8);
+      blob = await toBlob(w, h, 0.7); guard++;
+    }
+    return blob;
+  }
+
+  function randName() {
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) + '.jpg';
+  }
+
+  async function uploadDefectPhoto(legacyId, file) {
+    const uuid = idMap.defects[legacyId];
+    if (!uuid) { showToastSafe('Save the defect before adding photos'); return; }
+    showToastSafe('Compressing photo…');
+    let blob;
+    try { blob = await compressImage(file); } catch (e) { showToastSafe('Could not read that image'); return; }
+    if (!blob) { showToastSafe('Could not process that image'); return; }
+    const path = `${workspaceId}/${uuid}/${randName()}`;
+    const up = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+    if (up.error) {
+      console.error('[CloudSync] upload', up.error);
+      showToastSafe('Upload failed: ' + (up.error.message || 'storage error'));
+      return;
+    }
+    const ins = await sb.from('dm_defect_photos').insert({
+      workspace_id: workspaceId, defect_id: uuid, storage_path: path, bytes: blob.size
+    });
+    if (ins.error) { console.error(ins.error); showToastSafe('Saved file but record failed'); return; }
+    photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;
+    showToastSafe('Photo added (' + Math.round(blob.size / 1024) + ' KB)');
+    if (typeof render === 'function') render();
+  }
+
+  async function deleteOnePhoto(path) {
+    await sb.storage.from(PHOTO_BUCKET).remove([path]);
+    await sb.from('dm_defect_photos').delete().eq('storage_path', path);
+  }
+
+  // Remove every photo for a defect (used on complete / delete).
+  async function deleteAllPhotosForDefect(legacyId) {
+    const uuid = idMap.defects[legacyId];
+    if (uuid) {
+      const prefix = `${workspaceId}/${uuid}`;
+      const { data: list } = await sb.storage.from(PHOTO_BUCKET).list(prefix);
+      if (list && list.length) {
+        await sb.storage.from(PHOTO_BUCKET).remove(list.map(f => `${prefix}/${f.name}`));
+      }
+      await sb.from('dm_defect_photos').delete().eq('defect_id', uuid);
+    }
+    delete photoCounts[legacyId];
+  }
+
+  // After each sync: drop photos for defects that are now completed or deleted.
+  async function reconcilePhotos() {
+    for (const lid of Object.keys(photoCounts)) {
+      const d = (db.data.defects || []).find(x => String(x.id) === String(lid));
+      const completed = d && (d.status === 'completed' || d.completed);
+      if (!d || completed) {
+        try { await deleteAllPhotosForDefect(lid); } catch (e) { console.warn('reconcilePhotos', e); }
+      }
+    }
+  }
+
+  // 50-day auto-expiry: sweep on login.
+  async function sweepExpiredPhotos() {
+    try {
+      const nowIso = new Date().toISOString();
+      const { data: expired } = await sb.from('dm_defect_photos')
+        .select('storage_path').eq('workspace_id', workspaceId).lt('expires_at', nowIso);
+      if (expired && expired.length) {
+        await sb.storage.from(PHOTO_BUCKET).remove(expired.map(p => p.storage_path));
+        await sb.from('dm_defect_photos').delete().eq('workspace_id', workspaceId).lt('expires_at', nowIso);
+        console.info('[CloudSync] swept ' + expired.length + ' expired photo(s)');
+      }
+    } catch (e) { console.warn('[CloudSync] sweepExpiredPhotos', e); }
+  }
+
+  function showToastSafe(msg) { if (typeof showToast === 'function') showToast(msg); }
+
+  // ----- Gallery modal -----
+  async function openGallery(legacyId) {
+    const uuid = idMap.defects[legacyId];
+    if (!uuid) { showToastSafe('Save the defect first'); return; }
+    injectStyles();
+
+    let ov = document.getElementById('cs-gallery');
+    if (ov) ov.remove();
+    ov = document.createElement('div');
+    ov.id = 'cs-gallery';
+    ov.innerHTML = `
+      <div id="cs-gallery-card">
+        <div id="cs-gallery-head">
+          <strong>Defect Photos</strong>
+          <button id="cs-gallery-close">✕</button>
+        </div>
+        <div id="cs-gallery-body"><div style="padding:20px;text-align:center;color:#888">Loading…</div></div>
+        <div id="cs-gallery-foot">
+          <label class="cs-addphoto">📷 Add / Take Photo
+            <input type="file" accept="image/*" capture="environment" style="display:none" id="cs-photo-input">
+          </label>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    document.getElementById('cs-gallery-close').onclick = () => ov.remove();
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    document.getElementById('cs-photo-input').onchange = async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) { await uploadDefectPhoto(legacyId, file); await renderGalleryBody(legacyId); }
+    };
+    await renderGalleryBody(legacyId);
+  }
+
+  async function renderGalleryBody(legacyId) {
+    const uuid = idMap.defects[legacyId];
+    const body = document.getElementById('cs-gallery-body');
+    if (!body) return;
+    const { data: rows, error } = await sb.from('dm_defect_photos')
+      .select('id, storage_path, created_at, expires_at')
+      .eq('defect_id', uuid).order('created_at', { ascending: false });
+    if (error) { body.innerHTML = '<div style="padding:20px;color:#b00">Could not load photos.</div>'; return; }
+    photoCounts[legacyId] = (rows || []).length;
+    if (!rows || !rows.length) {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:#888">No photos yet.<br>Use the button below to add one.</div>';
+      if (typeof render === 'function') render();
+      return;
+    }
+    const paths = rows.map(r => r.storage_path);
+    const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(paths, 3600);
+    const urlByPath = {}; (signed || []).forEach(s => { urlByPath[s.path] = s.signedUrl; });
+    body.innerHTML = '<div id="cs-gallery-grid">' + rows.map(r => {
+      const exp = new Date(r.expires_at);
+      const days = Math.max(0, Math.ceil((exp - new Date()) / 86400000));
+      const url = urlByPath[r.storage_path] || '';
+      return `<div class="cs-photo">
+        <a href="${url}" target="_blank" rel="noopener"><img src="${url}" loading="lazy"></a>
+        <div class="cs-photo-meta">
+          <span>${days}d left</span>
+          <button data-path="${r.storage_path}" class="cs-photo-del">🗑️</button>
+        </div>
+      </div>`;
+    }).join('') + '</div>';
+    body.querySelectorAll('.cs-photo-del').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('Delete this photo?')) return;
+        await deleteOnePhoto(btn.getAttribute('data-path'));
+        photoCounts[legacyId] = Math.max(0, (photoCounts[legacyId] || 1) - 1);
+        await renderGalleryBody(legacyId);
+      };
+    });
+    if (typeof render === 'function') render();
+  }
+
+  // Public API used by the per-defect camera button in index.html
+  window.CloudPhotos = {
+    count: (legacyId) => photoCounts[legacyId] || 0,
+    openGallery: (legacyId) => openGallery(legacyId)
+  };
+
+  // ===========================================================================
   //  Boot
   // ===========================================================================
   async function onAuthed() {
@@ -516,6 +753,7 @@
       const migrated = await maybeMigrate();
       if (!migrated) await pullAll();
       setStatus('Synced');
+      sweepExpiredPhotos();
       subscribeRealtime();
     } catch (err) {
       console.error('[CloudSync] init failed', err);

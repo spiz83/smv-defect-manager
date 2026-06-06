@@ -339,6 +339,31 @@
         .status-badge.status-pending   { background: #FEF3C7; color: #B45309; }
         .status-badge.status-completed { background: #DCFCE7; color: #15803D; }
 
+        /* Per-defect actions: camera button + status pill */
+        .defect-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .photo-btn {
+            position: relative;
+            border: none;
+            background: var(--bg-secondary);
+            border-radius: 999px;
+            padding: 5px 9px;
+            font-size: 14px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .photo-btn.has-photos { background: #E3F2FD; }
+        .photo-count {
+            margin-left: 3px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--blue);
+        }
+
         /* Modal Styles */
         .modal {
             display: none;
@@ -1395,7 +1420,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     <span class="defect-text">${defect.description}</span>
-                                    ${statusControl(defect)}
+                                    <span class="defect-actions">${photoIcon(defect)}${statusControl(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -1461,7 +1486,7 @@
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            ${statusControl(defect)}
+                                            <span class="defect-actions">${photoIcon(defect)}${statusControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -1518,7 +1543,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     <span class="defect-text">${defect.description}</span>
-                                    ${statusControl(defect)}
+                                    <span class="defect-actions">${photoIcon(defect)}${statusControl(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -1757,7 +1782,7 @@
                                     ${byAddressThenContractor[addressKey].contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            ${statusControl(defect)}
+                                            <span class="defect-actions">${photoIcon(defect)}${statusControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -1862,7 +1887,7 @@
                                     ${addressGroup.contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             <span class="defect-text">${defect.description}</span>
-                                            ${statusControl(defect)}
+                                            <span class="defect-actions">${photoIcon(defect)}${statusControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -3352,6 +3377,16 @@
             render();
             const labels = { open: 'Open', pending: 'Pending', completed: 'Completed' };
             showToast('Status set to ' + (labels[status] || status));
+        }
+
+        // Camera button + photo count, shown beside every defect.
+        function photoIcon(defect) {
+            const count = (window.CloudPhotos ? window.CloudPhotos.count(defect.id) : 0) || 0;
+            const onclick = window.CloudPhotos
+                ? `window.CloudPhotos.openGallery(${defect.id})`
+                : `showToast('Log in to use photos')`;
+            return `<button class="photo-btn ${count ? 'has-photos' : ''}" title="Photos"
+                        onclick="event.stopPropagation(); ${onclick}">📷${count ? `<span class="photo-count">${count}</span>` : ''}</button>`;
         }
 
         function toggleShowCompleted() {
