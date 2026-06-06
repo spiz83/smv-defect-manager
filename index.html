@@ -2230,18 +2230,18 @@
                     </div>
 
                     <!-- Contact Info Display with Edit -->
-                    <div style="padding: 12px 20px; background: #f9f9f9; border-bottom: 1px solid var(--border-color); font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="padding: 12px 20px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
                         <div style="flex: 1;">
                             <div style="margin-bottom: 5px;">
                                 ${contractor.email ? 
                                     `📧 <a href="mailto:${contractor.email}" style="color: var(--blue); text-decoration: none;">${contractor.email}</a>` :
-                                    `📧 <span style="color: #999;">No email</span>`
+                                    `📧 <span style="color: var(--text-secondary);">No email</span>`
                                 }
                             </div>
                             <div>
                                 ${contractor.phone ? 
                                     `📞 <a href="tel:${contractor.phone}" style="color: var(--blue); text-decoration: none;">${contractor.phone}</a>` :
-                                    `📞 <span style="color: #999;">No phone</span>`
+                                    `📞 <span style="color: var(--text-secondary);">No phone</span>`
                                 }
                             </div>
                         </div>
@@ -2316,7 +2316,7 @@
                         </div>
                     ` : Object.values(byAddress).map(addressGroup => `
                         <div style="margin-bottom: 20px;">
-                            <div style="font-size: 17px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; padding: 12px 20px; background: #f9f9f9; border-bottom: 1px solid var(--border-color);">
+                            <div style="font-size: 17px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; padding: 12px 20px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);">
                                 ${formatAddress(addressGroup.address)}
                             </div>
                             ${Object.values(addressGroup.contractors).map(contractorGroup => `
@@ -2594,7 +2594,7 @@
                     </div>
                     
                     <div class="defects-header">
-                        <div class="lot-title">Search Multiple Contractors:<br><span style="font-size: 14px; font-weight: 400; color: #666;">${contractorNames}</span></div>
+                        <div class="lot-title">Search Multiple Contractors:<br><span style="font-size: 14px; font-weight: 400; color: var(--text-secondary);">${contractorNames}</span></div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
@@ -5269,7 +5269,7 @@
                                 <div class="defect-item" style="background: var(--bg-primary); margin-bottom: 3px; padding: 10px 15px; border: 1px solid var(--border-color); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1; cursor: pointer;" onclick="selectAddressFromList(${a.id})">
                                         <div style="font-weight: 600; font-size: 16px;">${a.street}</div>
-                                        <div style="font-size: 14px; font-weight: 400; color: #666;">${a.suburb} • ${a.propertyNumber || 'No Prop #'}</div>
+                                        <div style="font-size: 14px; font-weight: 400; color: var(--text-secondary);">${a.suburb} • ${a.propertyNumber || 'No Prop #'}</div>
                                     </div>
                                     <div style="display: flex; gap: 8px;">
                                         <button onclick="openEditAddressModal(${a.id})" style="background: var(--blue); color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer;">✏️ Edit</button>
@@ -6657,14 +6657,14 @@
         async function openDeleteReports() { await renderReportsList('🗑️ Delete Reports'); }
         async function renderReportsList(title) {
             impOverlay(`<div id="imp-head"><strong>${title}</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body"><div style="padding:20px;text-align:center;color:#888">Loading…</div></div>`);
+                <div id="imp-body"><div style="padding:20px;text-align:center;color:var(--text-secondary)">Loading…</div></div>`);
             if (!window.CloudReports) {
                 document.getElementById('imp-body').innerHTML = '<div style="padding:20px;text-align:center">Log in to view reports.</div>';
                 return;
             }
             const reports = await window.CloudReports.list();
             const body = document.getElementById('imp-body');
-            if (!reports.length) { body.innerHTML = '<div style="padding:24px;text-align:center;color:#888">No reports imported yet.</div>'; return; }
+            if (!reports.length) { body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-secondary)">No reports imported yet.</div>'; return; }
             body.innerHTML = reports.map(rp => {
                 const addr = rp.addressLegacyId != null ? formatAddress(db.getAddress(rp.addressLegacyId)) : '';
                 const date = (rp.created_at || '').slice(0, 10);
