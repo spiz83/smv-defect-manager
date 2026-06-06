@@ -1302,6 +1302,25 @@
         body.design-f1 .modal-header { font-family: 'Titillium Web', sans-serif !important; font-weight: 900 !important; font-style: italic; text-transform: uppercase; }
         body.design-f1 #cs-statusbar { background: var(--sur) !important; border-bottom: 1px solid var(--brd); }
         body.design-f1 .defects-header { background: linear-gradient(180deg, rgba(0,161,154,.06), var(--sur)) !important; border-bottom: 1px solid var(--brd) !important; }
+
+        /* Pinned top-right theme picker (F1 mode) */
+        #f1-picker {
+            position: fixed;
+            top: calc(31px + env(safe-area-inset-top));
+            right: 8px;
+            z-index: 9997;
+            display: flex; align-items: center; gap: 6px;
+            background: var(--sur); border: 1px solid var(--brd); border-radius: 6px;
+            padding: 3px 8px;
+            box-shadow: 0 6px 18px rgba(0,0,0,.45);
+        }
+        #f1-picker .f1-pick-dot { width: 12px; height: 12px; border-radius: 3px; background: var(--acc); box-shadow: 0 0 6px var(--glow); flex-shrink: 0; }
+        #f1-picker select {
+            background: transparent !important; border: none !important; box-shadow: none !important;
+            color: var(--t1) !important; font-family: 'JetBrains Mono', monospace !important;
+            font-size: 11px !important; text-transform: uppercase; letter-spacing: .04em;
+            padding: 2px 2px !important; max-width: 150px;
+        }
     </style>
 </head>
 <body>
@@ -6031,6 +6050,14 @@
         function applyDesign(d) {
             document.body.classList.toggle('design-modern', d === 'modern');
             document.body.classList.toggle('design-f1', d === 'f1');
+            mountF1Picker();
+        }
+        // Persistent theme dropdown pinned top-right (only in F1 mode)
+        function mountF1Picker() {
+            let el = document.getElementById('f1-picker');
+            if (currentDesign() !== 'f1') { if (el) el.remove(); return; }
+            if (!el) { el = document.createElement('div'); el.id = 'f1-picker'; document.body.appendChild(el); }
+            el.innerHTML = `<span class="f1-pick-dot"></span><select onchange="setF1Theme(this.value)">${F1_THEMES.map(t => `<option value="${t.id}" ${currentF1Theme() === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}</select>`;
         }
         function setDesign(d) {
             localStorage.setItem('appDesign', d);
