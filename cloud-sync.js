@@ -406,12 +406,20 @@
         contractor_id: idMap.contractors[d.contractorId] || null,
         description: d.description,
         status: d.status || (d.completed ? 'completed' : 'open'),
-        unassigned: !!d.unassigned
+        unassigned: !!d.unassigned,
+        last_email_at: d.lastEmailAt || null,
+        last_sms_at: d.lastSmsAt || null,
+        last_update_at: d.lastUpdateAt || null,
+        followup_at: d.followupAt || null
       }),
       changed: (a, b) =>
         a.description !== b.description || a.addressId !== b.addressId ||
         a.contractorId !== b.contractorId || a.completed !== b.completed ||
-        (a.status || '') !== (b.status || '')
+        (a.status || '') !== (b.status || '') ||
+        (a.lastEmailAt || '') !== (b.lastEmailAt || '') ||
+        (a.lastSmsAt || '') !== (b.lastSmsAt || '') ||
+        (a.lastUpdateAt || '') !== (b.lastUpdateAt || '') ||
+        (a.followupAt || '') !== (b.followupAt || '')
     });
 
     // ---- Contractor <-> Trade links ----
