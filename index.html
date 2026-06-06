@@ -971,6 +971,127 @@
             input, select, textarea { font-size: 16px; }
             .home-2col .search-input-wrapper input { font-size: 16px; }
         }
+
+        /* ============================================================
+           PREMIUM POLISH v2 — cohesive gradient-graded design system.
+           Applies across every screen in Modern mode. Uses !important
+           selectively to lift legacy inline styles.
+           ============================================================ */
+        :root {
+            --grad-accent: linear-gradient(135deg, var(--blue) 0%, color-mix(in srgb, var(--blue) 52%, #7c3aed) 100%);
+            --ring: 0 0 0 4px color-mix(in srgb, var(--blue) 18%, transparent);
+            --soft-1: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10);
+            --soft-2: 0 6px 16px rgba(16,24,40,.10);
+            --soft-3: 0 18px 44px rgba(16,24,40,.16);
+        }
+
+        /* Graded backdrop behind the centred app column */
+        body.design-modern {
+            background:
+                radial-gradient(1100px 540px at 50% -8%, color-mix(in srgb, var(--blue) 12%, transparent), transparent 62%),
+                var(--page-bg);
+        }
+        body.design-modern #app {
+            box-shadow: 0 0 0 1px rgba(2,6,23,.05), 0 30px 80px rgba(2,6,23,.20);
+        }
+
+        /* Headers — frosted with a faint accent underline (home hero keeps its gradient) */
+        body.design-modern .app-header:not(.home-hero) {
+            background: color-mix(in srgb, var(--bg-primary) 84%, transparent);
+            border-bottom: 1px solid color-mix(in srgb, var(--blue) 14%, var(--border-color));
+        }
+        body.design-modern .defects-header {
+            background: linear-gradient(180deg, color-mix(in srgb, var(--blue) 7%, var(--bg-primary)), var(--bg-primary));
+            border-bottom: 1px solid var(--border-color);
+        }
+        body.design-modern .header-title,
+        body.design-modern .lot-title { letter-spacing: -0.02em; font-weight: 800; }
+
+        /* Inputs / selects / textareas — refined over legacy inline borders */
+        body.design-modern input[type="text"],
+        body.design-modern input[type="email"],
+        body.design-modern input[type="password"],
+        body.design-modern input[type="date"],
+        body.design-modern input[type="number"],
+        body.design-modern select,
+        body.design-modern textarea {
+            border: 1.5px solid var(--border-color) !important;
+            border-radius: 12px !important;
+            background: var(--input-bg) !important;
+            color: var(--text-primary) !important;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        body.design-modern input:focus,
+        body.design-modern select:focus,
+        body.design-modern textarea:focus {
+            border-color: var(--blue) !important;
+            box-shadow: var(--ring) !important;
+            outline: none !important;
+        }
+
+        /* Buttons — gradient primary, refined secondary, tactile */
+        body.design-modern .btn { border-radius: 12px; font-weight: 700; transition: transform .06s ease, box-shadow .15s ease, filter .15s ease; }
+        body.design-modern .btn-primary {
+            background: var(--grad-accent) !important;
+            color: #fff !important;
+            border: none !important;
+            box-shadow: 0 8px 20px color-mix(in srgb, var(--blue) 34%, transparent);
+        }
+        body.design-modern .btn-primary:hover { filter: brightness(1.05); box-shadow: 0 10px 26px color-mix(in srgb, var(--blue) 42%, transparent); }
+        body.design-modern .btn-secondary {
+            background: color-mix(in srgb, var(--text-primary) 6%, var(--bg-primary)) !important;
+            color: var(--text-primary) !important;
+            border: 1px solid var(--border-color) !important;
+        }
+        body.design-modern .btn:active { transform: translateY(1px) scale(.997); }
+
+        /* Modals — rounder, deep soft shadow, blurred backdrop */
+        body.design-modern .modal {
+            background: rgba(15,23,42,.45);
+            backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+        }
+        body.design-modern .modal-content {
+            border-radius: 22px !important;
+            box-shadow: var(--soft-3), 0 40px 90px rgba(2,6,23,.40) !important;
+            border: 1px solid color-mix(in srgb, var(--blue) 8%, var(--border-color));
+        }
+        body.design-modern .modal-header { font-weight: 800; letter-spacing: -0.02em; font-size: 19px; }
+
+        /* Cards / sections / list rows — soften & lift */
+        body.design-modern .contractor-section {
+            border-radius: 16px !important;
+            border: 1px solid var(--border-color) !important;
+            box-shadow: var(--soft-1);
+        }
+        body.design-modern .import-section {
+            border-radius: 16px !important;
+            border: 2px dashed color-mix(in srgb, var(--blue) 30%, var(--border-color)) !important;
+            box-shadow: var(--soft-1);
+        }
+        body.design-modern .manage-container > div { box-shadow: var(--soft-1); }
+
+        /* Toolbar icon buttons — tappable pills */
+        body.design-modern .toolbar { gap: 6px; }
+        body.design-modern .icon-btn { border-radius: 12px; padding: 6px 8px; transition: background .15s ease, transform .06s ease; }
+        body.design-modern .icon-btn:hover { background: color-mix(in srgb, var(--blue) 12%, transparent); }
+        body.design-modern .icon-btn:active { transform: scale(.9); }
+
+        /* Status pills + badges — subtle top sheen */
+        body.design-modern .defect-status,
+        body.design-modern .status-badge { box-shadow: inset 0 1px 0 rgba(255,255,255,.45), var(--soft-1); }
+
+        /* Section accent bar → gradient */
+        body.design-modern .section-title::before {
+            background: var(--grad-accent) !important;
+        }
+
+        /* Toast — glassier */
+        body.design-modern .toast {
+            border-radius: 14px;
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            background: rgba(15,23,42,.92);
+            box-shadow: var(--soft-3);
+        }
     </style>
 </head>
 <body>
