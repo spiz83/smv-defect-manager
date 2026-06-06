@@ -1383,6 +1383,15 @@
         /* Title left-aligned so the F1 theme picker doesn't cover it */
         .app-header .header-title { flex: 1; text-align: left; }
         body.design-f1 .app-header { padding-right: 136px; }
+
+        /* Location pin in the Add Defects rows (replaces the bullet) */
+        .row-loc-btn {
+            flex-shrink: 0; border: none; background: transparent; cursor: pointer;
+            font-size: 16px; line-height: 1; padding: 2px;
+            display: inline-flex; align-items: center; gap: 3px; opacity: .5;
+        }
+        .row-loc-btn.has-loc { opacity: 1; }
+        .row-loc-lbl { font-size: 10px; color: var(--blue); font-weight: 700; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -2362,9 +2371,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-1-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
 
                         <!-- Contractor 2 -->
@@ -2379,9 +2388,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-2-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
 
                         <!-- Contractor 3 -->
@@ -2396,9 +2405,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-3-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
 
                         <!-- Contractor 4 -->
@@ -2413,9 +2422,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-4-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
 
                         <!-- Contractor 5 -->
@@ -2430,9 +2439,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-5-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
-                            <div class="defect-input-row"><span>•</span><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
                     </div>
                 </div>
@@ -2474,27 +2483,27 @@
                             <label style="display: block; font-size: 15px; font-weight: 600; margin-bottom: 10px;">Defects:</label>
                             <div id="add-defects-contractor-container">
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                             </div>
@@ -3524,7 +3533,7 @@
                         contractorId,
                         description: input.value.trim()
                     });
-                    uploadRowPhotos(input.closest('.defect-input-row'), d.id);
+                    applyRowExtras(input.closest('.defect-input-row'), d.id);
                     savedCount++;
                 }
             });
@@ -3563,7 +3572,7 @@
                         contractorId,
                         description: input.value.trim()
                     });
-                    uploadRowPhotos(input.closest('.defect-input-row'), d.id);
+                    applyRowExtras(input.closest('.defect-input-row'), d.id);
                     savedCount++;
                 }
             });
@@ -3603,7 +3612,7 @@
                         contractorId,
                         description: input.value.trim()
                     });
-                    uploadRowPhotos(input.closest('.defect-input-row'), d.id);
+                    applyRowExtras(input.closest('.defect-input-row'), d.id);
                     savedCount++;
                 }
             });
@@ -3644,7 +3653,7 @@
                             contractorId,
                             description: input.value.trim()
                         });
-                        uploadRowPhotos(input.closest('.defect-input-row'), d.id);
+                        applyRowExtras(input.closest('.defect-input-row'), d.id);
                         totalSaved++;
                     }
                 });
@@ -3702,12 +3711,39 @@
             row._photos.forEach(file => window.CloudPhotos.uploadWhenReady(legacyId, file));
         }
 
+        // Apply the row's chosen location + queued photos to the saved defect
+        function applyRowExtras(row, legacyId) {
+            if (row && row._location) db.setDefectLocation(legacyId, row._location);
+            uploadRowPhotos(row, legacyId);
+        }
+
+        // Pin beside an Enter-defect row → pick the location for that defect
+        function pickRowLocation(btn) {
+            const row = btn.closest('.defect-input-row');
+            const cur = (row && row._location) || '';
+            const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" data-val="${String(val).replace(/"/g, '&quot;')}">${label}</button>`;
+            const items = opt('', '— None —') + DEFECT_LOCATIONS.map(l => opt(l, l)).join('');
+            impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body"><div class="loc-grid">${items}</div></div>`);
+            document.querySelectorAll('#imp-ov .loc-opt').forEach(b => {
+                b.onclick = () => {
+                    const val = b.getAttribute('data-val') || '';
+                    if (row) row._location = val;
+                    btn.classList.toggle('has-loc', !!val);
+                    btn.title = val || 'Set location';
+                    btn.innerHTML = '📍' + (val ? '<span class="row-loc-lbl">' + val + '</span>' : '');
+                    impClose();
+                    showToast(val ? ('Location: ' + val) : 'Location cleared');
+                };
+            });
+        }
+
         function addQuickDefectRow() {
             const container = document.getElementById('quick-defects-container');
             const row = document.createElement('div');
             row.className = 'defect-input-row';
             row.innerHTML = `
-                <span>•</span>
+                <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                 <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
             `;
             container.appendChild(row);
@@ -3718,7 +3754,7 @@
             const row = document.createElement('div');
             row.className = 'defect-input-row';
             row.innerHTML = `
-                <span>•</span>
+                <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                 <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
             `;
             container.appendChild(row);
@@ -4966,27 +5002,27 @@
                             <label>Defects:</label>
                             <div id="quick-defects-container">
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                             </div>
@@ -5026,27 +5062,27 @@
                             <label>Defects:</label>
                             <div id="quick-defects-container-address">
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <span>•</span>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍</button>
                                     <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                             </div>
