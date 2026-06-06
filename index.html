@@ -1369,9 +1369,9 @@
             position: absolute; left: 0; top: 0; bottom: 0; width: 7px;
             border: none; border-radius: 7px 0 0 7px; padding: 0; cursor: pointer;
         }
-        .status-tab.status-open      { background: #E5484D; }  /* logged, not booked */
-        .status-tab.status-pending   { background: #F5A623; }  /* booked, outstanding */
-        .status-tab.status-completed { background: #30A46C; }  /* completed */
+        .status-tab.status-open      { background: #FF4D4F; }  /* logged, not booked */
+        .status-tab.status-pending   { background: #FFB020; }  /* booked, outstanding */
+        .status-tab.status-completed { background: #3FCB7E; }  /* completed */
         .defect-text { flex: 1 1 auto !important; min-width: 0; }
         .defect-actions { gap: 2px !important; align-items: center; flex-shrink: 0; }
         /* Bare, tiny icons — no box/background */
@@ -4647,19 +4647,29 @@
             }
             showToast('Preparing email…');
             const booking = db.getContractorBooking(contractorId, addressId);
+            const subject = 'Defects - ' + addr + ' - ' + c.name;
             let body = addr + '\n\n' + c.name + '\n';
+            const files = [];
             for (const d of defects) {
                 body += '• ' + (d.location ? d.location + ' - ' : '') + d.description + '\n';
-                if (window.CloudPhotos && window.CloudPhotos.getLinks) {
-                    try {
-                        const links = await window.CloudPhotos.getLinks(d.id);
-                        links.forEach((u, i) => { body += '    Photo ' + (i + 1) + ': ' + u + '\n'; });
-                    } catch (e) {}
+                if (window.CloudPhotos && window.CloudPhotos.getFiles) {
+                    try { (await window.CloudPhotos.getFiles(d.id)).forEach(f => files.push(f)); } catch (e) {}
                 }
-                body += '\n';
             }
-            if (booking) body += 'Please confirm booking date of ' + fmtDateNice(booking) + '.\n';
-            const subject = 'Defects - ' + addr + ' - ' + c.name;
+            if (booking) body += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
+
+            // Prefer the share sheet so the actual photos ATTACH to the email
+            // (clean), instead of pasting long, messy links. Falls back to a
+            // plain mailto where attaching files isn't supported (e.g. desktop).
+            if (files.length && navigator.canShare && navigator.canShare({ files })) {
+                try {
+                    await navigator.share({ title: subject, text: body, files });
+                    return;
+                } catch (e) {
+                    if (e && e.name === 'AbortError') return;   // user closed the sheet
+                    /* otherwise fall through to mailto */
+                }
+            }
             window.location.href = 'mailto:' + encodeURIComponent(c.email) +
                 '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
         }

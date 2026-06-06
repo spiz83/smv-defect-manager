@@ -811,6 +811,24 @@
       const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(rows.map(r => r.storage_path), 604800);
       return (signed || []).map(s => s.signedUrl).filter(Boolean);
     },
+    // Actual photo File objects (for attaching to an email via the share sheet)
+    getFiles: async (legacyId) => {
+      const uuid = idMap.defects[legacyId];
+      if (!uuid) return [];
+      const { data: rows } = await sb.from('dm_defect_photos').select('storage_path').eq('defect_id', uuid);
+      if (!rows || !rows.length) return [];
+      const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(rows.map(r => r.storage_path), 600);
+      const files = []; let i = 0;
+      for (const s of (signed || [])) {
+        if (!s.signedUrl) continue;
+        try {
+          const blob = await (await fetch(s.signedUrl)).blob();
+          i++;
+          files.push(new File([blob], `photo-${legacyId}-${i}.jpg`, { type: blob.type || 'image/jpeg' }));
+        } catch (e) { /* skip a bad image */ }
+      }
+      return files;
+    },
     // Used by the Add Defects flow: wait until the just-created defect has been
     // synced (has a cloud id), then upload the held photo.
     uploadWhenReady: async (legacyId, file) => {
