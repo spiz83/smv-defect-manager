@@ -442,19 +442,6 @@
             width: 8px; height: 8px; border-radius: 50%;
             background: #FF3B30;
         }
-        /* Communication log modal rows */
-        .cm-row {
-            display: flex; align-items: center; justify-content: space-between;
-            gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-color);
-        }
-        .cm-k { font-size: 13px; color: var(--text-secondary); }
-        .cm-v { font-size: 16px; font-weight: 600; }
-        .cm-now {
-            background: var(--blue); color: #fff; border: none;
-            border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer;
-            white-space: nowrap; flex-shrink: 0;
-        }
-
         /* Modal Styles */
         .modal {
             display: none;
@@ -1921,14 +1908,6 @@
                 if (defect) {
                     defect.status = status;
                     defect.completed = (status === 'completed');
-                    this.save();
-                }
-            }
-
-            setDefectComms(id, fields) {
-                const defect = this.data.defects.find(d => d.id === id);
-                if (defect) {
-                    Object.assign(defect, fields);
                     this.save();
                 }
             }
@@ -3851,32 +3830,6 @@
             reader.readAsText(file);
         }
 
-        function saveSingleAddress() {
-            const street = document.getElementById('single-address-street').value.trim();
-            const suburb = document.getElementById('single-address-suburb').value.trim();
-            const propertyNumber = document.getElementById('single-address-prop').value.trim();
-
-            if (!street || !suburb) {
-                showToast('Please enter street and suburb', true);
-                return;
-            }
-
-            // Check for duplicates
-            const exists = db.getAddresses().some(a => 
-                a.street.toLowerCase() === street.toLowerCase() && 
-                a.suburb.toLowerCase() === suburb.toLowerCase()
-            );
-
-            if (exists) {
-                showToast('This address already exists', true);
-                return;
-            }
-
-            db.addAddress({ street, suburb, propertyNumber });
-            closeModal('add-address-options-modal');
-            showToast('Address added successfully');
-        }
-
         function saveCombinedAddresses() {
             const inputs = [
                 document.getElementById('combined-address-1').value.trim(),
@@ -4326,49 +4279,6 @@
                 : `showToast('Log in to use photos')`;
             return `<button class="photo-btn ${count ? 'has-photos' : ''}" title="Photos"
                         onclick="event.stopPropagation(); ${onclick}">📷${count ? `<span class="photo-count">${count}</span>` : ''}</button>`;
-        }
-
-        // ---- Contractor communication tracking (#6) ----
-        function fmtDate(v) { return v ? String(v).slice(0, 10) : '—'; }
-        function openDefectComms(defectId) {
-            const d = db.data.defects.find(x => x.id === defectId);
-            if (!d) return;
-            impOverlay(`
-                <div id="imp-head"><strong>📇 Communication Log</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body">
-                    <div style="font-size:14px;color:var(--text-secondary);margin-bottom:14px">${(d.description||'').replace(/</g,'&lt;')}</div>
-                    <div class="cm-row"><div><div class="cm-k">Last email sent</div><div class="cm-v" id="cm-email">${fmtDate(d.lastEmailAt)}</div></div>
-                        <button class="cm-now" data-f="lastEmailAt">Mark today</button></div>
-                    <div class="cm-row"><div><div class="cm-k">Last SMS sent</div><div class="cm-v" id="cm-sms">${fmtDate(d.lastSmsAt)}</div></div>
-                        <button class="cm-now" data-f="lastSmsAt">Mark today</button></div>
-                    <div class="cm-row"><div><div class="cm-k">Last update received</div><div class="cm-v" id="cm-update">${fmtDate(d.lastUpdateAt)}</div></div>
-                        <button class="cm-now" data-f="lastUpdateAt">Mark today</button></div>
-                    <div class="imp-field" style="margin-top:14px"><label>Follow-up reminder</label>
-                        <input type="date" id="cm-followup" value="${d.followupAt ? String(d.followupAt).slice(0,10) : ''}"></div>
-                    <button class="imp-btn" id="cm-save">Save</button>
-                    <button class="imp-btn secondary" id="cm-clear" style="margin-top:8px">Clear all</button>
-                </div>`);
-            const ov = document.getElementById('imp-ov');
-            ov.querySelectorAll('.cm-now').forEach(btn => {
-                btn.onclick = () => {
-                    const f = btn.getAttribute('data-f');
-                    const today = new Date().toISOString();
-                    db.setDefectComms(defectId, { [f]: today });
-                    const map = { lastEmailAt: 'cm-email', lastSmsAt: 'cm-sms', lastUpdateAt: 'cm-update' };
-                    const el = document.getElementById(map[f]); if (el) el.textContent = today.slice(0, 10);
-                    showToast('Updated');
-                };
-            });
-            document.getElementById('cm-save').onclick = () => {
-                const fv = document.getElementById('cm-followup').value || null;
-                db.setDefectComms(defectId, { followupAt: fv });
-                impClose(); render(); showToast('Communication log saved');
-            };
-            document.getElementById('cm-clear').onclick = () => {
-                if (!confirm('Clear all communication dates for this defect?')) return;
-                db.setDefectComms(defectId, { lastEmailAt: null, lastSmsAt: null, lastUpdateAt: null, followupAt: null });
-                impClose(); render(); showToast('Communication log cleared');
-            };
         }
 
         // Friendly DD/MM/YYYY for display + reports
