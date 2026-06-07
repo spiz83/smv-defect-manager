@@ -1889,20 +1889,6 @@
                 return newDefect;
             }
 
-            deleteDefect(id) {
-                this.data.defects = this.data.defects.filter(d => d.id !== id);
-                this.save();
-            }
-
-            markDefectComplete(id) {
-                const defect = this.data.defects.find(d => d.id === id);
-                if (defect) {
-                    defect.completed = true;
-                    defect.status = 'completed';
-                    this.save();
-                }
-            }
-
             setDefectStatus(id, status) {
                 const defect = this.data.defects.find(d => d.id === id);
                 if (defect) {
