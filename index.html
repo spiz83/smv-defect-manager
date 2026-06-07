@@ -3806,28 +3806,6 @@
             });
         }
 
-        function addQuickDefectRow() {
-            const container = document.getElementById('quick-defects-container');
-            const row = document.createElement('div');
-            row.className = 'defect-input-row';
-            row.innerHTML = `
-                <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
-                <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
-            `;
-            container.appendChild(row);
-        }
-
-        function addQuickDefectRowAddress() {
-            const container = document.getElementById('quick-defects-container-address');
-            const row = document.createElement('div');
-            row.className = 'defect-input-row';
-            row.innerHTML = `
-                <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
-                <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
-            `;
-            container.appendChild(row);
-        }
-
         // Handle text file upload for bulk address import
         function handleAddressTextUpload(event) {
             const file = event.target.files[0];
@@ -4293,12 +4271,6 @@
             render();
         }
 
-        function toggleDefectComplete(defectId) {
-            db.markDefectComplete(defectId);
-            render();
-            showToast('Defect marked as complete');
-        }
-
         // Status helpers (Open -> Pending -> Completed)
         function defectStatusOf(defect) {
             return defect.status || (defect.completed ? 'completed' : 'open');
@@ -4363,21 +4335,6 @@
         }
 
         // ---- Contractor communication tracking (#6) ----
-        function commsState(defect) {
-            const any = defect.lastEmailAt || defect.lastSmsAt || defect.lastUpdateAt || defect.followupAt;
-            let overdue = false;
-            if (defect.followupAt && !defect.completed) {
-                const today = new Date().toISOString().slice(0, 10);
-                overdue = String(defect.followupAt).slice(0, 10) <= today;
-            }
-            return { any: !!any, overdue };
-        }
-        function commsIcon(defect) {
-            const cs = commsState(defect);
-            const cls = cs.overdue ? 'comms-overdue' : (cs.any ? 'comms-set' : '');
-            return `<button class="comms-btn ${cls}" title="Communication log"
-                        onclick="event.stopPropagation(); openDefectComms(${defect.id})">📅</button>`;
-        }
         function fmtDate(v) { return v ? String(v).slice(0, 10) : '—'; }
         function openDefectComms(defectId) {
             const d = db.data.defects.find(x => x.id === defectId);
@@ -4594,38 +4551,6 @@
             }
 
             return textContent;
-        }
-
-        function exportDefects() {
-            const text = generateDefectText();
-            const blob = new Blob([text], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            
-            // Generate smart filename based on current view
-            let filename = 'defects';
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-            
-            if (state.currentView === 'view-defects-address' && state.filters.addressId) {
-                const address = db.getAddress(state.filters.addressId);
-                const lot = address.propertyNumber || 'XXX';
-                const streetPrefix = address.street.replace(/\s+/g, '').substring(0, 5);
-                filename = `Lot${lot}_${streetPrefix}_${today}.txt`;
-            } else if (state.currentView === 'view-defects-contractor' && state.filters.contractorId) {
-                const contractor = db.getContractor(state.filters.contractorId);
-                const contractorPrefix = contractor.name.replace(/\s+/g, '').substring(0, 5);
-                filename = `Contractor_${contractorPrefix}_${today}.txt`;
-            } else if (state.currentView === 'view-multiple-contractors' && state.filters.contractorIds) {
-                filename = `MultipleContractors_${today}.txt`;
-            } else {
-                filename = `AllDefects_${today}.txt`;
-            }
-            
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('Exported to ' + filename);
         }
 
         function copyDefectsToClipboard() {
@@ -5042,72 +4967,6 @@
                 input.setAttribute('data-address-id', addressId);
             }
             if (dropdown) dropdown.classList.remove('active');
-        }
-
-        function saveAddresssDefects() {
-            const addressId = state.filters.addressId;
-            const groups = document.querySelectorAll('.contractor-group');
-            let savedCount = 0;
-
-            groups.forEach(group => {
-                const contractorInput = group.querySelector('.contractor-input');
-                const contractorId = contractorInput ? parseInt(contractorInput.getAttribute('data-contractor-id')) : null;
-                
-                if (!contractorId) return;
-
-                const inputs = group.querySelectorAll('input[type="text"]:not(.contractor-input)');
-                inputs.forEach(input => {
-                    if (input.value.trim()) {
-                        db.addDefect({
-                            addressId,
-                            contractorId,
-                            description: input.value.trim()
-                        });
-                        savedCount++;
-                        input.value = '';
-                    }
-                });
-            });
-
-            if (savedCount > 0) {
-                showToast(`${savedCount} defects added successfully`);
-                initializeAddressDefectForm();
-            } else {
-                showToast('Please select a contractor and enter at least one defect', true);
-            }
-        }
-
-        function saveContractorDefects() {
-            const contractorId = state.filters.contractorId;
-            const groups = document.querySelectorAll('.contractor-group');
-            let savedCount = 0;
-
-            groups.forEach(group => {
-                const addressInput = group.querySelector('.address-input');
-                const addressId = addressInput ? parseInt(addressInput.getAttribute('data-address-id')) : null;
-                
-                if (!addressId) return;
-
-                const inputs = group.querySelectorAll('input[type="text"]:not(.address-input)');
-                inputs.forEach(input => {
-                    if (input.value.trim()) {
-                        db.addDefect({
-                            addressId,
-                            contractorId,
-                            description: input.value.trim()
-                        });
-                        savedCount++;
-                        input.value = '';
-                    }
-                });
-            });
-
-            if (savedCount > 0) {
-                showToast(`${savedCount} defects added successfully`);
-                initializeContractorDefectForm();
-            } else {
-                showToast('Please select an address and enter at least one defect', true);
-            }
         }
 
         // Manage modals
