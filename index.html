@@ -442,19 +442,6 @@
             width: 8px; height: 8px; border-radius: 50%;
             background: #FF3B30;
         }
-        /* Communication log modal rows */
-        .cm-row {
-            display: flex; align-items: center; justify-content: space-between;
-            gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-color);
-        }
-        .cm-k { font-size: 13px; color: var(--text-secondary); }
-        .cm-v { font-size: 16px; font-weight: 600; }
-        .cm-now {
-            background: var(--blue); color: #fff; border: none;
-            border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer;
-            white-space: nowrap; flex-shrink: 0;
-        }
-
         /* Modal Styles */
         .modal {
             display: none;
@@ -1727,11 +1714,20 @@
             }
 
             addAddress(address) {
-                const id = Math.max(0, ...this.data.addresses.map(a => a.id)) + 1;
-                const newAddress = { id, ...address };
-                this.data.addresses.push(newAddress);
-                this.save();
-                return newAddress;
+                // Addresses now come from CH Tracker jobs (read-only) so the two
+                // apps never double up. Try to match what the user typed to an
+                // existing job; otherwise tell them to add it in CH Tracker.
+                const q = `${address.street || ''} ${address.suburb || ''} ${address.propertyNumber || ''}`.toLowerCase();
+                const tokens = q.split(/\s+/).filter(Boolean);
+                const match = this.data.addresses.find(a => {
+                    const hay = `${a.street} ${a.suburb} ${a.propertyNumber || ''}`.toLowerCase();
+                    return tokens.length && tokens.every(t => hay.includes(t));
+                });
+                if (match) return match;
+                if (typeof showToast === 'function') {
+                    showToast('That property isn’t a CH Tracker job — add it there first, then pick it here.', true);
+                }
+                return null;
             }
 
             deleteAddress(id) {
@@ -1792,12 +1788,6 @@
             }
 
             // Trade operations
-            getTrades() {
-                return this.data.trades.sort((a, b) => 
-                    a.name.localeCompare(b.name)
-                );
-            }
-
             addTrade(trade) {
                 const id = Math.max(0, ...this.data.trades.map(t => t.id)) + 1;
                 const newTrade = { 
@@ -1899,33 +1889,11 @@
                 return newDefect;
             }
 
-            deleteDefect(id) {
-                this.data.defects = this.data.defects.filter(d => d.id !== id);
-                this.save();
-            }
-
-            markDefectComplete(id) {
-                const defect = this.data.defects.find(d => d.id === id);
-                if (defect) {
-                    defect.completed = true;
-                    defect.status = 'completed';
-                    this.save();
-                }
-            }
-
             setDefectStatus(id, status) {
                 const defect = this.data.defects.find(d => d.id === id);
                 if (defect) {
                     defect.status = status;
                     defect.completed = (status === 'completed');
-                    this.save();
-                }
-            }
-
-            setDefectComms(id, fields) {
-                const defect = this.data.defects.find(d => d.id === id);
-                if (defect) {
-                    Object.assign(defect, fields);
                     this.save();
                 }
             }
@@ -2877,14 +2845,8 @@
                         </div>
 
                         <div class="crud-list">
-                            <div class="crud-item">
-                                <span class="crud-item-label">Job Address</span>
-                                <div class="crud-actions">
-                                    <button class="btn btn-primary" onclick="openModal('add-address-options-modal')">Add</button>
-                                    <button class="btn btn-danger" onclick="openModal('delete-address-modal')">Delete</button>
-                                </div>
-                            </div>
-
+                            <!-- Job Address Add/Delete removed: addresses are now read-only CH Tracker
+                                 jobs (shared DB), managed in CH Tracker, not here. -->
                             <div class="crud-item">
                                 <span class="crud-item-label">Trade Type</span>
                                 <div class="crud-actions">
@@ -3797,28 +3759,6 @@
             });
         }
 
-        function addQuickDefectRow() {
-            const container = document.getElementById('quick-defects-container');
-            const row = document.createElement('div');
-            row.className = 'defect-input-row';
-            row.innerHTML = `
-                <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
-                <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
-            `;
-            container.appendChild(row);
-        }
-
-        function addQuickDefectRowAddress() {
-            const container = document.getElementById('quick-defects-container-address');
-            const row = document.createElement('div');
-            row.className = 'defect-input-row';
-            row.innerHTML = `
-                <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
-                <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
-            `;
-            container.appendChild(row);
-        }
-
         // Handle text file upload for bulk address import
         function handleAddressTextUpload(event) {
             const file = event.target.files[0];
@@ -3868,32 +3808,6 @@
             };
             
             reader.readAsText(file);
-        }
-
-        function saveSingleAddress() {
-            const street = document.getElementById('single-address-street').value.trim();
-            const suburb = document.getElementById('single-address-suburb').value.trim();
-            const propertyNumber = document.getElementById('single-address-prop').value.trim();
-
-            if (!street || !suburb) {
-                showToast('Please enter street and suburb', true);
-                return;
-            }
-
-            // Check for duplicates
-            const exists = db.getAddresses().some(a => 
-                a.street.toLowerCase() === street.toLowerCase() && 
-                a.suburb.toLowerCase() === suburb.toLowerCase()
-            );
-
-            if (exists) {
-                showToast('This address already exists', true);
-                return;
-            }
-
-            db.addAddress({ street, suburb, propertyNumber });
-            closeModal('add-address-options-modal');
-            showToast('Address added successfully');
         }
 
         function saveCombinedAddresses() {
@@ -4284,12 +4198,6 @@
             render();
         }
 
-        function toggleDefectComplete(defectId) {
-            db.markDefectComplete(defectId);
-            render();
-            showToast('Defect marked as complete');
-        }
-
         // Status helpers (Open -> Pending -> Completed)
         function defectStatusOf(defect) {
             return defect.status || (defect.completed ? 'completed' : 'open');
@@ -4351,64 +4259,6 @@
                 : `showToast('Log in to use photos')`;
             return `<button class="photo-btn ${count ? 'has-photos' : ''}" title="Photos"
                         onclick="event.stopPropagation(); ${onclick}">📷${count ? `<span class="photo-count">${count}</span>` : ''}</button>`;
-        }
-
-        // ---- Contractor communication tracking (#6) ----
-        function commsState(defect) {
-            const any = defect.lastEmailAt || defect.lastSmsAt || defect.lastUpdateAt || defect.followupAt;
-            let overdue = false;
-            if (defect.followupAt && !defect.completed) {
-                const today = new Date().toISOString().slice(0, 10);
-                overdue = String(defect.followupAt).slice(0, 10) <= today;
-            }
-            return { any: !!any, overdue };
-        }
-        function commsIcon(defect) {
-            const cs = commsState(defect);
-            const cls = cs.overdue ? 'comms-overdue' : (cs.any ? 'comms-set' : '');
-            return `<button class="comms-btn ${cls}" title="Communication log"
-                        onclick="event.stopPropagation(); openDefectComms(${defect.id})">📅</button>`;
-        }
-        function fmtDate(v) { return v ? String(v).slice(0, 10) : '—'; }
-        function openDefectComms(defectId) {
-            const d = db.data.defects.find(x => x.id === defectId);
-            if (!d) return;
-            impOverlay(`
-                <div id="imp-head"><strong>📇 Communication Log</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body">
-                    <div style="font-size:14px;color:var(--text-secondary);margin-bottom:14px">${(d.description||'').replace(/</g,'&lt;')}</div>
-                    <div class="cm-row"><div><div class="cm-k">Last email sent</div><div class="cm-v" id="cm-email">${fmtDate(d.lastEmailAt)}</div></div>
-                        <button class="cm-now" data-f="lastEmailAt">Mark today</button></div>
-                    <div class="cm-row"><div><div class="cm-k">Last SMS sent</div><div class="cm-v" id="cm-sms">${fmtDate(d.lastSmsAt)}</div></div>
-                        <button class="cm-now" data-f="lastSmsAt">Mark today</button></div>
-                    <div class="cm-row"><div><div class="cm-k">Last update received</div><div class="cm-v" id="cm-update">${fmtDate(d.lastUpdateAt)}</div></div>
-                        <button class="cm-now" data-f="lastUpdateAt">Mark today</button></div>
-                    <div class="imp-field" style="margin-top:14px"><label>Follow-up reminder</label>
-                        <input type="date" id="cm-followup" value="${d.followupAt ? String(d.followupAt).slice(0,10) : ''}"></div>
-                    <button class="imp-btn" id="cm-save">Save</button>
-                    <button class="imp-btn secondary" id="cm-clear" style="margin-top:8px">Clear all</button>
-                </div>`);
-            const ov = document.getElementById('imp-ov');
-            ov.querySelectorAll('.cm-now').forEach(btn => {
-                btn.onclick = () => {
-                    const f = btn.getAttribute('data-f');
-                    const today = new Date().toISOString();
-                    db.setDefectComms(defectId, { [f]: today });
-                    const map = { lastEmailAt: 'cm-email', lastSmsAt: 'cm-sms', lastUpdateAt: 'cm-update' };
-                    const el = document.getElementById(map[f]); if (el) el.textContent = today.slice(0, 10);
-                    showToast('Updated');
-                };
-            });
-            document.getElementById('cm-save').onclick = () => {
-                const fv = document.getElementById('cm-followup').value || null;
-                db.setDefectComms(defectId, { followupAt: fv });
-                impClose(); render(); showToast('Communication log saved');
-            };
-            document.getElementById('cm-clear').onclick = () => {
-                if (!confirm('Clear all communication dates for this defect?')) return;
-                db.setDefectComms(defectId, { lastEmailAt: null, lastSmsAt: null, lastUpdateAt: null, followupAt: null });
-                impClose(); render(); showToast('Communication log cleared');
-            };
         }
 
         // Friendly DD/MM/YYYY for display + reports
@@ -4585,38 +4435,6 @@
             }
 
             return textContent;
-        }
-
-        function exportDefects() {
-            const text = generateDefectText();
-            const blob = new Blob([text], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            
-            // Generate smart filename based on current view
-            let filename = 'defects';
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-            
-            if (state.currentView === 'view-defects-address' && state.filters.addressId) {
-                const address = db.getAddress(state.filters.addressId);
-                const lot = address.propertyNumber || 'XXX';
-                const streetPrefix = address.street.replace(/\s+/g, '').substring(0, 5);
-                filename = `Lot${lot}_${streetPrefix}_${today}.txt`;
-            } else if (state.currentView === 'view-defects-contractor' && state.filters.contractorId) {
-                const contractor = db.getContractor(state.filters.contractorId);
-                const contractorPrefix = contractor.name.replace(/\s+/g, '').substring(0, 5);
-                filename = `Contractor_${contractorPrefix}_${today}.txt`;
-            } else if (state.currentView === 'view-multiple-contractors' && state.filters.contractorIds) {
-                filename = `MultipleContractors_${today}.txt`;
-            } else {
-                filename = `AllDefects_${today}.txt`;
-            }
-            
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('Exported to ' + filename);
         }
 
         function copyDefectsToClipboard() {
@@ -5033,72 +4851,6 @@
                 input.setAttribute('data-address-id', addressId);
             }
             if (dropdown) dropdown.classList.remove('active');
-        }
-
-        function saveAddresssDefects() {
-            const addressId = state.filters.addressId;
-            const groups = document.querySelectorAll('.contractor-group');
-            let savedCount = 0;
-
-            groups.forEach(group => {
-                const contractorInput = group.querySelector('.contractor-input');
-                const contractorId = contractorInput ? parseInt(contractorInput.getAttribute('data-contractor-id')) : null;
-                
-                if (!contractorId) return;
-
-                const inputs = group.querySelectorAll('input[type="text"]:not(.contractor-input)');
-                inputs.forEach(input => {
-                    if (input.value.trim()) {
-                        db.addDefect({
-                            addressId,
-                            contractorId,
-                            description: input.value.trim()
-                        });
-                        savedCount++;
-                        input.value = '';
-                    }
-                });
-            });
-
-            if (savedCount > 0) {
-                showToast(`${savedCount} defects added successfully`);
-                initializeAddressDefectForm();
-            } else {
-                showToast('Please select a contractor and enter at least one defect', true);
-            }
-        }
-
-        function saveContractorDefects() {
-            const contractorId = state.filters.contractorId;
-            const groups = document.querySelectorAll('.contractor-group');
-            let savedCount = 0;
-
-            groups.forEach(group => {
-                const addressInput = group.querySelector('.address-input');
-                const addressId = addressInput ? parseInt(addressInput.getAttribute('data-address-id')) : null;
-                
-                if (!addressId) return;
-
-                const inputs = group.querySelectorAll('input[type="text"]:not(.address-input)');
-                inputs.forEach(input => {
-                    if (input.value.trim()) {
-                        db.addDefect({
-                            addressId,
-                            contractorId,
-                            description: input.value.trim()
-                        });
-                        savedCount++;
-                        input.value = '';
-                    }
-                });
-            });
-
-            if (savedCount > 0) {
-                showToast(`${savedCount} defects added successfully`);
-                initializeContractorDefectForm();
-            } else {
-                showToast('Please select an address and enter at least one defect', true);
-            }
         }
 
         // Manage modals
@@ -6891,9 +6643,12 @@
          Supabase -> Project Settings -> API, then reload.
     ===================================================================== -->
     <script>
+      // Points at the CH Tracker Supabase project (shared source of truth).
+      // Jobs + supervisors come from CH Tracker; defects are written back to
+      // the SAME database so both apps stay in sync (Spiro 2026-06-07).
       window.SUPABASE_CONFIG = {
-        url:     'https://ynrhaziygvffkwkoeldr.supabase.co',
-        anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlucmhheml5Z3ZmZmt3a29lbGRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2ODg1MzMsImV4cCI6MjA5NjI2NDUzM30.f7cb_oSQU2AUUFQTxq4wmQMlg4tYw9gTzcXl-0RoQS4'
+        url:     'https://cubwwnvzmeydyixhetfb.supabase.co',
+        anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1Ynd3bnZ6bWV5ZHlpeGhldGZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NzU3MDksImV4cCI6MjA5NDE1MTcwOX0.CkeKGBkvNE4fAUl-WDSEb8s3JLqPul2uiAodffLn2nY'
       };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
