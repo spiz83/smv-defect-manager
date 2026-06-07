@@ -1801,12 +1801,6 @@
             }
 
             // Trade operations
-            getTrades() {
-                return this.data.trades.sort((a, b) => 
-                    a.name.localeCompare(b.name)
-                );
-            }
-
             addTrade(trade) {
                 const id = Math.max(0, ...this.data.trades.map(t => t.id)) + 1;
                 const newTrade = { 
