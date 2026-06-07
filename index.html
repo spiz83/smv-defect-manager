@@ -1172,21 +1172,31 @@
         .home-2col .search-input-wrapper { gap: 6px !important; min-width: 0; }
         .home-2col .search-input-wrapper input { padding: 11px 9px !important; min-width: 0 !important; }
 
-        /* Multiple Contractors / Trades — let inputs shrink, compact button */
-        .multi-select-wrapper { gap: 6px !important; flex-wrap: nowrap; width: 100%; max-width: 100%; }
+        /* Multiple Contractors / Trades — stack the three inputs vertically
+           (full-width, readable) with a full-width search button beneath, so
+           the button is always visible and nothing overflows the screen. */
+        .multi-select-wrapper {
+            flex-direction: column;
+            gap: 8px !important;
+            width: 100%;
+            max-width: 100%;
+        }
         .multi-select-wrapper input,
-        .multi-select-wrapper .autocomplete-container { min-width: 0 !important; }
-        /* Inputs must fill their flex:1 container, not their intrinsic ~170px
-           width — otherwise 3 inputs push the search button off the screen. */
-        .multi-select-wrapper input { padding: 11px 8px !important; width: 100% !important; }
+        .multi-select-wrapper .autocomplete-container { min-width: 0 !important; width: 100% !important; }
+        .multi-select-wrapper input { padding: 11px 14px !important; }
         body.design-modern .multi-select-wrapper .search-btn,
         .multi-select-wrapper .search-btn {
-            width: 30px !important;
-            height: 38px !important;
+            width: 100% !important;
+            height: 44px !important;
+            font-size: 16px !important;
             box-shadow: none !important;
-            border-radius: 9px !important;
+            border-radius: 12px !important;
             padding: 0 !important;
             flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
 
         @media (max-width: 600px) {
@@ -2163,7 +2173,7 @@
                                    onfocus="handleAutocomplete(this, 'contractor', 'multi-contractor-3')">
                             <div id="multi-contractor-3-dropdown" class="autocomplete-dropdown"></div>
                         </div>
-                        <button class="search-btn" onclick="searchMultipleContractors()">🔍</button>
+                        <button class="search-btn" onclick="searchMultipleContractors()">🔍 Search</button>
                     </div>
 
                     <div class="section-title">Multiple Trades</div>
@@ -2186,7 +2196,7 @@
                                    onfocus="handleAutocomplete(this, 'trade', 'multi-trade-3')">
                             <div id="multi-trade-3-dropdown" class="autocomplete-dropdown"></div>
                         </div>
-                        <button class="search-btn" onclick="searchMultipleTrades()">🔍</button>
+                        <button class="search-btn" onclick="searchMultipleTrades()">🔍 Search</button>
                     </div>
 
                     <div class="section-title">Reports</div>
