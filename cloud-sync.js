@@ -41,9 +41,13 @@
   }
 
   // ---- State ----------------------------------------------------------------
-  let workspaceId = null;
+  // CH Tracker model: no workspaces. RLS scopes data by the signed-in user's
+  // role (manager sees all, supervisor sees only their assigned jobs).
+  let userRole = null;            // 'manager' | 'supervisor'
+  let userId = null;
   let userEmail = null;
-  // idMap.<entity>[legacyId] = cloud uuid
+  // idMap.<entity>[legacyId] = cloud uuid.
+  // addresses: legacyId (hash of job uuid) -> jobs.id (uuid). Read-only.
   const idMap = { trades: {}, contractors: {}, addresses: {}, defects: {} };
   let snapshot = emptySnap();     // last successfully-synced view of db.data
   let syncing = Promise.resolve();
@@ -214,42 +218,37 @@
   }
 
   // ===========================================================================
-  //  2. Workspace resolution
+  //  2. Role resolution (CH Tracker: profiles.role drives what you can see)
   // ===========================================================================
-  async function resolveWorkspace() {
+  async function resolveRole() {
     const { data: { user } } = await sb.auth.getUser();
     if (!user) throw new Error('SESSION_EXPIRED');
-    userEmail = user ? user.email : null;
-    // The signup trigger creates a workspace automatically; pick the first one
-    // the user is a member of (owner workspace).
+    userId = user.id;
+    userEmail = user.email || null;
     const { data, error } = await sb
-      .from('workspace_members')
-      .select('workspace_id, role')
-      .order('role', { ascending: true })
-      .limit(1);
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
     if (error) throw error;
-    if (data && data.length) { workspaceId = data[0].workspace_id; return; }
-    // Fallback: create one if the trigger hasn't (shouldn't normally happen).
-    const { data: ws, error: e2 } = await sb
-      .from('workspaces').insert({ name: userEmail || 'My Workspace', owner_id: user.id })
-      .select('id').single();
-    if (e2) throw e2;
-    await sb.from('workspace_members').insert({ workspace_id: ws.id, user_id: user.id, role: 'owner' });
-    workspaceId = ws.id;
+    // No profile row → treat as supervisor (RLS will still gate everything).
+    userRole = (data && data.role) || 'supervisor';
   }
 
   // ===========================================================================
   //  3. Pull (cloud -> app)   |   the cloud is the source of truth
   // ===========================================================================
   async function pullAll() {
-    const [trades, contractors, links, addresses, defects] = await Promise.all([
-      sb.from('dm_trades').select('*').eq('workspace_id', workspaceId),
-      sb.from('dm_contractors').select('*').eq('workspace_id', workspaceId),
+    // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
+    // RLS to what this user may see — no explicit workspace filter.
+    const [trades, contractors, links, jobs, defects] = await Promise.all([
+      sb.from('dm_trades').select('*'),
+      sb.from('dm_contractors').select('*'),
       sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
-      sb.from('dm_addresses').select('*').eq('workspace_id', workspaceId),
-      sb.from('dm_defects').select('*').eq('workspace_id', workspaceId)
+      sb.from('jobs').select('id, job_number, lot, street, suburb'),
+      sb.from('dm_defects').select('*')
     ]);
-    for (const r of [trades, contractors, links, addresses, defects]) {
+    for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
     }
 
@@ -285,22 +284,30 @@
       });
     });
 
-    addresses.data.forEach(a => {
-      const lid = a.legacy_id != null ? a.legacy_id : hashId(a.id);
-      idMap.addresses[lid] = a.id; uuidToLegacy.addresses[a.id] = lid;
+    // CH Tracker jobs -> the app's read-only "addresses". A stable hash of the
+    // job uuid is the legacy int id the rest of the app keys off. Address text
+    // is "Lot N, Street" + suburb, job_number kept as propertyNumber for search.
+    jobs.data.forEach(j => {
+      const lid = hashId(j.id);
+      idMap.addresses[lid] = j.id; uuidToLegacy.addresses[j.id] = lid;
       newData.addresses.push({
-        id: lid, street: a.street || '', suburb: a.suburb || '',
-        propertyNumber: a.property_number || ''
+        id: lid,
+        street: [j.lot, j.street].filter(Boolean).join(', '),
+        suburb: j.suburb || '',
+        propertyNumber: j.job_number || ''
       });
     });
 
     defects.data.forEach(d => {
+      // d.job_id -> address legacy id. Skip any defect whose job isn't visible.
+      const addressLid = d.job_id != null ? uuidToLegacy.addresses[d.job_id] : null;
+      if (addressLid == null) return;
       const lid = d.legacy_id != null ? d.legacy_id : hashId(d.id);
       idMap.defects[lid] = d.id;
       defectUuidToLegacy[d.id] = lid;
       newData.defects.push({
         id: lid,
-        addressId: uuidToLegacy.addresses[d.address_id],
+        addressId: addressLid,
         contractorId: uuidToLegacy.contractors[d.contractor_id],
         description: d.description,
         status: d.status,                       // open | pending | completed
@@ -328,7 +335,7 @@
   async function refreshPhotoCounts() {
     try {
       const { data, error } = await sb.from('dm_defect_photos')
-        .select('defect_id').eq('workspace_id', workspaceId);
+        .select('defect_id');
       if (error) throw error;
       const counts = {};
       (data || []).forEach(p => {
@@ -351,34 +358,11 @@
   //  4. Migration (local -> cloud), one time when the cloud is empty
   // ===========================================================================
   async function maybeMigrate() {
-    const { count, error } = await sb
-      .from('dm_defects').select('id', { count: 'exact', head: true })
-      .eq('workspace_id', workspaceId);
-    if (error) throw error;
-    const cloudEmpty = !count;
-    const local = db.data || {};
-    const localHas = (local.defects && local.defects.length) ||
-                     (local.addresses && local.addresses.length) ||
-                     (local.contractors && local.contractors.length);
-    if (!cloudEmpty || !localHas) return false;
-
-    const ok = confirm(
-      `Set up your central database from the data on THIS device?\n\n` +
-      `This uploads:\n` +
-      `• ${(local.addresses || []).length} addresses\n` +
-      `• ${(local.contractors || []).length} contractors\n` +
-      `• ${(local.trades || []).length} trades\n` +
-      `• ${(local.defects || []).length} defects\n\n` +
-      `Nothing is deleted. If your real records are on another device, ` +
-      `press Cancel, import that device's backup file first, then reload.`
-    );
-    if (!ok) return false;
-
-    setStatus('Migrating…', 'syncing');
-    snapshot = emptySnap();          // diff against empty => insert everything
-    await pushDiff();                // uses current db.data
-    setStatus('Synced');
-    return true;
+    // Disabled: the data was migrated into CH Tracker server-side (Phase 2,
+    // 2026-06-07). The cloud is the source of truth; we never bulk-upload this
+    // device's old localStorage (it would create duplicate/ghost rows, and
+    // addresses are read-only jobs now anyway). Always just pull.
+    return false;
   }
 
   // ===========================================================================
@@ -387,38 +371,34 @@
   function byId(arr) { const m = {}; (arr || []).forEach(x => m[x.id] = x); return m; }
 
   async function pushDiff() {
-    if (!workspaceId) return;
+    if (!userId) return;
     const cur = db.data || {};
-    const W = workspaceId;
 
     // ---- Trades ----
     await diffEntity({
       cur: cur.trades, snap: snapshot.trades, table: 'dm_trades', map: idMap.trades,
-      toRow: (t) => ({ workspace_id: W, legacy_id: t.id, name: t.name, code: t.code || null }),
+      toRow: (t) => ({ legacy_id: t.id, name: t.name, code: t.code || null }),
       changed: (a, b) => a.name !== b.name || a.code !== b.code
     });
 
     // ---- Contractors ---- (trade links handled after)
     await diffEntity({
       cur: cur.contractors, snap: snapshot.contractors, table: 'dm_contractors', map: idMap.contractors,
-      toRow: (c) => ({ workspace_id: W, legacy_id: c.id, name: c.name, email: c.email || null, phone: c.phone || null }),
+      toRow: (c) => ({ legacy_id: c.id, name: c.name, email: c.email || null, phone: c.phone || null }),
       changed: (a, b) => a.name !== b.name || a.email !== b.email || a.phone !== b.phone
     });
 
-    // ---- Addresses ----
-    await diffEntity({
-      cur: cur.addresses, snap: snapshot.addresses, table: 'dm_addresses', map: idMap.addresses,
-      toRow: (a) => ({ workspace_id: W, legacy_id: a.id, street: a.street || null,
-                       suburb: a.suburb || null, property_number: a.propertyNumber || null }),
-      changed: (a, b) => a.street !== b.street || a.suburb !== b.suburb || a.propertyNumber !== b.propertyNumber
-    });
+    // Addresses are CH Tracker jobs — read-only, never pushed.
 
-    // ---- Defects ---- (depend on address/contractor maps, so go last)
+    // ---- Defects ---- (depend on address/contractor maps, so go last).
+    // Defects whose address (job) couldn't be mapped are skipped — they would
+    // fail the job_id-based RLS check anyway.
     await diffEntity({
-      cur: cur.defects, snap: snapshot.defects, table: 'dm_defects', map: idMap.defects,
+      cur: (cur.defects || []).filter(d => idMap.addresses[d.addressId]),
+      snap: snapshot.defects, table: 'dm_defects', map: idMap.defects,
       toRow: (d) => ({
-        workspace_id: W, legacy_id: d.id,
-        address_id: idMap.addresses[d.addressId] || null,
+        legacy_id: d.id,
+        job_id: idMap.addresses[d.addressId] || null,
         contractor_id: idMap.contractors[d.contractorId] || null,
         description: d.description,
         status: d.status || (d.completed ? 'completed' : 'open'),
@@ -525,7 +505,7 @@
     const origSave = db.save.bind(db);
     db.save = function () {
       origSave();                       // keep the local cache up to date
-      if (suppressPush || !workspaceId) return;
+      if (suppressPush || !userId) return;
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(runSync, 400);
     };
@@ -554,13 +534,9 @@
       // only re-pull when we have nothing pending locally
       pullAll().catch(e => console.error('[CloudSync] realtime pull', e));
     }, 800); };
-    realtimeChannel = sb.channel('dm-' + workspaceId)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_defects',
-           filter: 'workspace_id=eq.' + workspaceId }, bump)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_addresses',
-           filter: 'workspace_id=eq.' + workspaceId }, bump)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_contractors',
-           filter: 'workspace_id=eq.' + workspaceId }, bump)
+    realtimeChannel = sb.channel('dm-' + userId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_defects' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dm_contractors' }, bump)
       .subscribe();
   }
 
@@ -622,14 +598,23 @@
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) + '.jpg';
   }
 
+  // The storage path's first folder must be the job uuid so the bucket RLS
+  // (which checks is_assigned_to_job(foldername[1])) lets the right users in.
+  function jobUuidForDefect(legacyDefectId) {
+    const d = (db.data.defects || []).find(x => String(x.id) === String(legacyDefectId));
+    return d ? (idMap.addresses[d.addressId] || null) : null;
+  }
+
   async function uploadDefectPhoto(legacyId, file) {
     const uuid = idMap.defects[legacyId];
     if (!uuid) { showToastSafe('Save the defect before adding photos'); return; }
+    const jobUuid = jobUuidForDefect(legacyId);
+    if (!jobUuid) { showToastSafe('This defect has no linked job — cannot store photo'); return; }
     showToastSafe('Compressing photo…');
     let blob;
     try { blob = await compressImage(file); } catch (e) { showToastSafe('Could not read that image'); return; }
     if (!blob) { showToastSafe('Could not process that image'); return; }
-    const path = `${workspaceId}/${uuid}/${randName()}`;
+    const path = `${jobUuid}/${uuid}/${randName()}`;
     const up = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
     if (up.error) {
       console.error('[CloudSync] upload', up.error);
@@ -637,7 +622,7 @@
       return;
     }
     const ins = await sb.from('dm_defect_photos').insert({
-      workspace_id: workspaceId, defect_id: uuid, storage_path: path, bytes: blob.size
+      defect_id: uuid, storage_path: path, bytes: blob.size
     });
     if (ins.error) { console.error(ins.error); showToastSafe('Saved file but record failed'); return; }
     photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;
@@ -653,8 +638,9 @@
   // Remove every photo for a defect (used on complete / delete).
   async function deleteAllPhotosForDefect(legacyId) {
     const uuid = idMap.defects[legacyId];
-    if (uuid) {
-      const prefix = `${workspaceId}/${uuid}`;
+    const jobUuid = jobUuidForDefect(legacyId);
+    if (uuid && jobUuid) {
+      const prefix = `${jobUuid}/${uuid}`;
       const { data: list } = await sb.storage.from(PHOTO_BUCKET).list(prefix);
       if (list && list.length) {
         await sb.storage.from(PHOTO_BUCKET).remove(list.map(f => `${prefix}/${f.name}`));
@@ -680,10 +666,10 @@
     try {
       const nowIso = new Date().toISOString();
       const { data: expired } = await sb.from('dm_defect_photos')
-        .select('storage_path').eq('workspace_id', workspaceId).lt('expires_at', nowIso);
+        .select('storage_path').lt('expires_at', nowIso);
       if (expired && expired.length) {
         await sb.storage.from(PHOTO_BUCKET).remove(expired.map(p => p.storage_path));
-        await sb.from('dm_defect_photos').delete().eq('workspace_id', workspaceId).lt('expires_at', nowIso);
+        await sb.from('dm_defect_photos').delete().lt('expires_at', nowIso);
         console.info('[CloudSync] swept ' + expired.length + ' expired photo(s)');
       }
     } catch (e) { console.warn('[CloudSync] sweepExpiredPhotos', e); }
@@ -847,19 +833,19 @@
   }
   window.CloudReports = {
     add: async ({ name, addressLegacyId, defectCount, reportType }) => {
-      const address_id = (addressLegacyId != null) ? (idMap.addresses[addressLegacyId] || null) : null;
+      const job_id = (addressLegacyId != null) ? (idMap.addresses[addressLegacyId] || null) : null;
       const { data, error } = await sb.from('dm_reports')
-        .insert({ workspace_id: workspaceId, name: name || 'Report', address_id, defect_count: defectCount || 0, report_type: reportType || null })
-        .select('id, name, defect_count, created_at, address_id, report_type').single();
+        .insert({ name: name || 'Report', job_id, defect_count: defectCount || 0, report_type: reportType || null })
+        .select('id, name, defect_count, created_at, job_id, report_type').single();
       if (error) { console.error('[CloudReports] add', error); return null; }
       return data;
     },
     list: async () => {
       const { data, error } = await sb.from('dm_reports')
-        .select('id, name, defect_count, created_at, address_id, report_type')
-        .eq('workspace_id', workspaceId).order('created_at', { ascending: false });
+        .select('id, name, defect_count, created_at, job_id, report_type')
+        .order('created_at', { ascending: false });
       if (error) { console.error('[CloudReports] list', error); return []; }
-      return (data || []).map(r => ({ ...r, addressLegacyId: legacyForAddressUuid(r.address_id) }));
+      return (data || []).map(r => ({ ...r, addressLegacyId: legacyForAddressUuid(r.job_id) }));
     },
     remove: async (id) => {
       const { error } = await sb.from('dm_reports').delete().eq('id', id);
@@ -874,7 +860,7 @@
   async function onAuthed() {
     try {
       installSaveHook();
-      await resolveWorkspace();
+      await resolveRole();
       showStatusBar();
       setStatus('Loading…', 'syncing');
       const migrated = await maybeMigrate();

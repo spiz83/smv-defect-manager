@@ -1717,11 +1717,20 @@
             }
 
             addAddress(address) {
-                const id = Math.max(0, ...this.data.addresses.map(a => a.id)) + 1;
-                const newAddress = { id, ...address };
-                this.data.addresses.push(newAddress);
-                this.save();
-                return newAddress;
+                // Addresses now come from CH Tracker jobs (read-only) so the two
+                // apps never double up. Try to match what the user typed to an
+                // existing job; otherwise tell them to add it in CH Tracker.
+                const q = `${address.street || ''} ${address.suburb || ''} ${address.propertyNumber || ''}`.toLowerCase();
+                const tokens = q.split(/\s+/).filter(Boolean);
+                const match = this.data.addresses.find(a => {
+                    const hay = `${a.street} ${a.suburb} ${a.propertyNumber || ''}`.toLowerCase();
+                    return tokens.length && tokens.every(t => hay.includes(t));
+                });
+                if (match) return match;
+                if (typeof showToast === 'function') {
+                    showToast('That property isn’t a CH Tracker job — add it there first, then pick it here.', true);
+                }
+                return null;
             }
 
             deleteAddress(id) {
@@ -6881,9 +6890,12 @@
          Supabase -> Project Settings -> API, then reload.
     ===================================================================== -->
     <script>
+      // Points at the CH Tracker Supabase project (shared source of truth).
+      // Jobs + supervisors come from CH Tracker; defects are written back to
+      // the SAME database so both apps stay in sync (Spiro 2026-06-07).
       window.SUPABASE_CONFIG = {
-        url:     'https://ynrhaziygvffkwkoeldr.supabase.co',
-        anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlucmhheml5Z3ZmZmt3a29lbGRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2ODg1MzMsImV4cCI6MjA5NjI2NDUzM30.f7cb_oSQU2AUUFQTxq4wmQMlg4tYw9gTzcXl-0RoQS4'
+        url:     'https://cubwwnvzmeydyixhetfb.supabase.co',
+        anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1Ynd3bnZ6bWV5ZHlpeGhldGZiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NzU3MDksImV4cCI6MjA5NDE1MTcwOX0.CkeKGBkvNE4fAUl-WDSEb8s3JLqPul2uiAodffLn2nY'
       };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
