@@ -6537,85 +6537,155 @@
             await ensureJsPdf();
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-            const pageW = 210, pageH = 297, M = 14, contentW = pageW - 2 * M, descX = M + 26;
-            const dateStr = new Date().toISOString().slice(0, 10);
-            let y = M + 2;
+            const pageW = 210, pageH = 297, M = 14, contentW = pageW - 2 * M;
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 10);
+            const niceDate = now.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
 
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20, 24, 40);
-            doc.text('Defect Report', M, y + 4); y += 11;
+            // ── palette ──────────────────────────────────────────────
+            const NAVY = [18, 33, 66], NAVY2 = [44, 84, 168];
+            const INK = [28, 34, 50], MUTE = [122, 130, 144], LINE = [226, 230, 238];
+            const statusColor = { open: [220, 38, 38], pending: [217, 119, 6], completed: [22, 163, 74] };
+            const fill = (c) => doc.setFillColor(c[0], c[1], c[2]);
+            const stroke = (c) => doc.setDrawColor(c[0], c[1], c[2]);
+            const ink = (c) => doc.setTextColor(c[0], c[1], c[2]);
 
+            // ── header band (page 1) ─────────────────────────────────
+            fill(NAVY); doc.rect(0, 0, pageW, 34, 'F');
+            fill(NAVY2); doc.rect(0, 34, pageW, 1.4, 'F');
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(22); ink([255, 255, 255]);
+            doc.text('DEFECT REPORT', M, 16.5);
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(10); ink([186, 199, 224]);
+            doc.text('SMV Defect Manager', M, 23.5);
+            doc.setFontSize(9); ink([198, 209, 230]);
+            doc.text(niceDate, pageW - M, 14, { align: 'right' });
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(12); ink([255, 255, 255]);
+            doc.text(list.length + (list.length === 1 ? ' defect' : ' defects'), pageW - M, 22, { align: 'right' });
+
+            let y = 44;
+
+            // ── filter summary line ──────────────────────────────────
             const parts = [];
             if (opts.status && opts.status !== 'all') parts.push('Status: ' + opts.status);
             if (opts.addressId) parts.push('Address: ' + formatAddress(db.getAddress(opts.addressId)));
             if (opts.contractorId) { const c = db.getContractor(opts.contractorId); parts.push('Contractor: ' + (c ? c.name : '')); }
             if (opts.tradeId) { const t = db.data.trades.find(x => x.id === opts.tradeId); parts.push('Trade: ' + (t ? t.name : '')); }
             if (opts.from || opts.to) parts.push('Dates: ' + (opts.from || '…') + ' → ' + (opts.to || '…'));
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(120, 128, 140);
-            doc.text('Generated ' + dateStr + (parts.length ? '   ·   ' + parts.join('   ·   ') : ''), M, y);
-            doc.text(list.length + ' defect(s)', M, y + 5); y += 9;
-            doc.setDrawColor(225, 228, 235); doc.line(M, y, pageW - M, y); y += 7;
+            if (parts.length) {
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9); ink(MUTE);
+                const ft = doc.splitTextToSize(parts.join('     ·     '), contentW);
+                doc.text(ft, M, y); y += ft.length * 4 + 3;
+            }
 
+            // ── status summary pills ─────────────────────────────────
+            const counts = { open: 0, pending: 0, completed: 0 };
+            list.forEach(d => { const s = defectStatusOf(d); if (counts[s] != null) counts[s]++; });
+            let px = M;
+            [['open', 'OPEN'], ['pending', 'PENDING'], ['completed', 'COMPLETED']].forEach(([key, lbl]) => {
+                const txt = counts[key] + '  ' + lbl;
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+                const w = doc.getTextWidth(txt) + 8;
+                fill(statusColor[key]); doc.roundedRect(px, y, w, 6.5, 1.6, 1.6, 'F');
+                ink([255, 255, 255]); doc.text(txt, px + 4, y + 4.4);
+                px += w + 4;
+            });
+            y += 13;
+
+            // ── group by address ─────────────────────────────────────
             const groups = {};
             list.forEach(d => { const a = db.getAddress(d.addressId); const k = a ? formatAddress(a) : '(no address)'; (groups[k] = groups[k] || []).push(d); });
-            const statusColor = { open: [239, 68, 68], pending: [245, 158, 11], completed: [34, 197, 94] };
-            const ensureSpace = (h) => { if (y + h > pageH - M) { doc.addPage(); y = M; } };
+            const ensureSpace = (h) => { if (y + h > pageH - 18) { doc.addPage(); y = M + 4; } };
 
             let itemNo = 0;
             const bookingDates = new Set();
             for (const gk of Object.keys(groups).sort()) {
-                ensureSpace(12);
-                doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(20, 24, 40);
-                doc.text(gk, M, y); y += 6;
+                ensureSpace(16);
+                // address section bar
+                fill([241, 244, 250]); doc.roundedRect(M, y, contentW, 8.5, 1.6, 1.6, 'F');
+                fill(NAVY); doc.rect(M, y, 1.8, 8.5, 'F');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(11); ink(NAVY);
+                doc.text(gk, M + 5, y + 5.7);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); ink(MUTE);
+                doc.text(groups[gk].length + (groups[gk].length === 1 ? ' item' : ' items'), pageW - M - 4, y + 5.7, { align: 'right' });
+                y += 12;
+
                 for (const d of groups[gk]) {
                     itemNo++;
                     const st = defectStatusOf(d);
                     const c = db.getContractor(d.contractorId);
-                    doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-                    const descLines = doc.splitTextToSize('Item ' + itemNo + '.  ' + (d.location ? d.location + ' - ' : '') + (d.description || '(no description)'), contentW - 26);
+                    const descTxt = (d.location ? d.location + ' — ' : '') + (d.description || '(no description)');
+                    doc.setFontSize(10);
+                    const descLines = doc.splitTextToSize(descTxt, contentW - 12);
                     let imgs = [];
                     if (opts.photos && window.CloudPhotos) { try { imgs = await window.CloudPhotos.getForPdf(d.id); } catch (e) {} }
-                    const photoH = imgs.length ? 32 : 0;
-                    const blockH = Math.max(6, descLines.length * 4.7) + 5 + photoH + 5;
-                    ensureSpace(blockH);
-
-                    const col = statusColor[st] || [120, 120, 120];
-                    doc.setFillColor(col[0], col[1], col[2]);
-                    doc.roundedRect(M, y - 3.4, 22, 5.4, 1.5, 1.5, 'F');
-                    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255);
-                    doc.text(st.toUpperCase(), M + 11, y, { align: 'center' });
-
-                    doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(20, 24, 40);
-                    doc.text(descLines, descX, y);
-                    y += Math.max(5, descLines.length * 4.7);
-
-                    doc.setFontSize(9); doc.setTextColor(120, 128, 140);
+                    const photoH = imgs.length ? 30 : 0;
                     if (d.bookingAt) bookingDates.add(fmtDateNice(d.bookingAt));
-                    const meta = [c ? ('Contractor: ' + c.name) : 'Unassigned', (c && c.email) ? c.email : '',
-                                  d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : ''].filter(Boolean).join('    ');
-                    doc.text(meta, descX, y); y += 4;
+                    const meta = [c ? ('Contractor: ' + c.name) : 'Unassigned', (c && c.email) ? c.email : '', d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : ''].filter(Boolean).join('     ·     ');
+                    const cardH = 6 + descLines.length * 4.6 + 5 + (photoH ? photoH + 3 : 0) + 5;
+                    ensureSpace(cardH + 3);
 
+                    // card
+                    fill([250, 251, 253]); stroke(LINE);
+                    doc.roundedRect(M, y, contentW, cardH, 2, 2, 'FD');
+                    const padX = M + 5;
+                    let cy = y + 6.5;
+
+                    // # number + status badge
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); ink(INK);
+                    doc.text('#' + itemNo, padX, cy);
+                    const col = statusColor[st] || [120, 120, 120];
+                    const blab = st.toUpperCase();
+                    doc.setFontSize(7.5); const bw = doc.getTextWidth(blab) + 7;
+                    fill(col); doc.roundedRect(pageW - M - 5 - bw, cy - 4, bw, 5.6, 1.4, 1.4, 'F');
+                    ink([255, 255, 255]); doc.setFont('helvetica', 'bold');
+                    doc.text(blab, pageW - M - 5 - bw / 2, cy - 0.2, { align: 'center' });
+                    cy += 5.5;
+
+                    // description
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); ink(INK);
+                    doc.text(descLines, padX, cy); cy += descLines.length * 4.6 + 1.5;
+
+                    // meta
+                    doc.setFontSize(8.5); ink(MUTE);
+                    doc.text(meta, padX, cy); cy += 4;
+
+                    // photos
                     if (imgs.length) {
-                        let px = descX;
+                        let ix = padX;
                         for (const im of imgs) {
-                            const w = 28, h = im.w ? Math.min(30, w * (im.h / im.w)) : 22;
-                            try { doc.addImage(im.dataUrl, 'JPEG', px, y, w, h); } catch (e) {}
-                            px += w + 4;
+                            const w = 26, h = im.w ? Math.min(28, w * (im.h / im.w)) : 20;
+                            try { doc.addImage(im.dataUrl, 'JPEG', ix, cy, w, h); } catch (e) {}
+                            ix += w + 3;
                         }
-                        y += photoH;
                     }
-                    y += 4;
-                    doc.setDrawColor(238, 240, 244); doc.line(descX, y - 2, pageW - M, y - 2);
+                    y += cardH + 3;
                 }
-                y += 4;
+                y += 3;
             }
+
+            // ── booking confirmation note ────────────────────────────
             if (bookingDates.size) {
-                ensureSpace(12);
+                ensureSpace(14);
                 const note = bookingDates.size === 1
                     ? 'Please confirm booking date of ' + [...bookingDates][0] + '.'
                     : 'Please confirm the booking dates noted above.';
-                doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(20, 24, 40);
-                doc.text(note, M, y + 2);
+                fill([255, 247, 224]); stroke([240, 196, 120]);
+                doc.roundedRect(M, y, contentW, 10, 2, 2, 'FD');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(10); ink([146, 100, 20]);
+                doc.text(note, M + 5, y + 6.4);
+                y += 14;
             }
+
+            // ── footer on every page ─────────────────────────────────
+            const pages = doc.internal.getNumberOfPages();
+            for (let p = 1; p <= pages; p++) {
+                doc.setPage(p);
+                stroke(LINE); doc.line(M, pageH - 12, pageW - M, pageH - 12);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8); ink(MUTE);
+                doc.text('SMV Defect Manager  ·  Defect Report', M, pageH - 7.5);
+                doc.text('Page ' + p + ' of ' + pages, pageW - M, pageH - 7.5, { align: 'right' });
+            }
+
             doc.save('Defect-Report-' + dateStr + '.pdf');
         }
 
