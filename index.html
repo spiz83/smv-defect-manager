@@ -2347,7 +2347,7 @@
                     </div>
                     
                     <div class="defects-header">
-                        <div class="lot-title">${formatAddress(address)}</div>
+                        <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="Add defects for this job">${formatAddress(address)} ＋</div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
