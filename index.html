@@ -6223,6 +6223,18 @@
               .imp-field textarea{min-height:80px;}
               .imp-row{display:flex;gap:10px;}
               .imp-row > *{flex:1;}
+              .rv-combo{position:relative;}
+              .rv-combo-input{width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--border-color,#ccc);
+                border-radius:12px;font:inherit;background:var(--input-bg,#fff);color:var(--text-primary,#111);}
+              .rv-combo-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:10;display:none;
+                background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ddd);border-radius:12px;
+                max-height:240px;overflow:auto;box-shadow:0 12px 32px rgba(0,0,0,.22);}
+              .rv-combo-list.open{display:block;}
+              .rv-combo-item{padding:11px 13px;cursor:pointer;font-size:14px;line-height:1.3;
+                border-bottom:1px solid var(--border-color,#f0f0f0);}
+              .rv-combo-item:last-child{border-bottom:0;}
+              .rv-combo-item:hover{background:var(--blue,#2563eb);color:#fff;}
+              .rv-combo-empty{padding:11px 13px;color:var(--text-secondary,#888);font-size:13px;}
               .imp-report{display:flex;align-items:center;justify-content:space-between;gap:10px;
                 padding:12px;border:1px solid var(--border-color,#eee);border-radius:12px;margin-bottom:8px;}
               .imp-report small{color:var(--text-secondary,#888);}
@@ -6277,8 +6289,10 @@
                 const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
                 impSetBusy('Reading ' + f.name + '…');
                 try {
-                    // BPI reports: structured extraction (location, page, trade) + job match.
-                    if (reportType === 'BPI' && !useAI && ((f.name || '').toLowerCase().endsWith('.pdf') || f.type === 'application/pdf')) {
+                    // BPI reports: ALWAYS use structured extraction (location, page, trade)
+                    // + job match — the AI path drops the structured columns, so we don't
+                    // route BPI through it even when the AI toggle is on.
+                    if (reportType === 'BPI' && ((f.name || '').toLowerCase().endsWith('.pdf') || f.type === 'application/pdf')) {
                         const paged = await extractReportTextPaged(f);
                         const items = parseBpiDefects(paged);
                         if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
@@ -6297,7 +6311,7 @@
                 if (!text.trim()) { showToast('Paste some text or choose a file', true); return; }
                 const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
                 const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
-                if (reportType === 'BPI' && !useAI) {
+                if (reportType === 'BPI') {
                     const items = parseBpiDefects(text);
                     if (!items.length) { impOverlayMessage('No defects were found in that text.'); return; }
                     startReportReview(items, 'Pasted report', reportType, matchAddressFromText(text));
@@ -6755,6 +6769,50 @@
             buildBpiLearning();   // learn from assignment history before suggesting
             renderReviewItem();
         }
+        // Searchable combobox for the review screen's Address / Contractor pickers.
+        // Writes the chosen id into the hidden #rv-<kind> input that save reads.
+        function rvCombo(kind) {
+            const input = document.getElementById('rv-' + kind + '-input');
+            const hidden = document.getElementById('rv-' + kind);
+            const list = document.getElementById('rv-' + kind + '-list');
+            if (!input || !hidden || !list) return;
+            const options = kind === 'address'
+                ? db.getAddresses().slice().sort((a, b) => formatAddress(a).localeCompare(formatAddress(b))).map(a => ({ id: a.id, label: formatAddress(a) }))
+                : db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ id: c.id, label: c.name + (c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : '') }));
+            const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+            const currentLabel = () => { const o = options.find(x => String(x.id) === String(hidden.value)); return o ? o.label : ''; };
+            const draw = (q) => {
+                q = (q || '').trim().toLowerCase();
+                const hits = (q ? options.filter(o => o.label.toLowerCase().includes(q)) : options).slice(0, 40);
+                list.innerHTML = hits.length
+                    ? hits.map(o => `<div class="rv-combo-item" data-id="${o.id}">${esc(o.label)}</div>`).join('')
+                    : '<div class="rv-combo-empty">No matches</div>';
+                list.classList.add('open');
+            };
+            // Focusing a field that already shows its selection lists everything to browse.
+            input.addEventListener('focus', () => draw(input.value === currentLabel() ? '' : input.value));
+            input.addEventListener('input', () => { if (!input.value.trim()) hidden.value = ''; draw(input.value); });
+            input.addEventListener('blur', () => setTimeout(() => list.classList.remove('open'), 150));
+            // mousedown (fires before the input's blur) so the click registers.
+            list.addEventListener('mousedown', (e) => {
+                const it = e.target.closest('.rv-combo-item'); if (!it) return;
+                e.preventDefault();
+                const id = parseInt(it.getAttribute('data-id'));
+                const o = options.find(x => x.id === id);
+                input.value = o ? o.label : '';
+                hidden.value = id;
+                list.classList.remove('open');
+                const cur = _review.items[_review.index];
+                if (kind === 'address') {
+                    const dEl = document.getElementById('rv-desc'), lEl = document.getElementById('rv-location');
+                    if (cur && typeof cur === 'object') { if (dEl) cur.description = dEl.value; if (lEl) cur.location = lEl.value; }
+                    _review.lastAddressId = id;
+                    renderReviewItem();   // refresh call-up suggestion for the new property
+                } else if (cur && typeof cur === 'object') {
+                    cur._contractorId = id;   // remember manual pick across re-renders
+                }
+            });
+        }
         function renderReviewItem() {
             const r = _review;
             if (r.index >= r.items.length) return finishReview();
@@ -6776,11 +6834,17 @@
                 || (learned && learned.contractorId)
                 || (effTrade ? suggestContractorForTrade(effTrade) : null);
             const suggestedTrade = effTrade || (learned && learned.trade) || '';
-            const addrOpts = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
-                .map(a => `<option value="${a.id}" ${a.id === r.lastAddressId ? 'selected' : ''}>${formatAddress(a)}</option>`).join('');
-            const contrOpts = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                .map(c => `<option value="${c.id}" ${c.id === suggestedContractor ? 'selected' : ''}>${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</option>`).join('');
-            const locOpts = ['<option value="">— Location —</option>'].concat(BPI_LOCATIONS.map(l => `<option value="${l}" ${l === item.location ? 'selected' : ''}>${l}</option>`)).join('');
+            // Sticky contractor: a manual pick survives address-change re-renders.
+            const chosenContractorId = (typeof raw === 'object' && raw._contractorId != null) ? raw._contractorId : suggestedContractor;
+            const addrObj = r.lastAddressId != null ? db.getAddress(r.lastAddressId) : null;
+            const addrLabel = (addrObj ? formatAddress(addrObj) : '').replace(/"/g, '&quot;');
+            const cObj = chosenContractorId != null ? db.getContractor(chosenContractorId) : null;
+            const contractorLabel = (cObj ? cObj.name + (cObj.trades && cObj.trades !== 'No Trade Assigned' ? ' — ' + cObj.trades.split(',')[0] : '') : '').replace(/"/g, '&quot;');
+            // Location dropdown: keep the parsed value even when it isn't a preset.
+            const locInList = BPI_LOCATIONS.some(l => l === item.location);
+            const locEsc = (item.location || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const customLocOpt = (item.location && !locInList) ? `<option value="${locEsc}" selected>${locEsc}</option>` : '';
+            const locOpts = ['<option value="">— Location —</option>', customLocOpt].concat(BPI_LOCATIONS.map(l => `<option value="${l}" ${l === item.location ? 'selected' : ''}>${l}</option>`)).join('');
             const pct = Math.round((r.index / r.items.length) * 100);
             const tradeTag = resolved.source === 'learned' ? ' (learned' + (resolved.n ? ' ×' + resolved.n : '') + ')' : resolved.source === 'rule' ? ' (rule)' : '';
             const suggestNote = callup
@@ -6801,11 +6865,21 @@
                     </div>
                     <div class="imp-row">
                         <div class="imp-field"><label>Location</label><select id="rv-location">${locOpts}</select></div>
-                        <div class="imp-field"><label>Address (property)</label><select id="rv-address"><option value="">— Select address —</option>${addrOpts}</select></div>
+                        <div class="imp-field"><label>Address (property)</label>
+                            <div class="rv-combo">
+                                <input type="text" id="rv-address-input" class="rv-combo-input" placeholder="Type to search…" autocomplete="off" value="${addrLabel}">
+                                <input type="hidden" id="rv-address" value="${r.lastAddressId != null ? r.lastAddressId : ''}">
+                                <div class="rv-combo-list" id="rv-address-list"></div>
+                            </div>
+                        </div>
                     </div>
                     <div class="imp-field">
                         <label>Assign to contractor / trade${callup ? ' (from call-up)' : suggestedContractor ? ' (suggested)' : ''}</label>
-                        <select id="rv-contractor"><option value="">— Not assigned (pick later) —</option>${contrOpts}</select>
+                        <div class="rv-combo">
+                            <input type="text" id="rv-contractor-input" class="rv-combo-input" placeholder="Type to search, or leave blank…" autocomplete="off" value="${contractorLabel}">
+                            <input type="hidden" id="rv-contractor" value="${chosenContractorId != null ? chosenContractorId : ''}">
+                            <div class="rv-combo-list" id="rv-contractor-list"></div>
+                        </div>
                     </div>
                     <div class="imp-row">
                         <button class="imp-btn secondary" id="rv-skip">Skip</button>
@@ -6815,18 +6889,10 @@
                 </div>`);
             document.getElementById('rv-skip').onclick = () => { r.index++; renderReviewItem(); };
             document.getElementById('rv-finish').onclick = finishReview;
-            // The address drives the call-up suggestion, so re-render on change —
-            // first stashing any in-progress edits so they survive the re-render.
-            const addrSel = document.getElementById('rv-address');
-            if (addrSel) addrSel.onchange = () => {
-                const dEl = document.getElementById('rv-desc'), lEl = document.getElementById('rv-location');
-                if (r.items[r.index] && typeof r.items[r.index] === 'object') {
-                    if (dEl) r.items[r.index].description = dEl.value;
-                    if (lEl) r.items[r.index].location = lEl.value;
-                }
-                r.lastAddressId = parseInt(addrSel.value) || null;
-                renderReviewItem();
-            };
+            // Searchable Address + Contractor pickers. Picking an address re-renders
+            // (to refresh the call-up suggestion); see rvCombo.
+            rvCombo('address');
+            rvCombo('contractor');
             document.getElementById('rv-save').onclick = () => {
                 const desc = document.getElementById('rv-desc').value.trim();
                 const addressId = parseInt(document.getElementById('rv-address').value) || null;
