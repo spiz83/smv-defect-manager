@@ -6323,7 +6323,9 @@
                 items = parseReportDefects(rawText);
             }
             if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
-            startReportReview(items, sourceName, reportType);
+            // Match the property from the report header even on the AI path, so the
+            // address is pre-selected regardless of which extractor ran.
+            startReportReview(items, sourceName, reportType, matchAddressFromText(rawText));
         }
 
         function impSetBusy(msg) {
