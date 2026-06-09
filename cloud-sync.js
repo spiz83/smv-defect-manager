@@ -868,6 +868,15 @@
       setStatus('Synced');
       sweepExpiredPhotos();
       subscribeRealtime();
+      // Belt-and-suspenders: also re-pull whenever this tab/app regains focus,
+      // so a desktop instance reflects mobile changes even if a realtime event
+      // was missed (e.g. asleep / backgrounded). Debounced inside pullAll usage.
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) pullAll().catch(e => console.error('[CloudSync] focus pull', e));
+      });
+      window.addEventListener('focus', () => {
+        pullAll().catch(e => console.error('[CloudSync] focus pull', e));
+      });
     } catch (err) {
       console.error('[CloudSync] init failed', err);
       // Stale/expired session (e.g. password changed): clear it and re-show login
