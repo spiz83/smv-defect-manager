@@ -6449,6 +6449,177 @@
             });
             return hit ? hit.id : null;
         }
+        // ── Framework call-up: who was actually engaged for a trade on THIS job ──
+        // The Order Profile (uploaded in CH Tracker, exposed via CloudCallups)
+        // lists, per job, the supplier engaged for each cost centre. We match
+        // those supplier names to our contractor list and, for a given BPI trade,
+        // pick the engaged contractor whose trades best fit — so the suggestion is
+        // the real sub on this job, not a global keyword guess.
+        function normCompanyName(s) {
+            return String(s || '').toLowerCase()
+                .replace(/\bt\/a\b.*$/, '')                                  // drop "t/a Trading Name" tails
+                .replace(/\bpty\b|\bltd\b|\bp\/l\b|\bpl\b|\binc\b|\bco\b/g, '')
+                .replace(/[^a-z0-9 ]/g, ' ')
+                .replace(/\s+/g, ' ').trim();
+        }
+        // Bulk material suppliers / retailers. They appear as real call-up rows but
+        // never rectify a defect, and their broad material catalogues keyword-match
+        // many trades (e.g. Bunnings → "Carpenter") — so exclude them from
+        // contractor suggestions. Extend freely; matched on the normalised name.
+        const CALLUP_MATERIAL_SUPPLIERS = new Set([
+            'bunnings', 'bunnings frame truss order', 'bunnings timber hardware',
+            'bowens', 'bowens timber hardware', 'dahlsens', 'dahlsens building centres',
+            'austral bricks', 'boral', 'boral csr bricks', 'beaumont tiles',
+            'e s trading', 'e s trading discounts', 'corinthian', 'corinthian industries australia',
+            'dabsand dabaco sand supply', 'css victoria the trustee for css victoria'
+        ].map(normCompanyName));
+        // Contractors engaged on this job (call-up supplier_name → our contractor).
+        function callupContractorsForAddress(addressLid) {
+            if (addressLid == null || !window.CloudCallups) return [];
+            const rows = window.CloudCallups.rowsForAddress(addressLid) || [];
+            if (!rows.length) return [];
+            const contractors = db.getContractors();
+            const byNorm = new Map();
+            contractors.forEach(c => { const n = normCompanyName(c.name); if (n) byNorm.set(n, c); });
+            const out = [], seen = new Set();
+            for (const r of rows) {
+                const n = normCompanyName(r.supplier_name || '');
+                if (!n || n === 'supervisor to select') continue;            // placeholder, not a real sub
+                let c = byNorm.get(n);
+                if (!c) c = contractors.find(x => { const cn = normCompanyName(x.name); return cn && (cn.includes(n) || n.includes(cn)); });
+                if (!c || seen.has(c.id)) continue;
+                if (CALLUP_MATERIAL_SUPPLIERS.has(normCompanyName(c.name))) continue;   // supplier, not a rectifier
+                seen.add(c.id); out.push({ contractor: c, costCentre: r.cost_centre || '' });
+            }
+            return out;
+        }
+        // Trade → tokens that appear in our contractors' structured CH trade
+        // names. Deliberately tighter than the text classifier's keywords: matched
+        // against the trade vocabulary, not loose English, so a window sub won't
+        // catch a "Carpenter" defect on the word "door", nor a roofer steal a
+        // "Tiler" on "Roof Tiles". Scoring breaks ties (roofer beats plumber on a
+        // gutter defect via 'roof'+'gutter').
+        const CALLUP_TRADE_KEYWORDS = {
+            Painter: ['painter', 'painting'],
+            Renderer: ['render'],
+            Bricklayer: ['bricklayer', 'brick lay'],
+            Plasterer: ['plaster', 'cornice'],
+            Electrician: ['electrical', 'electrician'],
+            'Roof Plumber': ['roof', 'gutter', 'fascia', 'flashing', 'capping'],
+            Plumber: ['plumber', 'plumbing'],
+            Tiler: ['floor tile', 'wall tile', 'tiles labour', 'tiling'],
+            Waterproofer: ['waterproof'],
+            Flooring: ['carpet', 'floor covering', 'vinyl', 'laminate', 'timber floor'],
+            Carpenter: ['carpenter', 'carpentry'],
+            Glazier: ['window', 'entry frame', 'glazing', 'glazier'],
+            Concreter: ['concrete', 'concretor'],
+            Caulker: ['caulk', 'joint sealing'],
+            Cleaner: ['cleaner', 'cleaning'],
+        };
+        // Suggest the called-up contractor for `trade` on the job at `addressLid`.
+        // Returns null when the job has no profile or no engaged sub fits the trade
+        // (a clean miss → caller falls back to learned history / the static rule).
+        function suggestCallupForTrade(trade, addressLid) {
+            const kws = CALLUP_TRADE_KEYWORDS[trade]; if (!kws) return null;
+            const engaged = callupContractorsForAddress(addressLid);
+            if (!engaged.length) return null;
+            let best = null, bestScore = 0;
+            for (const e of engaged) {
+                const hay = ((e.contractor.trades || '') + ' ' + (e.contractor.name || '')).toLowerCase();
+                const score = kws.reduce((n, k) => n + (hay.includes(k) ? 1 : 0), 0);
+                if (score > bestScore) { bestScore = score; best = e; }
+            }
+            return best ? { contractorId: best.contractor.id, costCentre: best.costCentre } : null;
+        }
+
+        // ===========================================================================
+        //  Report LEARNING — the import gets smarter from real assignment history.
+        //  Instead of a separate corrections store, we learn straight from the
+        //  defects the team has already assigned (synced in db.data.defects). Each
+        //  past defect's wording → its contractor is a training example, so every
+        //  correction a supervisor makes during review syncs and trains the next
+        //  import for free. The static BPI_TRADE_RULES remain the cold-start prior.
+        //  (Spiro 2026-06-09)
+        // ===========================================================================
+        const BPI_STOPWORDS = new Set(['the','and','for','with','this','that','from','have','has','are','was','were','not','but','all','any','out','off','too','its','their','there','then','than','been','being','onto','into','over','under','some','more','most','also','will','shall','must','need','needs','needed','please','area','areas','required','require','requires','left','right','front','rear','side','general','internal','external','elevation','room','wall','walls','ceiling','floor','floors','door','doors','window','windows','noted','observed','observation','defect','defects','item','items','various','multiple','number','section','sections','around','near','above','below','between','within','approx','approximately','refer','photo','photos','page','lot']);
+        // Sub-4-char tokens that ARE meaningful in defect language — keep these
+        // (longer domain words like "paint"/"grout"/"tile" pass the length test anyway).
+        const BPI_KEEP_SHORT = new Set(['tap','gpo','wc','fan','fc','gap','dip']);
+        function bpiTokens(text) {
+            const out = new Set();
+            (text || '').toLowerCase().split(/[^a-z]+/).forEach(w => {
+                if (!w) return;
+                if (BPI_STOPWORDS.has(w)) return;
+                let t = w;
+                if (t.length > 4 && t.endsWith('s')) t = t.slice(0, -1);   // light singularise
+                if (t.length >= 4 || BPI_KEEP_SHORT.has(w) || BPI_KEEP_SHORT.has(t)) out.add(t);
+            });
+            return out;
+        }
+        // token -> Map(contractorId -> count), plus per-token totals. Rebuilt per
+        // import (cheap), and nudged live as the supervisor saves so later items in
+        // the SAME report benefit before the sync round-trip.
+        let _bpiLearn = null;   // { byToken: Map, tokenTotal: Map, defectCount }
+        function buildBpiLearning() {
+            const byToken = new Map();   // token -> Map(contractorId -> count)
+            const tokenTotal = new Map();
+            const defects = (db.data && db.data.defects) || [];   // includes completed
+            for (const d of defects) {
+                if (d.contractorId == null) continue;
+                addLearningExample(byToken, tokenTotal, (d.description || '') + ' ' + (d.location || ''), d.contractorId);
+            }
+            _bpiLearn = { byToken, tokenTotal, defectCount: defects.length };
+        }
+        function addLearningExample(byToken, tokenTotal, text, contractorId) {
+            for (const tok of bpiTokens(text)) {
+                let m = byToken.get(tok); if (!m) { m = new Map(); byToken.set(tok, m); }
+                m.set(contractorId, (m.get(contractorId) || 0) + 1);
+                tokenTotal.set(tok, (tokenTotal.get(tok) || 0) + 1);
+            }
+        }
+        function ensureBpiLearning() {
+            const n = ((db.data && db.data.defects) || []).length;
+            if (!_bpiLearn || _bpiLearn.defectCount !== n) buildBpiLearning();
+            return _bpiLearn;
+        }
+        // Record a fresh assignment immediately (incremental), without a full rebuild.
+        function learnFromAssignment(text, contractorId) {
+            if (contractorId == null) return;
+            const L = ensureBpiLearning();
+            addLearningExample(L.byToken, L.tokenTotal, text, contractorId);
+            L.defectCount++;   // keep the cache key in step with the (soon-to-sync) defect
+        }
+        // Suggest a contractor from history. Naive-Bayes-ish: sum P(contractor|token)
+        // over the input's tokens (ignoring one-off tokens as noise), pick the best,
+        // and only fire when the evidence clears a confidence bar.
+        function suggestFromHistory(text) {
+            const L = ensureBpiLearning();
+            if (!L.byToken.size) return null;
+            const score = new Map();        // contractorId -> summed P(c|token)
+            const support = new Map();      // contractorId -> # past defects backing it
+            let contributing = 0;
+            for (const tok of bpiTokens(text)) {
+                const m = L.byToken.get(tok); if (!m) continue;
+                const total = L.tokenTotal.get(tok) || 0;
+                if (total < 2) continue;    // ignore singletons — too noisy to trust
+                contributing++;
+                for (const [cid, cnt] of m) {
+                    score.set(cid, (score.get(cid) || 0) + cnt / total);
+                    support.set(cid, (support.get(cid) || 0) + cnt);
+                }
+            }
+            if (!contributing) return null;
+            let bestId = null, bestScore = 0;
+            for (const [cid, s] of score) if (s > bestScore) { bestScore = s; bestId = cid; }
+            if (bestId == null) return null;
+            const confidence = bestScore / contributing;        // avg P across hit tokens
+            if (confidence < 0.34 || bestScore < 0.6) return null;
+            const contractor = db.getContractor(bestId);
+            if (!contractor) return null;                         // assigned-then-deleted
+            const trade = (contractor.trades && contractor.trades !== 'No Trade Assigned')
+                ? contractor.trades.split(',')[0].trim() : '';
+            return { contractorId: bestId, trade, support: support.get(bestId) || 0, confidence };
+        }
         const BPI_LOCATIONS = ['Garage Internal PA Door','General Internal','General External','Front Elevation','Left Elevation','Right Elevation','Rear Elevation','Master Bedroom','Powder Room','Linen Cupboard','Walk In Robe','Ensuite','Bathroom','Laundry','Kitchen','Garage','Hallway','Entry','Stairs','Study','Alfresco','Porch','Balcony','Pantry','Driveway','Roof'];
         function splitLocObs(rest) {
             const byGap = rest.split(/\s{3,}/);
@@ -6526,6 +6697,7 @@
         let _review = null;
         function startReportReview(items, reportName, reportType, matchedAddressId) {
             _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: matchedAddressId || null };
+            buildBpiLearning();   // learn from assignment history before suggesting
             renderReviewItem();
         }
         function renderReviewItem() {
@@ -6533,14 +6705,29 @@
             if (r.index >= r.items.length) return finishReview();
             const raw = r.items[r.index];
             const item = (typeof raw === 'string') ? { description: raw, location: '', page: null, trade: '' } : raw;
-            const suggestedContractor = item.trade ? suggestContractorForTrade(item.trade) : null;
+            if (typeof raw === 'string') r.items[r.index] = item;   // normalise so edits persist across a re-render
+            // Suggestion priority:
+            //   1. Framework call-up — the sub actually engaged for this trade on THIS job
+            //   2. learned history    — who this supervisor has assigned similar defects to
+            //   3. static trade rule  — global keyword guess (cold-start fallback)
+            const callup = item.trade ? suggestCallupForTrade(item.trade, r.lastAddressId) : null;
+            const learned = suggestFromHistory((item.location || '') + ' ' + (item.description || ''));
+            const suggestedContractor = (callup && callup.contractorId)
+                || (learned && learned.contractorId)
+                || (item.trade ? suggestContractorForTrade(item.trade) : null);
+            const suggestedTrade = item.trade || (learned && learned.trade) || '';
             const addrOpts = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
                 .map(a => `<option value="${a.id}" ${a.id === r.lastAddressId ? 'selected' : ''}>${formatAddress(a)}</option>`).join('');
             const contrOpts = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                 .map(c => `<option value="${c.id}" ${c.id === suggestedContractor ? 'selected' : ''}>${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</option>`).join('');
             const locOpts = ['<option value="">— Location —</option>'].concat(BPI_LOCATIONS.map(l => `<option value="${l}" ${l === item.location ? 'selected' : ''}>${l}</option>`)).join('');
             const pct = Math.round((r.index / r.items.length) * 100);
-            const meta = [item.page ? 'Page ' + item.page : '', item.trade ? 'Suggested: ' + item.trade : ''].filter(Boolean).join(' · ');
+            const suggestNote = callup
+                ? '📋 Called up on this job: ' + ((db.getContractor(callup.contractorId) || {}).name || '') + (callup.costCentre ? ' (cost centre ' + callup.costCentre + ')' : '')
+                : learned
+                ? '🧠 Suggested: ' + ((db.getContractor(learned.contractorId) || {}).name || '') + (learned.support ? ' (learned from ' + learned.support + ' past defect' + (learned.support === 1 ? '' : 's') + ')' : '')
+                : (suggestedTrade ? 'Suggested: ' + suggestedTrade : '');
+            const meta = [item.page ? 'Page ' + item.page : '', suggestNote].filter(Boolean).join(' · ');
             impOverlay(`
                 <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
@@ -6556,7 +6743,7 @@
                         <div class="imp-field"><label>Address (property)</label><select id="rv-address"><option value="">— Select address —</option>${addrOpts}</select></div>
                     </div>
                     <div class="imp-field">
-                        <label>Assign to contractor / trade${suggestedContractor ? ' (suggested)' : ''}</label>
+                        <label>Assign to contractor / trade${callup ? ' (from call-up)' : suggestedContractor ? ' (suggested)' : ''}</label>
                         <select id="rv-contractor"><option value="">— Not assigned (pick later) —</option>${contrOpts}</select>
                     </div>
                     <div class="imp-row">
@@ -6567,6 +6754,18 @@
                 </div>`);
             document.getElementById('rv-skip').onclick = () => { r.index++; renderReviewItem(); };
             document.getElementById('rv-finish').onclick = finishReview;
+            // The address drives the call-up suggestion, so re-render on change —
+            // first stashing any in-progress edits so they survive the re-render.
+            const addrSel = document.getElementById('rv-address');
+            if (addrSel) addrSel.onchange = () => {
+                const dEl = document.getElementById('rv-desc'), lEl = document.getElementById('rv-location');
+                if (r.items[r.index] && typeof r.items[r.index] === 'object') {
+                    if (dEl) r.items[r.index].description = dEl.value;
+                    if (lEl) r.items[r.index].location = lEl.value;
+                }
+                r.lastAddressId = parseInt(addrSel.value) || null;
+                renderReviewItem();
+            };
             document.getElementById('rv-save').onclick = () => {
                 const desc = document.getElementById('rv-desc').value.trim();
                 const addressId = parseInt(document.getElementById('rv-address').value) || null;
@@ -6575,6 +6774,7 @@
                 if (!desc) { showToast('Enter a description', true); return; }
                 if (!addressId) { showToast('Pick an address', true); return; }
                 db.addDefect({ addressId, contractorId: contractorId || null, description: desc, location, status: 'open', unassigned: !contractorId });
+                if (contractorId) learnFromAssignment((location || '') + ' ' + desc, contractorId);
                 r.lastAddressId = addressId;
                 r.saved++; r.index++;
                 renderReviewItem();

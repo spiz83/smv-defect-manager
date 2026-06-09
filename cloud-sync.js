@@ -60,6 +60,11 @@
   let photoCounts = {};               // legacyDefectId -> number of photos
   const defectUuidToLegacy = {};      // cloud uuid -> legacy defect id
 
+  // Framework call-up (BPI import): address legacy id -> the job's Order Profile
+  // rows ({ cost_centre, supplier_name, ... }). Rebuilt on every pull; consumed
+  // by the BPI review to suggest the contractor actually engaged for a trade.
+  let callupsByAddress = {};
+
   function emptySnap() {
     return { trades: {}, contractors: {}, addresses: {}, defects: {} };
   }
@@ -241,12 +246,13 @@
   async function pullAll() {
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
-    const [trades, contractors, links, jobs, defects] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups] = await Promise.all([
       sb.from('dm_trades').select('*'),
       sb.from('dm_contractors').select('*'),
       sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
       sb.from('jobs').select('id, job_number, lot, street, suburb'),
-      sb.from('dm_defects').select('*')
+      sb.from('dm_defects').select('*'),
+      sb.from('job_order_profiles').select('job_id, rows')   // Framework call-up; best-effort
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -297,6 +303,17 @@
         propertyNumber: j.job_number || ''
       });
     });
+
+    // Framework call-up rows, keyed by address legacy id. Best-effort: a SELECT
+    // error (RLS / table absent) just yields no suggestions, never breaks a pull.
+    callupsByAddress = {};
+    if (callups && !callups.error && Array.isArray(callups.data)) {
+      callups.data.forEach(p => {
+        const lid = uuidToLegacy.addresses[p.job_id];
+        if (lid == null) return;                          // job not visible to this user
+        callupsByAddress[lid] = Array.isArray(p.rows) ? p.rows : [];
+      });
+    }
 
     defects.data.forEach(d => {
       // d.job_id -> address legacy id. Skip any defect whose job isn't visible.
@@ -852,6 +869,12 @@
       if (error) { console.error('[CloudReports] remove', error); return false; }
       return true;
     }
+  };
+
+  // ----- Framework call-up (BPI import contractor suggestions) -----
+  window.CloudCallups = {
+    rowsForAddress: (legacyId) => callupsByAddress[legacyId] || [],
+    hasProfile: (legacyId) => Array.isArray(callupsByAddress[legacyId]) && callupsByAddress[legacyId].length > 0
   };
 
   // ===========================================================================
