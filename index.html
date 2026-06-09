@@ -6277,6 +6277,14 @@
                 const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
                 impSetBusy('Reading ' + f.name + '…');
                 try {
+                    // BPI reports: structured extraction (location, page, trade) + job match.
+                    if (reportType === 'BPI' && !useAI && ((f.name || '').toLowerCase().endsWith('.pdf') || f.type === 'application/pdf')) {
+                        const paged = await extractReportTextPaged(f);
+                        const items = parseBpiDefects(paged);
+                        if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
+                        startReportReview(items, f.name, reportType, matchAddressFromText(paged));
+                        return;
+                    }
                     const text = await extractReportText(f);
                     await extractAndReview(text, f.name, reportType, useAI);
                 } catch (err) {
@@ -6289,6 +6297,12 @@
                 if (!text.trim()) { showToast('Paste some text or choose a file', true); return; }
                 const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
                 const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
+                if (reportType === 'BPI' && !useAI) {
+                    const items = parseBpiDefects(text);
+                    if (!items.length) { impOverlayMessage('No defects were found in that text.'); return; }
+                    startReportReview(items, 'Pasted report', reportType, matchAddressFromText(text));
+                    return;
+                }
                 await extractAndReview(text, 'Pasted report', reportType, useAI);
             };
         }
@@ -6393,36 +6407,154 @@
             function dedupe(arr) { const seen = new Set(); return arr.filter(x => { const k = x.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }); }
         }
 
+        // ===========================================================================
+        //  BPI360 smart import — structured defects (location, page, trade) so the
+        //  supervisor reviews + allocates instead of typing. (Spiro 2026-06-09)
+        // ===========================================================================
+        // Trade inference learned from the defect language in BPI final reports.
+        const BPI_TRADE_RULES = [
+            ['Painter',      /\bpaint|repaint|raw timber|hinge knuckle|touch ?up|overspray|paint runs?\b/i],
+            ['Bricklayer',   /\bbrick|mortar|pier|weep ?hole|articulation joint/i],
+            ['Plasterer',    /\bcornice|plaster|nail pop|patch (hole|the)|crack(ing|ed)? to (wall|ceiling)|set joint|sheet join|\bdip\b/i],
+            ['Electrician',  /\bexhaust fan|light switch|power ?point|\bgpo\b|down ?light|wiring|switchboard|\btimer\b|sensor|smoke alarm|data point/i],
+            ['Roof Plumber', /\bdownpipe|fascia|barge|gutter|fc sheet|\broof|flashing|ridge|valley/i],
+            ['Plumber',      /\btap\b|basin|sink|toilet|\bwc\b|drain|waste|plumb|trough|grommet/i],
+            ['Tiler',        /\btile|grout|tiling/i],
+            ['Waterproofer', /\bwaterproof|shower (base|fall)|puddle flange/i],
+            ['Carpenter',    /\bgripper catch|margin|architrave|skirting|\bdoor|\bgate|cabinet|cupboard|hinge|latch|handle|shelf|robe|\block\b/i],
+            ['Glazier',      /\bglass|glazing|window|mirror|shower screen/i],
+            ['Concreter',    /\bdriveway|concrete|\bslab|\bpath\b|crossover/i],
+            ['Caulker',      /\bcaulk|silicone|seal gap|sealant|gap between/i],
+            ['Cleaner',      /\bclean|builders'? material|debris|residue|rubbish/i],
+        ];
+        function classifyBpiTrade(text) {
+            for (const [trade, re] of BPI_TRADE_RULES) if (re.test(text)) return trade;
+            return '';
+        }
+        // Trade label → keywords to find a matching contractor (by its trades/name).
+        const BPI_TRADE_KEYWORDS = {
+            Painter:['paint'], Bricklayer:['brick','mason','render'], Plasterer:['plaster','cornice','gyprock'],
+            Electrician:['electric','elec'], 'Roof Plumber':['roof','gutter','plumb'], Plumber:['plumb'],
+            Tiler:['tile','tiling'], Waterproofer:['waterproof'], Carpenter:['carpen','fixing','door','cabinet','joinery','lock'],
+            Glazier:['glaz','glass','window'], Concreter:['concret'], Caulker:['caulk','silicone','seal'], Cleaner:['clean'],
+        };
+        function suggestContractorForTrade(trade) {
+            const kws = BPI_TRADE_KEYWORDS[trade]; if (!kws) return null;
+            const hit = db.getContractors().find(c => {
+                const hay = ((c.trades || '') + ' ' + (c.name || '')).toLowerCase();
+                return kws.some(k => hay.includes(k));
+            });
+            return hit ? hit.id : null;
+        }
+        const BPI_LOCATIONS = ['Garage Internal PA Door','General Internal','General External','Front Elevation','Left Elevation','Right Elevation','Rear Elevation','Master Bedroom','Powder Room','Linen Cupboard','Walk In Robe','Ensuite','Bathroom','Laundry','Kitchen','Garage','Hallway','Entry','Stairs','Study','Alfresco','Porch','Balcony','Pantry','Driveway','Roof'];
+        function splitLocObs(rest) {
+            const byGap = rest.split(/\s{3,}/);
+            if (byGap.length >= 2 && byGap[0].trim().length <= 28) return { location: byGap[0].trim(), observation: byGap.slice(1).join(' ').trim() };
+            const hit = BPI_LOCATIONS.find(l => rest.toLowerCase().startsWith(l.toLowerCase()));
+            if (hit) return { location: hit, observation: rest.slice(hit.length).trim() };
+            return { location: '', observation: rest.trim() };
+        }
+        // pdf.js text per page, with column gaps preserved (big x-jump → 3 spaces)
+        // and page breaks (\f) so we can record each defect's page number.
+        async function extractReportTextPaged(file) {
+            await ensurePdfJs();
+            const buf = await file.arrayBuffer();
+            const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+            let text = '';
+            for (let p = 1; p <= pdf.numPages; p++) {
+                const page = await pdf.getPage(p);
+                const content = await page.getTextContent();
+                let lastY = null, lastEndX = null, line = '', out = [];
+                for (const it of content.items) {
+                    const x = it.transform[4], y = it.transform[5];
+                    if (lastY !== null && Math.abs(y - lastY) > 3) { out.push(line); line = ''; lastEndX = null; }
+                    if (line) line += (lastEndX !== null && (x - lastEndX) > 28) ? '   ' : (line.endsWith(' ') ? '' : ' ');
+                    line += it.str;
+                    lastY = y; lastEndX = x + (it.width || 0);
+                }
+                if (line) out.push(line);
+                text += out.join('\n') + '\f';
+            }
+            return text;
+        }
+        // Parse the "Report With Supporting Photos" section into structured defects.
+        function parseBpiDefects(pagedText) {
+            const pages = (pagedText || '').split('\f');
+            const raw = [];
+            let inPhotos = false;
+            pages.forEach((pageText, pi) => {
+                const pageNo = pi + 1;
+                if (/Report With Supporting Photos/i.test(pageText)) inPhotos = true;
+                if (!inPhotos) return;
+                let cur = null;
+                for (const lineRaw of pageText.split('\n')) {
+                    const line = lineRaw.replace(/\s+$/, '');
+                    if (!line.trim()) continue;
+                    if (/Email:|bookings@|www\.|Id\s+Location|Report With Supporting|^\s*Rectified\s*$/i.test(line)) continue;
+                    const m = line.match(/^\s*(\d{1,3})\s+(.+)$/);
+                    if (m) { if (cur) raw.push(cur); const s = splitLocObs(m[2]); cur = { id: +m[1], location: s.location, observation: s.observation, page: pageNo }; }
+                    else if (cur) { cur.observation += ' ' + line.trim(); }
+                }
+                if (cur) raw.push(cur);
+            });
+            const seen = new Set(), items = [];
+            for (const d of raw) {
+                if (seen.has(d.id)) continue; seen.add(d.id);
+                const obs = (d.observation || '').replace(/\s+/g, ' ').trim();
+                if (!obs || obs.length < 3) continue;
+                items.push({ description: obs, location: d.location || '', page: d.page, trade: classifyBpiTrade((d.location || '') + ' ' + obs) });
+            }
+            // Fallback to the generic parser if the structured pass found nothing.
+            if (!items.length) return parseReportDefects(pagedText).map(s => ({ description: s, location: '', page: null, trade: classifyBpiTrade(s) }));
+            return items;
+        }
+        // Find the matching property from the report header "Lot N - Street Suburb".
+        function matchAddressFromText(text) {
+            const m = (text || '').match(/Lot\s+([0-9A-Za-z]+)\s*-\s*([^\n]+)/i);
+            if (!m) return null;
+            const lot = m[1].toLowerCase();
+            const addrs = db.getAddresses();
+            let hit = addrs.find(a => { const s = (a.street || '').toLowerCase(); return s.includes('lot ' + lot) || s.split(/[\s,]+/).includes(lot); });
+            if (!hit) { const streetLine = m[2].toLowerCase(); hit = addrs.find(a => { const core = (a.street || '').toLowerCase().replace(/^lot\s*\w+,?\s*/, '').slice(0, 14); return core && streetLine.includes(core); }); }
+            return hit ? hit.id : null;
+        }
+
         // ---- Step 2: review & assign each item ----
         let _review = null;
-        function startReportReview(items, reportName, reportType) {
-            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: null };
+        function startReportReview(items, reportName, reportType, matchedAddressId) {
+            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: matchedAddressId || null };
             renderReviewItem();
         }
         function renderReviewItem() {
             const r = _review;
             if (r.index >= r.items.length) return finishReview();
+            const raw = r.items[r.index];
+            const item = (typeof raw === 'string') ? { description: raw, location: '', page: null, trade: '' } : raw;
+            const suggestedContractor = item.trade ? suggestContractorForTrade(item.trade) : null;
             const addrOpts = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
                 .map(a => `<option value="${a.id}" ${a.id === r.lastAddressId ? 'selected' : ''}>${formatAddress(a)}</option>`).join('');
             const contrOpts = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                .map(c => `<option value="${c.id}">${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</option>`).join('');
+                .map(c => `<option value="${c.id}" ${c.id === suggestedContractor ? 'selected' : ''}>${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</option>`).join('');
+            const locOpts = ['<option value="">— Location —</option>'].concat(BPI_LOCATIONS.map(l => `<option value="${l}" ${l === item.location ? 'selected' : ''}>${l}</option>`)).join('');
             const pct = Math.round((r.index / r.items.length) * 100);
+            const meta = [item.page ? 'Page ' + item.page : '', item.trade ? 'Suggested: ' + item.trade : ''].filter(Boolean).join(' · ');
             impOverlay(`
                 <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-progress">${r.saved} saved · ${r.items.length - r.index} to review</div>
                     <div class="imp-bar"><i style="width:${pct}%"></i></div>
+                    ${meta ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">📄 ${meta}</div>` : ''}
                     <div class="imp-field">
                         <label>Defect description</label>
-                        <textarea id="rv-desc">${(r.items[r.index] || '').replace(/</g, '&lt;')}</textarea>
+                        <textarea id="rv-desc">${(item.description || '').replace(/</g, '&lt;')}</textarea>
+                    </div>
+                    <div class="imp-row">
+                        <div class="imp-field"><label>Location</label><select id="rv-location">${locOpts}</select></div>
+                        <div class="imp-field"><label>Address (property)</label><select id="rv-address"><option value="">— Select address —</option>${addrOpts}</select></div>
                     </div>
                     <div class="imp-field">
-                        <label>Address (property)</label>
-                        <select id="rv-address"><option value="">— Select address —</option>${addrOpts}</select>
-                    </div>
-                    <div class="imp-field">
-                        <label>Assign to contractor / trade</label>
-                        <select id="rv-contractor"><option value="">— Not assigned yet —</option>${contrOpts}</select>
+                        <label>Assign to contractor / trade${suggestedContractor ? ' (suggested)' : ''}</label>
+                        <select id="rv-contractor"><option value="">— Not assigned (pick later) —</option>${contrOpts}</select>
                     </div>
                     <div class="imp-row">
                         <button class="imp-btn secondary" id="rv-skip">Skip</button>
@@ -6436,10 +6568,10 @@
                 const desc = document.getElementById('rv-desc').value.trim();
                 const addressId = parseInt(document.getElementById('rv-address').value) || null;
                 const contractorId = parseInt(document.getElementById('rv-contractor').value) || null;
+                const location = document.getElementById('rv-location').value || null;
                 if (!desc) { showToast('Enter a description', true); return; }
                 if (!addressId) { showToast('Pick an address', true); return; }
-                if (!contractorId) { showToast('Pick a contractor/trade to assign (or Skip)', true); return; }
-                db.addDefect({ addressId, contractorId, description: desc, status: 'open', unassigned: false });
+                db.addDefect({ addressId, contractorId: contractorId || null, description: desc, location, status: 'open', unassigned: !contractorId });
                 r.lastAddressId = addressId;
                 r.saved++; r.index++;
                 renderReviewItem();
