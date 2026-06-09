@@ -6082,7 +6082,9 @@
 
         // ---- App design: Classic vs Modern (toggle in Manage) ----
         function currentDesign() {
-            return localStorage.getItem('appDesign') || 'modern';
+            // Default to F1 style (with the Blueprint theme, which is the
+            // f1Theme default) for fresh installs. Saved preference wins.
+            return localStorage.getItem('appDesign') || 'f1';
         }
         function applyDesign(d) {
             document.body.classList.toggle('design-modern', d === 'modern');
@@ -6487,8 +6489,12 @@
             impOverlay(`
                 <div id="imp-head"><strong>📑 Generate Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
-                    <div class="imp-field"><label>Status</label>
-                        <select id="rb-status"><option value="all">All statuses</option><option value="open">Open</option><option value="pending">Pending</option><option value="completed">Completed</option></select></div>
+                    <div class="imp-field"><label>Statuses to include</label>
+                        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px;padding:4px 0">
+                            <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rb-st-open" checked style="width:auto"> Open</label>
+                            <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rb-st-pending" style="width:auto"> Pending</label>
+                            <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rb-st-completed" style="width:auto"> Completed</label>
+                        </div></div>
                     <div class="imp-field"><label>Address (optional)</label>
                         <select id="rb-address"><option value="">Any address</option>${addrOpts}</select></div>
                     <div class="imp-field"><label>Contractor (optional)</label>
@@ -6510,7 +6516,7 @@
             if (o.addressId) list = list.filter(d => d.addressId === o.addressId);
             if (o.contractorId) list = list.filter(d => d.contractorId === o.contractorId);
             if (o.tradeId) list = list.filter(d => { const c = db.getContractor(d.contractorId); return c && (c.tradeIds || []).includes(o.tradeId); });
-            if (o.status && o.status !== 'all') list = list.filter(d => defectStatusOf(d) === o.status);
+            if (o.statuses && o.statuses.length) list = list.filter(d => o.statuses.includes(defectStatusOf(d)));
             if (o.from) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) >= o.from);
             if (o.to) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) <= o.to);
             return list;
@@ -6518,7 +6524,7 @@
 
         async function runReportBuilder() {
             const o = {
-                status: document.getElementById('rb-status').value,
+                statuses: ['open', 'pending', 'completed'].filter(s => document.getElementById('rb-st-' + s).checked),
                 addressId: parseInt(document.getElementById('rb-address').value) || null,
                 contractorId: parseInt(document.getElementById('rb-contractor').value) || null,
                 tradeId: parseInt(document.getElementById('rb-trade').value) || null,
@@ -6526,6 +6532,7 @@
                 to: document.getElementById('rb-to').value || null,
                 photos: document.getElementById('rb-photos').checked
             };
+            if (!o.statuses.length) { showToast('Tick at least one status to include', true); return; }
             const list = reportFilteredDefects(o);
             if (!list.length) { showToast('No defects match those filters', true); return; }
             impSetBusy('Generating PDF… (' + list.length + ' defect' + (list.length > 1 ? 's' : '') + ')' + (o.photos ? ' with photos' : ''));
