@@ -6523,7 +6523,7 @@
             let list = db.data.defects.slice();
             if (o.addressIds && o.addressIds.length) list = list.filter(d => o.addressIds.includes(d.addressId));
             if (o.contractorIds && o.contractorIds.length) list = list.filter(d => o.contractorIds.includes(d.contractorId));
-            if (o.tradeId) list = list.filter(d => { const c = db.getContractor(d.contractorId); return c && (c.tradeIds || []).includes(o.tradeId); });
+            if (o.tradeIds && o.tradeIds.length) list = list.filter(d => { const c = db.getContractor(d.contractorId); return c && (c.tradeIds || []).some(tid => o.tradeIds.includes(tid)); });
             if (o.statuses && o.statuses.length) list = list.filter(d => o.statuses.includes(defectStatusOf(d)));
             if (o.from) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) >= o.from);
             if (o.to) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) <= o.to);
@@ -6583,7 +6583,7 @@
             if (opts.statuses && opts.statuses.length) parts.push('Status: ' + opts.statuses.join(', '));
             if (opts.addressIds && opts.addressIds.length) parts.push('Address: ' + opts.addressIds.map(id => formatAddress(db.getAddress(id))).join('; '));
             if (opts.contractorIds && opts.contractorIds.length) parts.push('Contractor: ' + opts.contractorIds.map(id => { const c = db.getContractor(id); return c ? c.name : ''; }).filter(Boolean).join('; '));
-            if (opts.tradeId) { const t = db.data.trades.find(x => x.id === opts.tradeId); parts.push('Trade: ' + (t ? t.name : '')); }
+            if (opts.tradeIds && opts.tradeIds.length) parts.push('Trades: ' + opts.tradeIds.map(id => { const t = db.data.trades.find(x => x.id === id); return t ? t.name : ''; }).filter(Boolean).join(', '));
             if (opts.from || opts.to) parts.push('Dates: ' + (opts.from || '…') + ' → ' + (opts.to || '…'));
             if (parts.length) {
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(9); ink(MUTE);
@@ -6704,13 +6704,65 @@
         }
 
         // One-tap PDF for the screen you're on — per job (address) or per supplier (contractor)
-        async function generateContextReport(opts) {
-            const o = Object.assign({ status: 'all', photos: true }, opts || {});
+        // Context PDF (the 📑 icon on an address or contractor). Opens a small
+        // dialog: pick statuses (default Open) and trades (all ticked by
+        // default), then generate a PDF scoped to that address/contractor.
+        function generateContextReport(ctx) {
+            ctx = ctx || {};
+            const tradeRows = db.data.trades.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(t => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-trade" value="${t.id}" checked style="width:auto"> ${t.name}</label>`).join('');
+            const ctxLabel = ctx.addressId ? formatAddress(db.getAddress(ctx.addressId))
+                : (ctx.contractorId ? ((db.getContractor(ctx.contractorId) || {}).name || '') : 'All defects');
+            impOverlay(`
+                <div id="imp-head"><strong>📑 Generate Report</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <div class="imp-field"><label>For</label><div style="font-size:15px;font-weight:600">${ctxLabel}</div></div>
+                    <div class="imp-field"><label>Statuses to include</label>
+                        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px;padding:4px 0">
+                            <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="cr-st-open" checked style="width:auto"> Open</label>
+                            <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="cr-st-pending" style="width:auto"> Pending</label>
+                            <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="cr-st-completed" style="width:auto"> Completed</label>
+                        </div></div>
+                    <div class="imp-field"><label>Trades (all selected by default)</label>
+                        <input type="text" id="cr-trade-search" placeholder="Search trades…" oninput="crFilterTrades(this.value)" style="width:100%;margin-bottom:4px">
+                        <div style="display:flex;gap:10px;margin-bottom:4px">
+                            <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleTrades(true)">Select all</button>
+                            <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleTrades(false)">None</button>
+                        </div>
+                        <div id="cr-trade-list" style="max-height:150px;overflow:auto;border:1px solid var(--brd,#ccc);border-radius:10px;padding:4px">${tradeRows}</div></div>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0 4px"><input type="checkbox" id="cr-photos" checked style="width:auto"> Include photos</label>
+                    <button class="imp-btn" id="cr-go">Generate PDF →</button>
+                </div>`);
+            document.getElementById('cr-go').onclick = () => runContextReport(ctx);
+        }
+        function crFilterTrades(q) {
+            q = (q || '').toLowerCase().trim();
+            document.querySelectorAll('#cr-trade-list .rb-opt').forEach(el => {
+                el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+        }
+        function crToggleTrades(on) {
+            document.querySelectorAll('.cr-trade').forEach(cb => { cb.checked = on; });
+        }
+        async function runContextReport(ctx) {
+            const statuses = ['open', 'pending', 'completed'].filter(s => document.getElementById('cr-st-' + s).checked);
+            if (!statuses.length) { showToast('Tick at least one status', true); return; }
+            const allTrades = db.data.trades.length;
+            const sel = Array.from(document.querySelectorAll('.cr-trade:checked')).map(x => parseInt(x.value)).filter(Boolean);
+            // All (or none) ticked = no trade filter, so defects without a matching
+            // trade aren't silently dropped. A partial selection filters to it.
+            const tradeIds = (sel.length && sel.length < allTrades) ? sel : null;
+            const o = {
+                addressIds: ctx.addressId ? [ctx.addressId] : [],
+                contractorIds: ctx.contractorId ? [ctx.contractorId] : [],
+                statuses, tradeIds,
+                photos: document.getElementById('cr-photos').checked,
+            };
             const list = reportFilteredDefects(o);
-            if (!list.length) { showToast('No defects here to report', true); return; }
-            showToast('Generating PDF…');
-            try { await generateDefectPDF(list, o); showToast('PDF report downloaded'); }
-            catch (e) { console.error(e); showToast('Could not generate PDF: ' + (e.message || e), true); }
+            if (!list.length) { showToast('No defects match those filters', true); return; }
+            impSetBusy('Generating PDF… (' + list.length + ' defect' + (list.length > 1 ? 's' : '') + ')' + (o.photos ? ' with photos' : ''));
+            try { await generateDefectPDF(list, o); impClose(); showToast('PDF report downloaded'); }
+            catch (e) { console.error(e); impOverlayMessage('Could not generate PDF: ' + (e.message || e)); }
         }
 
         // Initialize app
