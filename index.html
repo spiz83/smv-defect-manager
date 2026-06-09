@@ -6480,12 +6480,10 @@
         }
 
         function openReportBuilder() {
-            const addrOpts = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
-                .map(a => `<option value="${a.id}">${formatAddress(a)}</option>`).join('');
-            const contrOpts = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                .map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-            const tradeOpts = db.data.trades.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                .map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+            const addrRows = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
+                .map(a => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="rb-addr" value="${a.id}" style="width:auto"> ${formatAddress(a)}</label>`).join('');
+            const contrRows = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="rb-contr" value="${c.id}" style="width:auto"> ${c.name}</label>`).join('');
             impOverlay(`
                 <div id="imp-head"><strong>📑 Generate Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
@@ -6495,12 +6493,14 @@
                             <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rb-st-pending" style="width:auto"> Pending</label>
                             <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="rb-st-completed" style="width:auto"> Completed</label>
                         </div></div>
-                    <div class="imp-field"><label>Address (optional)</label>
-                        <select id="rb-address"><option value="">Any address</option>${addrOpts}</select></div>
-                    <div class="imp-field"><label>Contractor (optional)</label>
-                        <select id="rb-contractor"><option value="">Any contractor</option>${contrOpts}</select></div>
-                    <div class="imp-field"><label>Trade (optional)</label>
-                        <select id="rb-trade"><option value="">Any trade</option>${tradeOpts}</select></div>
+                    <div class="imp-field"><label>Addresses (optional — none ticked = any)</label>
+                        <input type="text" id="rb-addr-search" placeholder="Search addresses…" oninput="rbFilterList('addr', this.value)" style="width:100%;margin-bottom:4px">
+                        <div id="rb-addr-list" style="max-height:150px;overflow:auto;border:1px solid var(--brd,#ccc);border-radius:10px;padding:4px">${addrRows}</div></div>
+                    <div class="imp-field"><label>Contractors (optional — none ticked = any)</label>
+                        <input type="text" id="rb-contr-search" placeholder="Search contractors…" oninput="rbFilterList('contr', this.value)" style="width:100%;margin-bottom:4px">
+                        <div id="rb-contr-list" style="max-height:150px;overflow:auto;border:1px solid var(--brd,#ccc);border-radius:10px;padding:4px">${contrRows}</div></div>
+                    <!-- Trade filter hidden for now (Spiro 2026-06-09) — multi-contractor covers it -->
+
                     <div class="imp-row">
                         <div class="imp-field"><label>From date</label><input type="date" id="rb-from"></div>
                         <div class="imp-field"><label>To date</label><input type="date" id="rb-to"></div>
@@ -6511,10 +6511,18 @@
             document.getElementById('rb-go').onclick = runReportBuilder;
         }
 
+        // Live text filter for the report-builder checkbox lists (addr / contr).
+        function rbFilterList(which, q) {
+            q = (q || '').toLowerCase().trim();
+            document.querySelectorAll('#rb-' + which + '-list .rb-opt').forEach(el => {
+                el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+        }
+
         function reportFilteredDefects(o) {
             let list = db.data.defects.slice();
-            if (o.addressId) list = list.filter(d => d.addressId === o.addressId);
-            if (o.contractorId) list = list.filter(d => d.contractorId === o.contractorId);
+            if (o.addressIds && o.addressIds.length) list = list.filter(d => o.addressIds.includes(d.addressId));
+            if (o.contractorIds && o.contractorIds.length) list = list.filter(d => o.contractorIds.includes(d.contractorId));
             if (o.tradeId) list = list.filter(d => { const c = db.getContractor(d.contractorId); return c && (c.tradeIds || []).includes(o.tradeId); });
             if (o.statuses && o.statuses.length) list = list.filter(d => o.statuses.includes(defectStatusOf(d)));
             if (o.from) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) >= o.from);
@@ -6525,9 +6533,8 @@
         async function runReportBuilder() {
             const o = {
                 statuses: ['open', 'pending', 'completed'].filter(s => document.getElementById('rb-st-' + s).checked),
-                addressId: parseInt(document.getElementById('rb-address').value) || null,
-                contractorId: parseInt(document.getElementById('rb-contractor').value) || null,
-                tradeId: parseInt(document.getElementById('rb-trade').value) || null,
+                addressIds: Array.from(document.querySelectorAll('.rb-addr:checked')).map(x => parseInt(x.value)).filter(Boolean),
+                contractorIds: Array.from(document.querySelectorAll('.rb-contr:checked')).map(x => parseInt(x.value)).filter(Boolean),
                 from: document.getElementById('rb-from').value || null,
                 to: document.getElementById('rb-to').value || null,
                 photos: document.getElementById('rb-photos').checked
@@ -6573,9 +6580,9 @@
 
             // ── filter summary line ──────────────────────────────────
             const parts = [];
-            if (opts.status && opts.status !== 'all') parts.push('Status: ' + opts.status);
-            if (opts.addressId) parts.push('Address: ' + formatAddress(db.getAddress(opts.addressId)));
-            if (opts.contractorId) { const c = db.getContractor(opts.contractorId); parts.push('Contractor: ' + (c ? c.name : '')); }
+            if (opts.statuses && opts.statuses.length) parts.push('Status: ' + opts.statuses.join(', '));
+            if (opts.addressIds && opts.addressIds.length) parts.push('Address: ' + opts.addressIds.map(id => formatAddress(db.getAddress(id))).join('; '));
+            if (opts.contractorIds && opts.contractorIds.length) parts.push('Contractor: ' + opts.contractorIds.map(id => { const c = db.getContractor(id); return c ? c.name : ''; }).filter(Boolean).join('; '));
             if (opts.tradeId) { const t = db.data.trades.find(x => x.id === opts.tradeId); parts.push('Trade: ' + (t ? t.name : '')); }
             if (opts.from || opts.to) parts.push('Dates: ' + (opts.from || '…') + ' → ' + (opts.to || '…'));
             if (parts.length) {
