@@ -1391,7 +1391,7 @@
         .loc-opt.sel { border-color: var(--blue); color: var(--blue); font-weight: 700; }
         /* Title left-aligned so the F1 theme picker doesn't cover it */
         .app-header .header-title { flex: 1; text-align: left; }
-        body.design-f1 .app-header { padding-right: 136px; }
+        /* floating F1 picker removed — no reserved header space needed */
 
         /* Location pin + camera share the top line; the description gets the
            full width on its own line below — maximises text room. */
@@ -1982,6 +1982,7 @@
         const state = {
             currentView: 'home',
             showCompleted: false,
+            viewAddrShowCompleted: false,   // per-job defects view: expand completed
             filters: {},
             selectedContractors: [],
             selectedTrades: [],
@@ -2331,6 +2332,12 @@
                 byContractor[d.contractorId].defects.push(d);
             });
 
+            // Completed defects for this address — revealed by the expand button.
+            const completed = db.data.defects
+                .filter(d => d.addressId === addressId && d.completed)
+                .map(d => ({ ...d, contractor: db.getContractor(d.contractorId) }));
+            const showC = state.viewAddrShowCompleted;
+
             return `
                 <div class="defects-container">
                     <div class="app-header">
@@ -2371,6 +2378,24 @@
                             `).join('')}
                         </div>
                     `).join('')}
+
+                    ${completed.length > 0 ? `
+                        <div style="padding: 10px 20px;">
+                            <button onclick="toggleViewAddrCompleted()" style="width:100%; padding:11px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-secondary); color:var(--text-primary); font-size:14px; font-weight:600; cursor:pointer;">
+                                ${showC ? '▴ Hide completed' : `▾ Show ${completed.length} completed`}
+                            </button>
+                        </div>
+                        ${showC ? `
+                        <div class="contractor-section">
+                            <div class="contractor-name">✓ Completed (${completed.length})</div>
+                            ${completed.map(defect => `
+                                <div class="defect-item">
+                                    ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                    <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
+                                </div>
+                            `).join('')}
+                        </div>` : ''}
+                    ` : ''}
                 </div>
             `;
         }
@@ -2387,7 +2412,7 @@
                     </div>
                     
                     <div class="defects-header">
-                        <div class="lot-title">${formatAddress(address)}</div>
+                        <div class="lot-title" onclick="viewDefectsForAddress(${addressId})" style="cursor: pointer;" title="View this job's defects">${formatAddress(address)} ›</div>
                     </div>
 
                     <div style="padding: 14px;">
@@ -2977,6 +3002,14 @@
             state.currentView = 'view-defects-address';
             state.filters = { addressId: parseInt(addressId) };
             closeModal('all-addresses-list-modal');
+            render();
+        }
+
+        // Jump straight to View Defects for an address (used by the Add Defects
+        // header — tap the job address to see that job's defects).
+        function viewDefectsForAddress(addressId) {
+            state.currentView = 'view-defects-address';
+            state.filters = { addressId: parseInt(addressId) };
             render();
         }
 
@@ -4300,6 +4333,12 @@
             state.showCompleted = !state.showCompleted;
             render();
             showToast(state.showCompleted ? 'Showing completed defects' : 'Hiding completed defects');
+        }
+
+        // Per-job (address) defects view: expand/collapse the completed list.
+        function toggleViewAddrCompleted() {
+            state.viewAddrShowCompleted = !state.viewAddrShowCompleted;
+            render();
         }
 
         // Unified function to generate defect text for clipboard/export/email
@@ -6093,10 +6132,10 @@
         }
         // Persistent theme dropdown pinned top-right (only in F1 mode)
         function mountF1Picker() {
-            let el = document.getElementById('f1-picker');
-            if (currentDesign() !== 'f1') { if (el) el.remove(); return; }
-            if (!el) { el = document.createElement('div'); el.id = 'f1-picker'; document.body.appendChild(el); }
-            el.innerHTML = `<span class="f1-pick-dot"></span><select onchange="setF1Theme(this.value)">${F1_THEMES.map(t => `<option value="${t.id}" ${currentF1Theme() === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}</select>`;
+            // Theme selection lives in Manage only now (Spiro 2026-06-09) — remove
+            // the floating top-right picker so the look can't be changed by accident.
+            const el = document.getElementById('f1-picker');
+            if (el) el.remove();
         }
         function setDesign(d) {
             localStorage.setItem('appDesign', d);
