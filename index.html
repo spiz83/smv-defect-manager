@@ -6531,6 +6531,59 @@
             }
             return best ? { contractorId: best.contractor.id, costCentre: best.costCentre } : null;
         }
+        // ════════ Trade learning (hybrid): server-learned → curated rule → keyword ════════
+        // Normalise a defect line to a stable phrase key: lowercase, strip rooms,
+        // digits and filler, so the same templated BPI observation collapses to one
+        // key regardless of room/quantity. This key drives the shared learning table.
+        const PHRASE_ROOM_WORDS = ['master bedroom','powder room','walk in robe','linen cupboard','butlers pantry','bedroom','ensuite','bathroom','laundry','kitchen','hallway','pantry','alfresco','balcony','porch','study','rumpus','meals','living','family','garage','wir','robe'];
+        const PHRASE_STOPWORDS = new Set(['to','the','of','at','an','and','is','are','be','please','required','reqd','req','need','needs','needed','provide','rectify','repair','fix','check','ensure','as','per','area','areas','no','with','for','from','has','have','around','where','there','here','this','that','all','each','both','left','right','front','rear','side']);
+        function normalizePhrase(text) {
+            let s = ' ' + String(text || '').toLowerCase() + ' ';
+            for (const rm of PHRASE_ROOM_WORDS) s = s.split(rm).join(' ');
+            s = s.replace(/[^a-z ]+/g, ' ');
+            const toks = s.split(/\s+/).filter(w => w.length > 1 && !PHRASE_STOPWORDS.has(w));
+            return toks.join(' ').trim();
+        }
+        // Curated CH trade conventions — the known classifier traps (sealing around
+        // doors/trim is the PAINTER's gap-fill here, not the caulker, etc). Tested
+        // against the lowercased defect text; first match wins. Extend freely.
+        const CURATED_TRADE_OVERRIDES = [
+            { re: /\bseal(ing|ant)?\b[^.]*\b(door|window|frame|architrave|skirt|cornice|reveal|jamb|trim)/, trade: 'Painter' },
+            { re: /\b(gap|crack)s?\b[^.]*\b(door|window|architrave|skirt|cornice|trim|wall|ceiling|frame)/, trade: 'Painter' },
+            { re: /\b(touch ?up|repaint|undercoat|overspray|paint (run|drip|finish|coverage|mark))\b/, trade: 'Painter' },
+            { re: /\b(silicone|caulk)[^.]*\b(shower|bath|basin|vanity|sink|splashback|wet area|tile)/, trade: 'Caulker' },
+            { re: /\b(re-?grout|grout)\b/, trade: 'Tiler' },
+            { re: /\b(tile|tiling)\b[^.]*\b(loose|drummy|crack|chip|lippage|missing)/, trade: 'Tiler' },
+            { re: /\bwaterproof/, trade: 'Waterproofer' },
+            { re: /\b(door (handle|lock|hinge|latch|catch|stop)|striker plate|deadlock)\b/, trade: 'Carpenter' },
+            { re: /\b(light|down ?light|power ?point|gpo|switch|switchboard|exhaust fan|smoke alarm|globe|wiring)\b/, trade: 'Electrician' },
+            { re: /\b(tap|mixer|toilet|cistern|basin waste|drainage|down ?pipe|water hammer)\b/, trade: 'Plumber' },
+        ];
+        // The trade for a defect line: shared learning (confident) wins, then a
+        // curated rule, then the keyword classifier. Returns the source for display.
+        function resolveTrade(text) {
+            const phrase = normalizePhrase(text);
+            if (window.CloudLearning) {
+                const learned = window.CloudLearning.suggestTrade(phrase);
+                if (learned && learned.trade) return { trade: learned.trade, source: 'learned', n: learned.n };
+            }
+            const low = String(text || '').toLowerCase();
+            for (const o of CURATED_TRADE_OVERRIDES) if (o.re.test(low)) return { trade: o.trade, source: 'rule' };
+            const t = classifyBpiTrade(low);
+            return { trade: t || '', source: t ? 'keyword' : 'none' };
+        }
+        // Reverse map: which BPI trade does this chosen contractor represent? Lets us
+        // learn (phrase → trade) from the contractor a supervisor actually assigns.
+        function contractorToBpiTrade(contractor) {
+            if (!contractor) return '';
+            const hay = ((contractor.trades || '') + ' ' + (contractor.name || '')).toLowerCase();
+            let best = '', bestScore = 0;
+            for (const trade in CALLUP_TRADE_KEYWORDS) {
+                const score = CALLUP_TRADE_KEYWORDS[trade].reduce((n, k) => n + (hay.includes(k) ? 1 : 0), 0);
+                if (score > bestScore) { bestScore = score; best = trade; }
+            }
+            return best;
+        }
 
         // ===========================================================================
         //  Report LEARNING — the import gets smarter from real assignment history.
@@ -6710,24 +6763,30 @@
             //   1. Framework call-up — the sub actually engaged for this trade on THIS job
             //   2. learned history    — who this supervisor has assigned similar defects to
             //   3. static trade rule  — global keyword guess (cold-start fallback)
-            const callup = item.trade ? suggestCallupForTrade(item.trade, r.lastAddressId) : null;
+            // Resolve the trade via the hybrid learner (shared learning → curated
+            // rule → keyword), overriding the parse-time guess; it drives the
+            // call-up contractor pick below.
+            const resolved = resolveTrade((item.location || '') + ' ' + (item.description || ''));
+            const effTrade = resolved.trade;
+            const callup = effTrade ? suggestCallupForTrade(effTrade, r.lastAddressId) : null;
             const learned = suggestFromHistory((item.location || '') + ' ' + (item.description || ''));
             const suggestedContractor = (callup && callup.contractorId)
                 || (learned && learned.contractorId)
-                || (item.trade ? suggestContractorForTrade(item.trade) : null);
-            const suggestedTrade = item.trade || (learned && learned.trade) || '';
+                || (effTrade ? suggestContractorForTrade(effTrade) : null);
+            const suggestedTrade = effTrade || (learned && learned.trade) || '';
             const addrOpts = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
                 .map(a => `<option value="${a.id}" ${a.id === r.lastAddressId ? 'selected' : ''}>${formatAddress(a)}</option>`).join('');
             const contrOpts = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                 .map(c => `<option value="${c.id}" ${c.id === suggestedContractor ? 'selected' : ''}>${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</option>`).join('');
             const locOpts = ['<option value="">— Location —</option>'].concat(BPI_LOCATIONS.map(l => `<option value="${l}" ${l === item.location ? 'selected' : ''}>${l}</option>`)).join('');
             const pct = Math.round((r.index / r.items.length) * 100);
+            const tradeTag = resolved.source === 'learned' ? ' (learned' + (resolved.n ? ' ×' + resolved.n : '') + ')' : resolved.source === 'rule' ? ' (rule)' : '';
             const suggestNote = callup
                 ? '📋 Called up on this job: ' + ((db.getContractor(callup.contractorId) || {}).name || '') + (callup.costCentre ? ' (cost centre ' + callup.costCentre + ')' : '')
                 : learned
                 ? '🧠 Suggested: ' + ((db.getContractor(learned.contractorId) || {}).name || '') + (learned.support ? ' (learned from ' + learned.support + ' past defect' + (learned.support === 1 ? '' : 's') + ')' : '')
-                : (suggestedTrade ? 'Suggested: ' + suggestedTrade : '');
-            const meta = [item.page ? 'Page ' + item.page : '', suggestNote].filter(Boolean).join(' · ');
+                : '';
+            const meta = [item.page ? 'Page ' + item.page : '', effTrade ? 'Trade: ' + effTrade + tradeTag : '', suggestNote].filter(Boolean).join(' · ');
             impOverlay(`
                 <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
@@ -6774,7 +6833,11 @@
                 if (!desc) { showToast('Enter a description', true); return; }
                 if (!addressId) { showToast('Pick an address', true); return; }
                 db.addDefect({ addressId, contractorId: contractorId || null, description: desc, location, status: 'open', unassigned: !contractorId });
-                if (contractorId) learnFromAssignment((location || '') + ' ' + desc, contractorId);
+                if (contractorId) {
+                    learnFromAssignment((location || '') + ' ' + desc, contractorId);            // local: phrase → contractor
+                    const learnedTrade = contractorToBpiTrade(db.getContractor(contractorId));   // shared: phrase → trade
+                    if (learnedTrade && window.CloudLearning) window.CloudLearning.record(normalizePhrase((location || '') + ' ' + desc), learnedTrade);
+                }
                 r.lastAddressId = addressId;
                 r.saved++; r.index++;
                 renderReviewItem();

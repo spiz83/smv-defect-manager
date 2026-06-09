@@ -64,6 +64,9 @@
   // rows ({ cost_centre, supplier_name, ... }). Rebuilt on every pull; consumed
   // by the BPI review to suggest the contractor actually engaged for a trade.
   let callupsByAddress = {};
+  // BPI trade learning: normalised defect phrase -> { trade: count }. Rebuilt per
+  // pull; the spine of "learn as you go" trade classification (shared by all users).
+  let tradeLearning = {};
 
   function emptySnap() {
     return { trades: {}, contractors: {}, addresses: {}, defects: {} };
@@ -246,13 +249,14 @@
   async function pullAll() {
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
-    const [trades, contractors, links, jobs, defects, callups] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, learning] = await Promise.all([
       sb.from('dm_trades').select('*'),
       sb.from('dm_contractors').select('*'),
       sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
       sb.from('jobs').select('id, job_number, lot, street, suburb'),
       sb.from('dm_defects').select('*'),
-      sb.from('job_order_profiles').select('job_id, rows')   // Framework call-up; best-effort
+      sb.from('job_order_profiles').select('job_id, rows'),   // Framework call-up; best-effort
+      sb.from('dm_trade_learning').select('phrase_key, trade, n')   // learned trades; best-effort
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -312,6 +316,14 @@
         const lid = uuidToLegacy.addresses[p.job_id];
         if (lid == null) return;                          // job not visible to this user
         callupsByAddress[lid] = Array.isArray(p.rows) ? p.rows : [];
+      });
+    }
+
+    // Learned trade tallies, keyed by normalised phrase. Best-effort.
+    tradeLearning = {};
+    if (learning && !learning.error && Array.isArray(learning.data)) {
+      learning.data.forEach(row => {
+        (tradeLearning[row.phrase_key] = tradeLearning[row.phrase_key] || {})[row.trade] = row.n || 1;
       });
     }
 
@@ -875,6 +887,25 @@
   window.CloudCallups = {
     rowsForAddress: (legacyId) => callupsByAddress[legacyId] || [],
     hasProfile: (legacyId) => Array.isArray(callupsByAddress[legacyId]) && callupsByAddress[legacyId].length > 0
+  };
+
+  // ----- BPI trade learning (suggest + record), shared across all users -----
+  window.CloudLearning = {
+    // Best learned trade for a normalised phrase, or null. minN gates confidence.
+    suggestTrade: (phraseKey, minN = 2) => {
+      const tallies = tradeLearning[phraseKey]; if (!tallies) return null;
+      let bestTrade = null, bestN = 0, total = 0;
+      for (const t in tallies) { total += tallies[t]; if (tallies[t] > bestN) { bestN = tallies[t]; bestTrade = t; } }
+      return bestN >= minN ? { trade: bestTrade, n: bestN, total } : null;
+    },
+    // Record a supervisor's trade choice for a phrase (fire-and-forget upsert).
+    record: async (phraseKey, trade) => {
+      if (!userId || !phraseKey || !trade) return;
+      try {
+        await sb.rpc('dm_learn_trade', { p_phrase: phraseKey, p_trade: trade });
+        (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {})[trade] = (tradeLearning[phraseKey][trade] || 0) + 1;
+      } catch (e) { console.warn('[CloudLearning] record', e); }
+    }
   };
 
   // ===========================================================================
