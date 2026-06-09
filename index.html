@@ -6456,6 +6456,7 @@
             Tiler:['tile','tiling'], Waterproofer:['waterproof'], Flooring:['floor','carpet','vinyl','laminate'],
             Carpenter:['carpen','fixing','door','cabinet','joinery','lock'],
             Glazier:['glaz','glass','window'], Concreter:['concret'], Caulker:['caulk','silicone','seal'], Cleaner:['clean'],
+            Insulation:['insulat','sisal','sarking','wrap','foil'],
         };
         function suggestContractorForTrade(trade) {
             const kws = BPI_TRADE_KEYWORDS[trade]; if (!kws) return null;
@@ -6531,6 +6532,7 @@
             Concreter: ['concrete', 'concretor'],
             Caulker: ['caulk', 'joint sealing'],
             Cleaner: ['cleaner', 'cleaning'],
+            Insulation: ['insulation', 'sisalation', 'sarking', 'wall wrap', 'foil'],
         };
         // Suggest the called-up contractor for `trade` on the job at `addressLid`.
         // Returns null when the job has no profile or no engaged sub fits the trade
@@ -6564,6 +6566,9 @@
         // doors/trim is the PAINTER's gap-fill here, not the caulker, etc). Tested
         // against the lowercased defect text; first match wins. Extend freely.
         const CURATED_TRADE_OVERRIDES = [
+            // Insulation / wall-wrap (sisalation, sarking) — must beat the "roof"
+            // keyword, since these defects mention "roof members"/"ceiling".
+            { re: /\b(insulation|sisalation|sisal|sarking|wall ?wrap|foilboard|foil board|reflective foil|sarked|batts?)\b/, trade: 'Insulation' },
             { re: /\bseal(ing|ant)?\b[^.]*\b(door|window|frame|architrave|skirt|cornice|reveal|jamb|trim)/, trade: 'Painter' },
             { re: /\b(gap|crack)s?\b[^.]*\b(door|window|architrave|skirt|cornice|trim|wall|ceiling|frame)/, trade: 'Painter' },
             { re: /\b(touch ?up|repaint|undercoat|overspray|paint (run|drip|finish|coverage|mark))\b/, trade: 'Painter' },
@@ -6689,7 +6694,7 @@
                 ? contractor.trades.split(',')[0].trim() : '';
             return { contractorId: bestId, trade, support: support.get(bestId) || 0, confidence };
         }
-        const BPI_LOCATIONS = ['Garage Internal PA Door','Garage External PA Door','General Internal','General External','Front Elevation','Left Elevation','Right Elevation','Rear Elevation','Master Bedroom','Bedroom 1','Bedroom 2','Bedroom 3','Bedroom 4','Bedroom 5','Powder Room','Linen Cupboard','Walk In Robe','Ensuite','Bathroom','Toilet','Laundry','Kitchen','Family','Meals','Living','Dining','Lounge','Rumpus','Theatre','Study','Sitting','Retreat','Hallway','Entry','Front Door','Stairs','Alfresco','Porch','Balcony','Pantry','Garage','Driveway','Roof'];
+        const BPI_LOCATIONS = ['Garage Internal PA Door','Garage External PA Door','General Internal','General External','Front Elevation','Left Elevation','Right Elevation','Rear Elevation','Master Bedroom','Bedroom 1','Bedroom 2','Bedroom 3','Bedroom 4','Bedroom 5','Powder Room','Linen Cupboard','Walk In Robe','Ensuite','Bathroom','Toilet','Laundry','Kitchen','Family','Meals','Living','Dining','Lounge','Rumpus','Theatre','Study','Sitting','Retreat','Hallway','Entry','Front Door','Stairs','Alfresco','Porch','Balcony','Pantry','Garage','Roof Space','Driveway','Roof'];
         function splitLocObs(rest) {
             const byGap = rest.split(/\s{3,}/);
             if (byGap.length >= 2 && byGap[0].trim().length <= 28) return { location: byGap[0].trim(), observation: byGap.slice(1).join(' ').trim() };
@@ -6759,13 +6764,30 @@
         }
         // Find the matching property from the report header "Lot N - Street Suburb".
         function matchAddressFromText(text) {
-            const m = (text || '').match(/Lot\s+([0-9A-Za-z]+)\s*-\s*([^\n]+)/i);
-            if (!m) return null;
-            const lot = m[1].toLowerCase();
+            text = text || '';
             const addrs = db.getAddresses();
-            let hit = addrs.find(a => { const s = (a.street || '').toLowerCase(); return s.includes('lot ' + lot) || s.split(/[\s,]+/).includes(lot); });
-            if (!hit) { const streetLine = m[2].toLowerCase(); hit = addrs.find(a => { const core = (a.street || '').toLowerCase().replace(/^lot\s*\w+,?\s*/, '').slice(0, 14); return core && streetLine.includes(core); }); }
-            return hit ? hit.id : null;
+            // 1) Lot number ANYWHERE in the report ("Lot 1933" recurs in headers).
+            //    Tolerant of the extractor fragmenting the "Lot N - street" line.
+            const lotM = text.match(/\bLot\s*(\d+[A-Za-z]?)\b/i);
+            if (lotM) {
+                const lot = lotM[1].toLowerCase();
+                const hit = addrs.find(a => { const s = (a.street || '').toLowerCase(); return s.includes('lot ' + lot) || s.split(/[\s,]+/).includes(lot); });
+                if (hit) return hit.id;
+            }
+            // 2) Fallback: match by street NAME (+ house number, if present) appearing
+            //    anywhere — covers reports where the lot line didn't survive parsing.
+            const low = text.toLowerCase();
+            let best = null;
+            for (const a of addrs) {
+                const street = (a.street || '').toLowerCase().replace(/^lot\s*\w+,?\s*/, '').trim();   // e.g. "19 lahar road"
+                if (!street) continue;
+                const nameTok = street.replace(/^[()\d\s]+/, '').split(/\s+/)[0];                       // e.g. "lahar"
+                if (!nameTok || nameTok.length < 4 || !low.includes(nameTok)) continue;
+                const numM = street.match(/\d+/);
+                const score = (numM && new RegExp('\\b' + numM[0] + '\\b').test(low)) ? 2 : 1;
+                if (!best || score > best.score) best = { id: a.id, score };
+            }
+            return best ? best.id : null;
         }
 
         // ---- Step 2: review & assign each item ----
