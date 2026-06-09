@@ -6414,17 +6414,19 @@
         // Trade inference learned from the defect language in BPI final reports.
         const BPI_TRADE_RULES = [
             ['Painter',      /\bpaint|repaint|raw timber|hinge knuckle|touch ?up|overspray|paint runs?\b/i],
-            ['Bricklayer',   /\bbrick|mortar|pier|weep ?hole|articulation joint/i],
-            ['Plasterer',    /\bcornice|plaster|nail pop|patch (hole|the)|crack(ing|ed)? to (wall|ceiling)|set joint|sheet join|\bdip\b/i],
-            ['Electrician',  /\bexhaust fan|light switch|power ?point|\bgpo\b|down ?light|wiring|switchboard|\btimer\b|sensor|smoke alarm|data point/i],
+            ['Renderer',     /\brender|acrylic render/i],
+            ['Bricklayer',   /\bbrick|mortar|mortal|perpend|\bpier\b|weep ?hole|articulation joint|lintel/i],
+            ['Plasterer',    /\bcornice|plaster|nail pop|patch (hole|the)|crack(ing|ed)? to (wall|ceiling)|set joint|sheet join|\bdip\b|bulkhead/i],
+            ['Electrician',  /\bexhaust fan|light switch|power ?point|\bgpo\b|down ?light|wiring|switchboard|\btimer\b|sensor|smoke alarm|data point|\blight\b/i],
             ['Roof Plumber', /\bdownpipe|fascia|barge|gutter|fc sheet|\broof|flashing|ridge|valley/i],
-            ['Plumber',      /\btap\b|basin|sink|toilet|\bwc\b|drain|waste|plumb|trough|grommet/i],
+            ['Plumber',      /\btap\b|basin|sink|toilet|\bwc\b|drain|waste|plumb|trough|grommet|\bmixer\b|spout|cistern|hand ?held shower|shower bracket|overflow pipe|\briser|storm ?water|grate cover|pipe penetration|no water to|garden tap/i],
             ['Tiler',        /\btile|grout|tiling/i],
             ['Waterproofer', /\bwaterproof|shower (base|fall)|puddle flange/i],
-            ['Carpenter',    /\bgripper catch|margin|architrave|skirting|\bdoor|\bgate|cabinet|cupboard|hinge|latch|handle|shelf|robe|\block\b/i],
+            ['Flooring',     /\bcarpet|spikes (can be )?felt|floating floor|laminate floor|vinyl plank/i],
+            ['Carpenter',    /\bgripper catch|margin|architrave|skirting|\bdoor|\bgate|cabinet|cupboard|hinge|latch|handle|shelf|robe|\block\b|towel rail|towel ring|\bquads?\b|drawer|\bdraw\b|slider|flooring|manhole|screw cap|twisted|cushion stop|porch post|\bbolts?\b|chipped|vanity/i],
             ['Glazier',      /\bglass|glazing|window|mirror|shower screen/i],
             ['Concreter',    /\bdriveway|concrete|\bslab|\bpath\b|crossover/i],
-            ['Caulker',      /\bcaulk|silicone|seal gap|sealant|gap between/i],
+            ['Caulker',      /\bcaulk|silicone|seal gap|sealant|gap between|bath hob/i],
             ['Cleaner',      /\bclean|builders'? material|debris|residue|rubbish/i],
         ];
         function classifyBpiTrade(text) {
@@ -6433,9 +6435,10 @@
         }
         // Trade label → keywords to find a matching contractor (by its trades/name).
         const BPI_TRADE_KEYWORDS = {
-            Painter:['paint'], Bricklayer:['brick','mason','render'], Plasterer:['plaster','cornice','gyprock'],
+            Painter:['paint'], Renderer:['render','acrylic'], Bricklayer:['brick','mason'], Plasterer:['plaster','cornice','gyprock'],
             Electrician:['electric','elec'], 'Roof Plumber':['roof','gutter','plumb'], Plumber:['plumb'],
-            Tiler:['tile','tiling'], Waterproofer:['waterproof'], Carpenter:['carpen','fixing','door','cabinet','joinery','lock'],
+            Tiler:['tile','tiling'], Waterproofer:['waterproof'], Flooring:['floor','carpet','vinyl','laminate'],
+            Carpenter:['carpen','fixing','door','cabinet','joinery','lock'],
             Glazier:['glaz','glass','window'], Concreter:['concret'], Caulker:['caulk','silicone','seal'], Cleaner:['clean'],
         };
         function suggestContractorForTrade(trade) {
