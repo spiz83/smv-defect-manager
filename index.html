@@ -6765,11 +6765,32 @@
             catch (e) { console.error(e); impOverlayMessage('Could not generate PDF: ' + (e.message || e)); }
         }
 
+        // Floating "refresh / get latest version" button. This app has no
+        // service worker, so on a home-screen (standalone) launch we cache-bust
+        // index.html to force the newest deploy rather than a cached copy.
+        function mountRefreshButton() {
+            if (document.getElementById('app-refresh')) return;
+            const b = document.createElement('button');
+            b.id = 'app-refresh';
+            b.innerHTML = '↻';
+            b.title = 'Refresh — load the latest version';
+            b.setAttribute('aria-label', 'Refresh app');
+            b.onclick = function () {
+                b.disabled = true; b.style.opacity = '0.5';
+                const u = new URL(window.location.href);
+                u.searchParams.set('_r', Date.now().toString());
+                window.location.replace(u.toString());
+            };
+            b.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99999;width:42px;height:42px;border-radius:50%;border:1px solid var(--brd,#bbb);background:var(--sur,#fff);color:var(--t1,#111);font-size:20px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;';
+            document.body.appendChild(b);
+        }
+
         // Initialize app
         loadTheme();
         loadClubTheme();
         loadDesign();
         render();
+        mountRefreshButton();
     </script>
 
     <!-- ====================================================================
