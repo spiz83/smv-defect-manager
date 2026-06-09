@@ -6689,11 +6689,17 @@
                 ? contractor.trades.split(',')[0].trim() : '';
             return { contractorId: bestId, trade, support: support.get(bestId) || 0, confidence };
         }
-        const BPI_LOCATIONS = ['Garage Internal PA Door','General Internal','General External','Front Elevation','Left Elevation','Right Elevation','Rear Elevation','Master Bedroom','Powder Room','Linen Cupboard','Walk In Robe','Ensuite','Bathroom','Laundry','Kitchen','Garage','Hallway','Entry','Stairs','Study','Alfresco','Porch','Balcony','Pantry','Driveway','Roof'];
+        const BPI_LOCATIONS = ['Garage Internal PA Door','Garage External PA Door','General Internal','General External','Front Elevation','Left Elevation','Right Elevation','Rear Elevation','Master Bedroom','Bedroom 1','Bedroom 2','Bedroom 3','Bedroom 4','Bedroom 5','Powder Room','Linen Cupboard','Walk In Robe','Ensuite','Bathroom','Toilet','Laundry','Kitchen','Family','Meals','Living','Dining','Lounge','Rumpus','Theatre','Study','Sitting','Retreat','Hallway','Entry','Front Door','Stairs','Alfresco','Porch','Balcony','Pantry','Garage','Driveway','Roof'];
         function splitLocObs(rest) {
             const byGap = rest.split(/\s{3,}/);
             if (byGap.length >= 2 && byGap[0].trim().length <= 28) return { location: byGap[0].trim(), observation: byGap.slice(1).join(' ').trim() };
-            const hit = BPI_LOCATIONS.find(l => rest.toLowerCase().startsWith(l.toLowerCase()));
+            // No column gap: peel a leading location. Numbered bedrooms first
+            // (any number), then the LONGEST matching known room name so specific
+            // labels (e.g. "Garage Internal PA Door") win over "Garage".
+            const bm = rest.match(/^((?:Master\s+)?Bedroom(?:\s*\d+)?)\b\s*/i);
+            if (bm) return { location: bm[1].replace(/\s+/g, ' ').trim(), observation: rest.slice(bm[0].length).trim() };
+            const low = rest.toLowerCase();
+            const hit = BPI_LOCATIONS.slice().sort((a, b) => b.length - a.length).find(l => low.startsWith(l.toLowerCase()));
             if (hit) return { location: hit, observation: rest.slice(hit.length).trim() };
             return { location: '', observation: rest.trim() };
         }
