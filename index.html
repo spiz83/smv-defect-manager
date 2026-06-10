@@ -6320,7 +6320,7 @@
                         const paged = await extractReportTextPaged(f);
                         const items = parseBpiDefects(paged);
                         if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
-                        startReportReview(items, f.name, reportType, matchAddressFromText(paged));
+                        startReportReview(items, f.name, reportType, matchAddressFromText(paged, f.name));
                         return;
                     }
                     const text = await extractReportText(f);
@@ -6362,8 +6362,9 @@
             }
             if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
             // Match the property from the report header even on the AI path, so the
-            // address is pre-selected regardless of which extractor ran.
-            startReportReview(items, sourceName, reportType, matchAddressFromText(rawText));
+            // address is pre-selected regardless of which extractor ran. The source
+            // file name doubles as a match input (BPI names embed lot + street).
+            startReportReview(items, sourceName, reportType, matchAddressFromText(rawText, sourceName));
         }
 
         function impSetBusy(msg) {
@@ -6786,38 +6787,50 @@
             if (!items.length) return parseReportDefects(pagedText).map(s => ({ description: s, location: '', page: null, trade: classifyBpiTrade(s) }));
             return items;
         }
-        // Find the matching property from the report header "Lot N - Street Suburb".
+        // Find the matching property from the report header "Lot N - Street Suburb"
+        // and/or the PDF filename (BPI names embed lot + street, e.g.
+        // "(1st_Inspection)_1403_20_Kobi_Street_Tarneit.pdf"), which survives even
+        // when pdf.js fragments the extracted text.
         let _amftDbg = '';   // TEMP diagnostic, shown in the review meta line
-        function matchAddressFromText(text) {
-            text = text || '';
+        function matchAddressFromText(text, fileName) {
             const addrs = db.getAddresses();
+            const norm = s => (s || '').toLowerCase().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ');
+            const low = norm((fileName || '') + ' ' + (text || ''));
+            const squish = low.replace(/[^a-z0-9]+/g, '');   // tolerant of "L ot 14 03"-style fragmentation
             let result = null, via = '';
-            // 1) Lot number ANYWHERE in the report ("Lot 1933" recurs in headers).
-            //    Tolerant of the extractor fragmenting the "Lot N - street" line.
-            const lotM = text.match(/\bLot\s*(\d+[A-Za-z]?)\b/i);
+            // 1) Explicit "Lot NNNN" anywhere (incl. fragmented).
+            const lotM = low.match(/\blot\s*(\d+[a-z]?)\b/) || squish.match(/lot(\d{2,5}[a-z]?)/);
             if (lotM) {
-                const lot = lotM[1].toLowerCase();
-                const hit = addrs.find(a => { const s = (a.street || '').toLowerCase(); return s.includes('lot ' + lot) || s.split(/[\s,]+/).includes(lot); });
+                const lot = lotM[1];
+                const hit = addrs.find(a => { const s = norm(a.street); return s.includes('lot ' + lot) || s.split(/[\s,()]+/).includes(lot); });
                 if (hit) { result = hit.id; via = 'lot'; }
             }
-            // 2) Fallback: match by street NAME (+ house number, if present) appearing
-            //    anywhere — covers reports where the lot line didn't survive parsing.
+            // 2) Score every address on its lot number / street name / house number
+            //    appearing as tokens in filename+text — needs no "Lot" keyword at all.
             if (result == null) {
-                const low = text.toLowerCase();
-                let best = null;
+                const toks = new Set(low.split(/[^a-z0-9]+/).filter(Boolean));
+                let best = null, ties = 0;
                 for (const a of addrs) {
-                    const street = (a.street || '').toLowerCase().replace(/^lot\s*\w+,?\s*/, '').trim();   // e.g. "19 lahar road"
-                    if (!street) continue;
-                    const nameTok = street.replace(/^[()\d\s]+/, '').split(/\s+/)[0];                       // e.g. "lahar"
-                    if (!nameTok || nameTok.length < 4 || !low.includes(nameTok)) continue;
-                    const numM = street.match(/\d+/);
-                    const score = (numM && new RegExp('\\b' + numM[0] + '\\b').test(low)) ? 2 : 1;
-                    if (!best || score > best.score) best = { id: a.id, score };
+                    const s = norm(a.street);                                           // e.g. "lot 1403, (20) kobi st"
+                    if (!s) continue;
+                    const lotA = (s.match(/^lot\s*(\d+[a-z]?)\b/) || [])[1];            // "1403"
+                    const rest = s.replace(/^lot\s*\w+,?\s*/, '').trim();               // "(20) kobi st"
+                    const houseNum = (rest.match(/\d+/) || [])[0];                      // "20"
+                    const nameTok = rest.replace(/^[()\d\s]+/, '').split(/\s+/)[0];     // "kobi"
+                    let score = 0;
+                    if (nameTok && nameTok.length >= 4 && (toks.has(nameTok) || squish.includes(nameTok))) score += 2;
+                    if (lotA && (toks.has(lotA) || squish.includes('lot' + lotA))) score += 2;
+                    if (houseNum && toks.has(houseNum)) score += 1;
+                    if (score < 2) continue;
+                    if (!best || score > best.score) { best = { id: a.id, score }; ties = 1; }
+                    else if (score === best.score) ties++;
                 }
-                if (best) { result = best.id; via = 'street'; }
+                // A tie (e.g. 10 jobs on the same street, name-only match) is
+                // ambiguous — leave unmatched rather than pick the wrong job.
+                if (best && ties === 1) { result = best.id; via = 'score'; }
             }
             const matchedStreet = result != null ? ((db.getAddress(result) || {}).street || '?') : '—';
-            _amftDbg = 'addrs=' + addrs.length + ' lot=' + (lotM ? lotM[1] : 'NONE') + ' match=' + (result != null ? (via + ':' + matchedStreet) : 'NULL');
+            _amftDbg = 'addrs=' + addrs.length + ' fn=' + (fileName ? 'Y' : 'N') + ' lot=' + (lotM ? lotM[1] : 'NONE') + ' match=' + (result != null ? (via + ':' + matchedStreet) : 'NULL');
             return result;
         }
 
