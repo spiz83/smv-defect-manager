@@ -2775,6 +2775,23 @@
                             </div>
                         </div>
 
+                        ${(window.CloudJobs && window.CloudJobs.isManager()) ? `
+                        <!-- Handed-over jobs (manager only) -->
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">📦 Handed-over jobs</div>
+                                    <div style="font-size: 14px; color: var(--text-secondary);">Active jobs only by default — reveal handed-over (inactive) jobs when you need them.</div>
+                                </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="btn ${!window.CloudJobs.showInactive() ? 'btn-primary' : 'btn-secondary'}"
+                                            style="padding: 10px 16px; font-size: 14px;" onclick="setShowInactiveJobs(false)">Active only</button>
+                                    <button class="btn ${window.CloudJobs.showInactive() ? 'btn-primary' : 'btn-secondary'}"
+                                            style="padding: 10px 16px; font-size: 14px;" onclick="setShowInactiveJobs(true)">Show all</button>
+                                </div>
+                            </div>
+                        </div>` : ''}
+
                         <!-- App Design -->
                         <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
                             <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
@@ -6148,6 +6165,13 @@
         function loadDesign() {
             applyDesign(currentDesign());
             if (currentDesign() === 'f1') applyF1Theme(currentF1Theme());
+        }
+        // Manager toggle: include handed-over (inactive) jobs in the address list.
+        async function setShowInactiveJobs(v) {
+            if (!window.CloudJobs) return;
+            showToast(v ? 'Loading all jobs…' : 'Active jobs only…');
+            await window.CloudJobs.setShowInactive(v);   // re-pulls + re-renders
+            showToast(v ? 'Showing handed-over jobs too' : 'Showing active jobs only');
         }
 
         /* ---- F1 Telemetry themes (ported from CH Tracker) ---- */

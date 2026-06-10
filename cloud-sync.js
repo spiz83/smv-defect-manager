@@ -46,6 +46,9 @@
   let userRole = null;            // 'manager' | 'supervisor'
   let userId = null;
   let userEmail = null;
+  // Handed-over (active=false) jobs are hidden by default; a manager can reveal
+  // them from Manage. Persisted so the choice survives reloads.
+  let showInactiveJobs = localStorage.getItem('dm_show_inactive') === '1';
   // idMap.<entity>[legacyId] = cloud uuid.
   // addresses: legacyId (hash of job uuid) -> jobs.id (uuid). Read-only.
   const idMap = { trades: {}, contractors: {}, addresses: {}, defects: {} };
@@ -258,7 +261,7 @@
       sb.from('dm_trades').select('*'),
       sb.from('dm_contractors').select('*'),
       sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
-      sb.from('jobs').select('id, job_number, lot, street, suburb'),
+      sb.from('jobs').select('id, job_number, lot, street, suburb, active'),
       sb.from('dm_defects').select('*'),
       sb.from('job_order_profiles').select('job_id, rows'),   // Framework call-up; best-effort
       sb.from('dm_trade_learning').select('phrase_key, trade, n')   // learned trades; best-effort
@@ -303,6 +306,8 @@
     // job uuid is the legacy int id the rest of the app keys off. Address text
     // is "Lot N, Street" + suburb, job_number kept as propertyNumber for search.
     jobs.data.forEach(j => {
+      // Hide handed-over jobs (active = false) unless a manager has toggled them on.
+      if (!showInactiveJobs && j.active === false) return;
       const lid = hashId(j.id);
       idMap.addresses[lid] = j.id; uuidToLegacy.addresses[j.id] = lid;
       newData.addresses.push({
@@ -892,6 +897,18 @@
   window.CloudCallups = {
     rowsForAddress: (legacyId) => callupsByAddress[legacyId] || [],
     hasProfile: (legacyId) => Array.isArray(callupsByAddress[legacyId]) && callupsByAddress[legacyId].length > 0
+  };
+
+  // ----- Job visibility (manager-only: reveal handed-over / inactive jobs) -----
+  window.CloudJobs = {
+    isManager: () => userRole === 'manager',
+    showInactive: () => showInactiveJobs,
+    // Toggle handed-over jobs on/off and re-pull so the address list updates.
+    setShowInactive: async (v) => {
+      showInactiveJobs = !!v;
+      localStorage.setItem('dm_show_inactive', showInactiveJobs ? '1' : '0');
+      try { await pullAll(); } catch (e) { console.error('[CloudJobs] re-pull', e); }
+    }
   };
 
   // ----- BPI trade learning (suggest + record), shared across all users -----
