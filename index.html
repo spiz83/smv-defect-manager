@@ -6763,31 +6763,38 @@
             return items;
         }
         // Find the matching property from the report header "Lot N - Street Suburb".
+        let _amftDbg = '';   // TEMP diagnostic, shown in the review meta line
         function matchAddressFromText(text) {
             text = text || '';
             const addrs = db.getAddresses();
+            let result = null, via = '';
             // 1) Lot number ANYWHERE in the report ("Lot 1933" recurs in headers).
             //    Tolerant of the extractor fragmenting the "Lot N - street" line.
             const lotM = text.match(/\bLot\s*(\d+[A-Za-z]?)\b/i);
             if (lotM) {
                 const lot = lotM[1].toLowerCase();
                 const hit = addrs.find(a => { const s = (a.street || '').toLowerCase(); return s.includes('lot ' + lot) || s.split(/[\s,]+/).includes(lot); });
-                if (hit) return hit.id;
+                if (hit) { result = hit.id; via = 'lot'; }
             }
             // 2) Fallback: match by street NAME (+ house number, if present) appearing
             //    anywhere — covers reports where the lot line didn't survive parsing.
-            const low = text.toLowerCase();
-            let best = null;
-            for (const a of addrs) {
-                const street = (a.street || '').toLowerCase().replace(/^lot\s*\w+,?\s*/, '').trim();   // e.g. "19 lahar road"
-                if (!street) continue;
-                const nameTok = street.replace(/^[()\d\s]+/, '').split(/\s+/)[0];                       // e.g. "lahar"
-                if (!nameTok || nameTok.length < 4 || !low.includes(nameTok)) continue;
-                const numM = street.match(/\d+/);
-                const score = (numM && new RegExp('\\b' + numM[0] + '\\b').test(low)) ? 2 : 1;
-                if (!best || score > best.score) best = { id: a.id, score };
+            if (result == null) {
+                const low = text.toLowerCase();
+                let best = null;
+                for (const a of addrs) {
+                    const street = (a.street || '').toLowerCase().replace(/^lot\s*\w+,?\s*/, '').trim();   // e.g. "19 lahar road"
+                    if (!street) continue;
+                    const nameTok = street.replace(/^[()\d\s]+/, '').split(/\s+/)[0];                       // e.g. "lahar"
+                    if (!nameTok || nameTok.length < 4 || !low.includes(nameTok)) continue;
+                    const numM = street.match(/\d+/);
+                    const score = (numM && new RegExp('\\b' + numM[0] + '\\b').test(low)) ? 2 : 1;
+                    if (!best || score > best.score) best = { id: a.id, score };
+                }
+                if (best) { result = best.id; via = 'street'; }
             }
-            return best ? best.id : null;
+            const matchedStreet = result != null ? ((db.getAddress(result) || {}).street || '?') : '—';
+            _amftDbg = 'addrs=' + addrs.length + ' lot=' + (lotM ? lotM[1] : 'NONE') + ' match=' + (result != null ? (via + ':' + matchedStreet) : 'NULL');
+            return result;
         }
 
         // ---- Step 2: review & assign each item ----
@@ -6889,7 +6896,7 @@
                 : learned
                 ? '🧠 Suggested: ' + ((db.getContractor(learned.contractorId) || {}).name || '') + (learned.support ? ' (learned from ' + learned.support + ' past defect' + (learned.support === 1 ? '' : 's') + ')' : '')
                 : '';
-            const meta = [item.page ? 'Page ' + item.page : '', effTrade ? 'Trade: ' + effTrade + tradeTag : '', suggestNote].filter(Boolean).join(' · ');
+            const meta = [item.page ? 'Page ' + item.page : '', effTrade ? 'Trade: ' + effTrade + tradeTag : '', suggestNote, _amftDbg ? '🐞 ' + _amftDbg : ''].filter(Boolean).join(' · ');
             impOverlay(`
                 <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
