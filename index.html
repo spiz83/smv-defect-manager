@@ -6817,10 +6817,19 @@
                     : '<div class="rv-combo-empty">No matches</div>';
                 list.classList.add('open');
             };
-            // Focusing a field that already shows its selection lists everything to browse.
-            input.addEventListener('focus', () => draw(input.value === currentLabel() ? '' : input.value));
+            // Tapping the field clears the shown label so the FIRST keystroke starts
+            // a fresh search (the hidden selection is kept and restored on blur if
+            // nothing new is typed/chosen). Fixes the "cursor lands mid-name" problem.
+            input.addEventListener('focus', () => {
+                if (input.value && input.value === currentLabel()) input.value = '';
+                draw(input.value);
+                setTimeout(() => { try { input.setSelectionRange(0, input.value.length); } catch (e) {} }, 0);
+            });
             input.addEventListener('input', () => { if (!input.value.trim()) hidden.value = ''; draw(input.value); });
-            input.addEventListener('blur', () => setTimeout(() => list.classList.remove('open'), 150));
+            input.addEventListener('blur', () => setTimeout(() => {
+                list.classList.remove('open');
+                if (!input.value.trim() && hidden.value) input.value = currentLabel();   // restore if untouched
+            }, 150));
             // mousedown (fires before the input's blur) so the click registers.
             list.addEventListener('mousedown', (e) => {
                 const it = e.target.closest('.rv-combo-item'); if (!it) return;
