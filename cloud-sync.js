@@ -57,6 +57,7 @@
   let debounceTimer = null;
   let realtimeChannel = null;
   let suppressPush = false;       // true while we apply a remote pull locally
+  let dirty = false;             // local edits made but not yet confirmed-pushed to cloud
 
   // Photos (#4)
   const PHOTO_BUCKET = 'defect-photos';
@@ -255,6 +256,12 @@
   //  3. Pull (cloud -> app)   |   the cloud is the source of truth
   // ===========================================================================
   async function pullAll() {
+    // Never let a pull clobber an un-pushed local edit. Flush any pending push
+    // to the cloud first; if it still hasn't landed (offline / push error),
+    // skip this pull entirely and let the retry settle it.
+    await flushPending();
+    if (dirty) return;
+
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
     const [trades, contractors, links, jobs, defects, callups, learning] = await Promise.all([
@@ -359,6 +366,10 @@
         bookingAt: d.booking_at                    // supplier attendance/booking date
       });
     });
+
+    // A local edit may have landed while we were fetching — don't overwrite it.
+    // Abort the apply; that edit's own push + the next pull will reconcile.
+    if (dirty) return;
 
     // Apply to the running app, without echoing it back as a push.
     suppressPush = true;
@@ -545,6 +556,7 @@
     db.save = function () {
       origSave();                       // keep the local cache up to date
       if (suppressPush || !userId) return;
+      dirty = true;                     // we now hold an un-pushed local edit
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(runSync, 400);
     };
@@ -553,15 +565,25 @@
   function runSync() {
     setStatus('Saving…', 'syncing');
     syncing = syncing.then(pushDiff).then(reconcilePhotos).then(
-      () => setStatus('Synced'),
+      () => { dirty = false; setStatus('Synced'); },
       (err) => {
         console.error('[CloudSync] push failed', err);
         setStatus('Sync error — will retry', 'offline');
-        // retry shortly
+        // keep `dirty` true so no pull clobbers the un-pushed edit; retry shortly
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(runSync, 4000);
       }
     );
+    return syncing;
+  }
+
+  // Force any pending/in-flight push to complete before we pull. Without this a
+  // pull can overwrite db.data (and reset the diff snapshot) before a debounced
+  // push fires, silently dropping the local edit — the "mark complete pops back"
+  // bug. Returns once the push chain settles.
+  async function flushPending() {
+    if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; runSync(); }
+    try { await syncing; } catch (e) { /* push error already handled in runSync */ }
   }
 
   // ===========================================================================
@@ -570,7 +592,8 @@
   function subscribeRealtime() {
     let t = null;
     const bump = () => { clearTimeout(t); t = setTimeout(() => {
-      // only re-pull when we have nothing pending locally
+      // pullAll() flushes any pending local push first, so this won't clobber
+      // an un-synced edit (it skips the pull if the push hasn't landed).
       pullAll().catch(e => console.error('[CloudSync] realtime pull', e));
     }, 800); };
     realtimeChannel = sb.channel('dm-' + userId)
