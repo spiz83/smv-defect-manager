@@ -6201,12 +6201,13 @@
             const cj = window.CloudJobs;
             const uid = (cj && cj.currentUserId) ? cj.currentUserId() : null;
             const isMgr = !!(cj && cj.isManager && cj.isManager());
-            // Jobs in construction = anything NOT in a known non-construction
-            // lifecycle status. FAIL-OPEN: a job whose status hasn't loaded yet
-            // is shown, never hidden — so the list is never falsely empty while
-            // data is still syncing (that empty state was alarming + wrong).
-            const NON_CONSTRUCTION = new Set(['completed', 'admin', 'pre_planner']);
-            let list = db.getAddresses().filter(a => !NON_CONSTRUCTION.has(a.jobStatus));
+            // Show ONLY jobs currently in construction (lifecycle status
+            // 'active') — never pre-planner / admin (pre-site) / completed /
+            // handed-over. Safety net: if NO job has a status yet (data still
+            // loading), show all rather than a false-empty list — but the moment
+            // any status is present, filter strictly.
+            let list = db.getAddresses();
+            if (list.some(a => a.jobStatus)) list = list.filter(a => a.jobStatus === 'active');
             // Supervisors see only their own jobs (when we know who they are);
             // managers — or an unresolved session — see ALL of them. Only narrow
             // by supervisor once supervisor data has actually loaded, so a slow
@@ -7578,7 +7579,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12x"></script>
+    <script src="cloud-sync.js?v=2026-06-12y"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
