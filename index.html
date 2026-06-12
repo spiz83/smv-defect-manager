@@ -3306,14 +3306,17 @@
             // Home address search boxes: show each match on ONE row with View +
             // Add icons beside it, instead of the label wrapping to 3 lines.
             const homeAddr = (input.id === 'search-address' || input.id === 'add-address');
-            const ico = 'flex:0 0 auto;width:34px;height:34px;border:1px solid var(--brd,rgba(128,128,128,.3));border-radius:7px;background:transparent;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;';
+            // <div>s not <button>s — iOS Safari stacks buttons used as flex items.
+            const ico = 'flex:0 0 auto;width:34px;height:34px;border:1px solid var(--brd,rgba(128,128,128,.3));border-radius:7px;cursor:pointer;text-align:center;line-height:32px;';
             dropdown.innerHTML = items.slice(0, 5).map(item => {
                 if (item.type === 'address' && homeAddr) {
                     return `
-                    <div class="autocomplete-item" style="display:flex;align-items:center;gap:6px;">
-                        <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="viewDefectsForJob(${item.id})">${item.label}</span>
-                        <button type="button" title="View defects" onclick="event.stopPropagation();viewDefectsForJob(${item.id})" style="${ico}font-size:15px;">👁️</button>
-                        <button type="button" title="Add defects" onclick="event.stopPropagation();startDefectsForJob(${item.id})" style="${ico}font-size:18px;font-weight:800;color:var(--acc,#2563eb);">＋</button>
+                    <div class="autocomplete-item" style="display:flex;flex-wrap:nowrap;align-items:center;gap:6px;">
+                        <div style="flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="viewDefectsForJob(${item.id})">${item.label}</div>
+                        <div style="flex:0 0 auto;display:flex;gap:6px;">
+                            <div style="${ico}font-size:15px;" onclick="event.stopPropagation();viewDefectsForJob(${item.id})" title="View defects">👁️</div>
+                            <div style="${ico}font-size:18px;font-weight:800;color:var(--acc,#2563eb);" onclick="event.stopPropagation();startDefectsForJob(${item.id})" title="Add defects">＋</div>
+                        </div>
                     </div>`;
                 }
                 return `
@@ -6244,21 +6247,26 @@
             if (!isMgr) list = uid ? list.filter(a => a.supervisorId === uid) : [];
             if (isMgr) list = [...list].sort((a, b) =>
                 (a.supervisorName || '~').localeCompare(b.supervisorName || '~') || a.street.localeCompare(b.street));
-            const rowStyle = 'display:flex;align-items:center;gap:6px;width:100%;padding:10px 12px;border-bottom:1px solid var(--brd,rgba(128,128,128,.25));';
-            const addrBtn = 'flex:1;min-width:0;text-align:left;border:none;background:transparent;color:inherit;cursor:pointer;font:inherit;padding:0;';
-            const icoBtn = 'flex:0 0 auto;width:38px;height:38px;border-radius:8px;border:1px solid var(--brd,rgba(128,128,128,.3));background:transparent;cursor:pointer;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center;';
+            // Built from <div>s (not <button>s): iOS Safari mishandles buttons as
+            // flex items and was stacking the icons under the address. Icons live
+            // in a fixed-width group so they always sit BESIDE the address.
+            const rowStyle = 'display:flex;flex-wrap:nowrap;align-items:center;gap:8px;width:100%;padding:10px 12px;border-bottom:1px solid var(--brd,rgba(128,128,128,.25));box-sizing:border-box;';
+            const addrStyle = 'flex:1 1 auto;min-width:0;cursor:pointer;overflow:hidden;';
+            const icoStyle = 'flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid var(--brd,rgba(128,128,128,.3));cursor:pointer;font-size:18px;line-height:38px;text-align:center;';
             const rows = list.map(a => {
                 const sub = [a.suburb || '', a.propertyNumber || '', isMgr ? (a.supervisorName || 'Unassigned') : '']
                     .filter(Boolean).join(' · ');
                 const key = `${a.street} ${a.suburb || ''} ${a.propertyNumber || ''} ${a.supervisorName || ''}`.toLowerCase();
                 return `
                 <div data-job-search="${key}" style="${rowStyle}">
-                    <button style="${addrBtn}" onclick="viewDefectsForJob(${a.id})" title="View defects">
-                        <span style="display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.street}</span>
-                        <span style="display:block;font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</span>
-                    </button>
-                    <button style="${icoBtn}" onclick="viewDefectsForJob(${a.id})" title="View defects">👁️</button>
-                    <button style="${icoBtn}color:var(--acc,#2563eb);font-weight:800;" onclick="startDefectsForJob(${a.id})" title="Add defects">＋</button>
+                    <div style="${addrStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">
+                        <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.street}</div>
+                        <div style="font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</div>
+                    </div>
+                    <div style="flex:0 0 auto;display:flex;gap:6px;">
+                        <div style="${icoStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">👁️</div>
+                        <div style="${icoStyle}color:var(--acc,#2563eb);font-weight:800;" onclick="startDefectsForJob(${a.id})" title="Add defects">＋</div>
+                    </div>
                 </div>`;
             }).join('');
             const title = isMgr ? 'Active Jobs (in construction)' : 'My Jobs';
@@ -7530,7 +7538,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12k"></script>
+    <script src="cloud-sync.js?v=2026-06-12l"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
