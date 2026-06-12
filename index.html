@@ -6335,13 +6335,13 @@
                                 : isMgr ? 'Added for the whole team straight away.'
                                 : '🔒 Only you will see this contractor until a manager checks it and shares it to the team.'}
                     </div>
-                    <label style="${lbl}">Name</label>
+                    <label style="${lbl}">Name <span style="color:#dc2626;">*</span></label>
                     <input id="ac-name" type="text" value="${esc(editC ? editC.name : prefillName)}" placeholder="Contractor / business name" style="${inp}">
-                    <label style="${lbl}">Phone</label>
+                    <label style="${lbl}">Phone <span style="font-weight:400;">(optional)</span></label>
                     <input id="ac-phone" type="text" inputmode="tel" value="${esc(editC && editC.phone)}" placeholder="Phone" style="${inp}">
                     <label style="${lbl}">Email <span style="font-weight:400;">(optional)</span></label>
                     <input id="ac-email" type="text" inputmode="email" value="${esc(editC && editC.email)}" placeholder="Email" style="${inp}">
-                    <label style="${lbl}">Trade</label>
+                    <label style="${lbl}">Trade <span style="color:#dc2626;">*</span></label>
                     <select id="ac-trade-existing" style="${inp}"><option value="">— pick an existing trade —</option>${tradeOpts}</select>
                     <input id="ac-trade-new" type="text" placeholder="…or type a new trade" style="${inp}">
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -6391,6 +6391,7 @@
                 impClose(); render(); showToast('Contractor updated');
                 return;
             }
+            if (!tradeIds.length) { showToast('Choose a trade, or type a new one, for this contractor'); return; }
             const isMgr = !!(window.CloudJobs && window.CloudJobs.isManager && window.CloudJobs.isManager());
             const uid = (window.CloudJobs && window.CloudJobs.currentUserId) ? window.CloudJobs.currentUserId() : null;
             db.addContractor({ name, phone, email, tradeIds, isShared: isMgr, addedBy: isMgr ? null : uid });
@@ -7728,7 +7729,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-13a"></script>
+    <script src="cloud-sync.js?v=2026-06-13b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
