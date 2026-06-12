@@ -877,11 +877,17 @@
       }
       return files;
     },
-    // Used by the Add Defects flow: wait until the just-created defect has been
-    // synced (has a cloud id), then upload the held photo.
+    // Used by the Add Defects flow: a just-created defect only gets its cloud
+    // UUID once its (debounced) insert push runs. Force that push and await it —
+    // don't spin-poll hoping the debounce wins, which is why new-defect photos
+    // were silently dropped. flushPending() runs the pending push and waits for
+    // the insert to populate idMap.defects[legacyId]; loop a few times so a
+    // transient push error (which runSync retries) still resolves.
     uploadWhenReady: async (legacyId, file) => {
-      for (let i = 0; i < 40 && !idMap.defects[legacyId]; i++) {
-        await new Promise(r => setTimeout(r, 300));
+      for (let i = 0; i < 8 && !idMap.defects[legacyId]; i++) {
+        await flushPending();
+        if (idMap.defects[legacyId]) break;
+        await new Promise(r => setTimeout(r, 500));
       }
       if (!idMap.defects[legacyId]) { showToastSafe('Could not attach a photo (not synced yet)'); return; }
       await uploadDefectPhoto(legacyId, file);
