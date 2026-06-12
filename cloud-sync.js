@@ -402,6 +402,9 @@
       if (!showInactiveJobs && j.active === false) return;
       const lid = hashId(j.id);
       idMap.addresses[lid] = j.id; uuidToLegacy.addresses[j.id] = lid;
+      // Clean sort keys: street NAME (strip any leading house number) and the
+      // numeric lot, so the job list can sort by street A-Z then lot number.
+      const lm = String(j.lot || '').match(/\d+/);
       newData.addresses.push({
         id: lid,
         street: [j.lot, j.street].filter(Boolean).join(', '),
@@ -409,7 +412,9 @@
         propertyNumber: j.job_number || '',
         supervisorId: (supByJob[j.id] || {}).id || null,    // for the "My Jobs" list
         supervisorName: (supByJob[j.id] || {}).name || '',  // shown to managers
-        jobStatus: (supByJob[j.id] || {}).status || ''      // 'active' = in construction
+        jobStatus: (supByJob[j.id] || {}).status || '',     // 'active' = in construction
+        streetName: String(j.street || '').replace(/^\s*\d+[a-zA-Z]?\s+/, '').trim(),
+        lotNo: lm ? parseInt(lm[0], 10) : 0
       });
     });
 

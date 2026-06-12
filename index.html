@@ -6198,9 +6198,15 @@
             // sync doesn't momentarily blank the whole list.
             const supDataLoaded = list.some(a => a.supervisorId);
             if (!isMgr && uid && supDataLoaded) list = list.filter(a => a.supervisorId === uid);
-            list = [...list].sort((a, b) => isMgr
-                ? ((a.supervisorName || '~').localeCompare(b.supervisorName || '~') || a.street.localeCompare(b.street))
-                : a.street.localeCompare(b.street));
+            // Sort alphabetically by street name, then by lot number. Prefer the
+            // clean fields from the data layer; fall back to parsing the combined
+            // "Lot N, [house] Street" for any not-yet-resynced cached rows.
+            const streetKey = (a) => (a.streetName != null ? a.streetName
+                : ((a.street || '').includes(',')
+                    ? a.street.slice(a.street.indexOf(',') + 1).replace(/[()]/g, '').replace(/^\s*\d+[a-zA-Z]?\s+/, '')
+                    : (a.street || ''))).trim().toLowerCase();
+            const lotKey = (a) => { if (typeof a.lotNo === 'number') return a.lotNo; const m = (a.street || '').match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
+            list = [...list].sort((a, b) => streetKey(a).localeCompare(streetKey(b)) || (lotKey(a) - lotKey(b)));
             // Built from <div>s (not <button>s): iOS Safari mishandles buttons as
             // flex items and was stacking the icons under the address. Icons live
             // in a fixed-width group so they always sit BESIDE the address.
@@ -7529,7 +7535,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12q"></script>
+    <script src="cloud-sync.js?v=2026-06-12r"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
