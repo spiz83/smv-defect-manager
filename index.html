@@ -4266,13 +4266,17 @@
             const d = db.data.defects.find(x => x.id === defectId);
             if (!d) return;
             const s = defectStatusOf(d);
-            if (s === 'open') { db.setDefectStatus(defectId, 'pending'); render(); showToast('Booked in'); }
+            if (s === 'open') { db.setDefectStatus(defectId, 'pending'); render(); flushStatus(); showToast('Booked in'); }
             else if (s === 'pending') {
                 if (confirm('Mark this item as completed? It will be removed from the active list.')) {
-                    db.setDefectStatus(defectId, 'completed'); render(); showToast('Item completed');
+                    db.setDefectStatus(defectId, 'completed'); render(); flushStatus(); showToast('Item completed');
                 }
-            } else { db.setDefectStatus(defectId, 'open'); render(); showToast('Re-opened'); }
+            } else { db.setDefectStatus(defectId, 'open'); render(); flushStatus(); showToast('Re-opened'); }
         }
+        // Push a status change to the cloud immediately rather than waiting out
+        // the 400ms debounce, so it survives the app being backgrounded/closed
+        // right after (otherwise the next pull reverts it).
+        function flushStatus() { try { window.CloudSync && window.CloudSync.flush(); } catch (e) {} }
 
         // Location / area of the house, per defect
         const DEFECT_LOCATIONS = ['Kitchen','Living','Lounge','Dining','Family','Meals','Master Bedroom','Bed 2','Bed 3','Bed 4','Ensuite','Bathroom','Powder Room','WC / Toilet','Laundry','WIR / Robe','Hallway','Entry','Stairs','Study','Garage','Alfresco','Porch','Balcony','Facade / External','Roof','Driveway','Backyard','Other'];
@@ -7395,6 +7399,7 @@
       };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="cloud-sync.js"></script>
+    <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
+    <script src="cloud-sync.js?v=2026-06-12c"></script>
 </body>
 </html>

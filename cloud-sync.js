@@ -959,6 +959,11 @@
     }
   };
 
+  // Let the app force an immediate push (don't wait out the 400ms debounce) for
+  // important actions like completing a defect — so the write reaches the cloud
+  // before the user can background or close the app.
+  window.CloudSync = { flush: () => flushPending() };
+
   // ===========================================================================
   //  Boot
   // ===========================================================================
@@ -977,11 +982,21 @@
       // so a desktop instance reflects mobile changes even if a realtime event
       // was missed (e.g. asleep / backgrounded). Debounced inside pullAll usage.
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) pullAll().catch(e => console.error('[CloudSync] focus pull', e));
+        if (document.hidden) {
+          // Leaving/​backgrounding: push any un-synced edit out NOW. On a phone
+          // the OS can freeze or kill a backgrounded tab before the 400ms
+          // debounce fires, stranding e.g. a just-completed defect — which the
+          // next pull then reverts ("marked complete but it reappears").
+          flushPending().catch(() => {});
+        } else {
+          pullAll().catch(e => console.error('[CloudSync] focus pull', e));
+        }
       });
       window.addEventListener('focus', () => {
         pullAll().catch(e => console.error('[CloudSync] focus pull', e));
       });
+      // Last-ditch flush as the page is torn down (tab close / navigation).
+      window.addEventListener('pagehide', () => { flushPending().catch(() => {}); });
     } catch (err) {
       console.error('[CloudSync] init failed', err);
       // Stale/expired session (e.g. password changed): clear it and re-show login
