@@ -6219,22 +6219,35 @@
         // "My Jobs" — the jobs allocated to the logged-in supervisor (matched by
         // current_supervisor_id === my user id). Tap a job to start logging defects.
         function renderMyJobsSection() {
-            const uid = (window.CloudJobs && window.CloudJobs.currentUserId) ? window.CloudJobs.currentUserId() : null;
-            const mine = uid ? db.getAddresses().filter(a => a.supervisorId === uid) : [];
+            const cj = window.CloudJobs;
+            const uid = (cj && cj.currentUserId) ? cj.currentUserId() : null;
+            const isMgr = !!(cj && cj.isManager && cj.isManager());
+            // Manager → every active job (with its supervisor shown), grouped by
+            // supervisor then street. Supervisor → only their own jobs, by street.
+            let list = db.getAddresses();
+            if (!isMgr) list = uid ? list.filter(a => a.supervisorId === uid) : [];
+            if (isMgr) list = [...list].sort((a, b) =>
+                (a.supervisorName || '~').localeCompare(b.supervisorName || '~') || a.street.localeCompare(b.street));
             const rowStyle = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;border-bottom:1px solid var(--brd,rgba(128,128,128,.25));background:transparent;color:inherit;cursor:pointer;font:inherit;';
-            const rows = mine.map(a => `
+            const rows = list.map(a => {
+                const sub = [a.suburb || '', a.propertyNumber || '', isMgr ? (a.supervisorName || 'Unassigned') : '']
+                    .filter(Boolean).join(' · ');
+                return `
                 <button style="${rowStyle}" onclick="startDefectsForJob(${a.id})">
                     <span style="flex:1;min-width:0;">
                         <span style="display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.street}</span>
-                        <span style="display:block;font-size:12px;opacity:.65;">${a.suburb || ''}${a.propertyNumber ? ' · ' + a.propertyNumber : ''}</span>
+                        <span style="display:block;font-size:12px;opacity:.65;">${sub}</span>
                     </span>
                     <span style="font-size:13px;font-weight:700;color:var(--acc,#2563eb);white-space:nowrap;">Add defects ›</span>
-                </button>`).join('');
-            const body = mine.length
-                ? rows
-                : `<div style="padding:16px;opacity:.7;font-size:13px;">No jobs are currently allocated to your login. Use the Address search below, or check with the office.</div>`;
+                </button>`;
+            }).join('');
+            const title = isMgr ? 'All Active Jobs' : 'My Jobs';
+            const emptyMsg = isMgr
+                ? 'No active jobs found.'
+                : 'No jobs are currently allocated to your login. Use the Address search below, or check with the office.';
+            const body = list.length ? rows : `<div style="padding:16px;opacity:.7;font-size:13px;">${emptyMsg}</div>`;
             return `
-                <div class="section-title">My Jobs${mine.length ? ` (${mine.length})` : ''}</div>
+                <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
                 <div style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:340px;overflow-y:auto;margin-bottom:18px;">
                     ${body}
                 </div>`;
@@ -7470,7 +7483,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12g"></script>
+    <script src="cloud-sync.js?v=2026-06-12h"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal. -->
     <script>
       if ('serviceWorker' in navigator) {

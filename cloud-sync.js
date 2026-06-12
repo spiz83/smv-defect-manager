@@ -349,7 +349,7 @@
       sb.from('dm_trade_learning').select('phrase_key, trade, n'),   // learned trades; best-effort
       // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
       // view is readable by authenticated users; an error just means no My Jobs.
-      sb.from('v_jobs_with_current_supervisor').select('id, current_supervisor_id')
+      sb.from('v_jobs_with_current_supervisor').select('id, current_supervisor_id, current_supervisor_name')
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -391,7 +391,7 @@
     // for their own jobs). Best-effort; empty if the view couldn't be read.
     const supByJob = {};
     if (supers && !supers.error && Array.isArray(supers.data)) {
-      supers.data.forEach(s => { supByJob[s.id] = s.current_supervisor_id || null; });
+      supers.data.forEach(s => { supByJob[s.id] = { id: s.current_supervisor_id || null, name: s.current_supervisor_name || '' }; });
     }
 
     // CH Tracker jobs -> the app's read-only "addresses". A stable hash of the
@@ -407,7 +407,8 @@
         street: [j.lot, j.street].filter(Boolean).join(', '),
         suburb: j.suburb || '',
         propertyNumber: j.job_number || '',
-        supervisorId: supByJob[j.id] || null   // for the "My Jobs" list
+        supervisorId: (supByJob[j.id] || {}).id || null,    // for the "My Jobs" list
+        supervisorName: (supByJob[j.id] || {}).name || ''   // shown to managers
       });
     });
 
