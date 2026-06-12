@@ -2770,11 +2770,18 @@
                                     <button class="btn ${!showMultiContractors() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowMultiContractors(false)">Hide</button>
                                 </div>
                             </div>
-                            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
                                 <div style="font-size:14px; color:var(--text-primary);">Multiple Trades</div>
                                 <div style="display:flex; gap:8px;">
                                     <button class="btn ${showMultiTrades() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowMultiTrades(true)">Show</button>
                                     <button class="btn ${!showMultiTrades() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowMultiTrades(false)">Hide</button>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                                <div style="font-size:14px; color:var(--text-primary);">Outstanding-defect markers <span style="color:var(--text-secondary);font-size:12px;">(red badge on jobs with open defects)</span></div>
+                                <div style="display:flex; gap:8px;">
+                                    <button class="btn ${showDefectMarkers() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowDefectMarkers(true)">Show</button>
+                                    <button class="btn ${!showDefectMarkers() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowDefectMarkers(false)">Hide</button>
                                 </div>
                             </div>
                         </div>
@@ -6179,6 +6186,13 @@
             render();
             showToast(v ? 'Multiple Trades shown on home' : 'Multiple Trades hidden');
         }
+        // Outstanding-defect markers on the jobs list (default ON).
+        function showDefectMarkers() { return localStorage.getItem('dm_show_defect_markers') !== '0'; }
+        function setShowDefectMarkers(v) {
+            localStorage.setItem('dm_show_defect_markers', v ? '1' : '0');
+            render();
+            showToast(v ? 'Showing outstanding-defect markers' : 'Outstanding-defect markers hidden');
+        }
 
         // "My Jobs" — the jobs allocated to the logged-in supervisor (matched by
         // current_supervisor_id === my user id). Tap a job to start logging defects.
@@ -6210,19 +6224,35 @@
             // Built from <div>s (not <button>s): iOS Safari mishandles buttons as
             // flex items and was stacking the icons under the address. Icons live
             // in a fixed-width group so they always sit BESIDE the address.
-            const rowStyle = 'display:flex;flex-wrap:nowrap;align-items:center;gap:8px;width:100%;padding:10px 12px;border-bottom:1px solid var(--brd,rgba(128,128,128,.25));box-sizing:border-box;';
+            // Outstanding (not-completed) defect count per job, for the markers.
+            const markersOn = showDefectMarkers();
+            const outstanding = {};
+            (db.data.defects || []).forEach(d => {
+                if (d.status === 'completed' || d.completed) return;
+                outstanding[d.addressId] = (outstanding[d.addressId] || 0) + 1;
+            });
+            const baseRow = 'display:flex;flex-wrap:nowrap;align-items:center;gap:8px;width:100%;padding:10px 12px;border-bottom:1px solid var(--brd,rgba(128,128,128,.25));box-sizing:border-box;';
             const addrStyle = 'flex:1 1 auto;min-width:0;cursor:pointer;overflow:hidden;';
             const icoStyle = 'flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid var(--brd,rgba(128,128,128,.3));cursor:pointer;font-size:18px;line-height:38px;text-align:center;';
             const rows = list.map(a => {
                 const sub = [a.suburb || '', a.propertyNumber || '', isMgr ? (a.supervisorName || 'Unassigned') : '']
                     .filter(Boolean).join(' · ');
                 const key = `${a.street} ${a.suburb || ''} ${a.propertyNumber || ''} ${a.supervisorName || ''}`.toLowerCase();
+                const oc = outstanding[a.id] || 0;
+                const flagged = markersOn && oc > 0;
+                // Flagged jobs get a red left bar + a count badge so it's obvious
+                // there are defects logged here that are still outstanding.
+                const rowStyle = baseRow + (flagged ? 'border-left:4px solid var(--red,#DC143C);padding-left:8px;' : '');
+                const badge = flagged
+                    ? `<span title="${oc} outstanding defect${oc > 1 ? 's' : ''}" style="flex:0 0 auto;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 6px;border-radius:11px;background:var(--red,#DC143C);color:#fff;font-size:12px;font-weight:800;">${oc}</span>`
+                    : '';
                 return `
                 <div data-job-search="${key}" style="${rowStyle}">
                     <div style="${addrStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">
                         <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.street}</div>
                         <div style="font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</div>
                     </div>
+                    ${badge}
                     <div style="flex:0 0 auto;display:flex;gap:6px;">
                         <div style="${icoStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">👁️</div>
                         <div style="${icoStyle}color:var(--acc,#2563eb);font-weight:800;" onclick="startDefectsForJob(${a.id})" title="Add defects">＋</div>
@@ -7531,7 +7561,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12s"></script>
+    <script src="cloud-sync.js?v=2026-06-12t"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
