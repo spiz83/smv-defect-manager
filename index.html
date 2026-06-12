@@ -6236,12 +6236,8 @@
             const body = list.length ? rows : `<div style="padding:16px;opacity:.7;font-size:13px;">${emptyMsg}</div>`;
             return `
                 <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
-                ${list.length ? `<input type="text" id="myjobs-search" placeholder="🔍 Search address or supervisor…"
-                    oninput="filterMyJobs(this.value)" autocapitalize="none" autocorrect="off"
-                    style="width:100%;box-sizing:border-box;padding:11px 13px;margin-bottom:8px;border:1px solid var(--brd,rgba(128,128,128,.3));border-radius:9px;background:var(--inp,transparent);color:inherit;font:inherit;font-size:15px;">` : ''}
                 <div id="myjobs-list" style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:360px;overflow-y:auto;margin-bottom:18px;">
                     ${body}
-                    <div id="myjobs-none" style="display:none;padding:16px;opacity:.7;font-size:13px;">No jobs match your search.</div>
                 </div>`;
         }
         // Live-narrow the job list as the manager/supervisor types (DOM hide/show,
@@ -7535,7 +7531,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12r"></script>
+    <script src="cloud-sync.js?v=2026-06-12s"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
