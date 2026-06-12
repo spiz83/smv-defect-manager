@@ -2348,11 +2348,11 @@
             return `
                 <div class="defects-container">
                     <div class="app-header">
-                        <a href="#" class="back-link" onclick="event.preventDefault(); showHomeView()">Back</a>
+                        <a href="#" class="back-link" onclick="event.preventDefault(); backFromAddDefects()">Back</a>
                         <div class="header-title">Add Defects</div>
                         <button class="icon-btn" onclick="saveAddDefectsAddress()" title="Save Defects">💾</button>
                     </div>
-                    
+
                     <div class="defects-header">
                         <div class="lot-title" onclick="viewDefectsForAddress(${addressId})" style="cursor: pointer;" title="View this job's defects">${formatAddress(address)} ›</div>
                     </div>
@@ -2448,7 +2448,7 @@
             return `
                 <div class="defects-container">
                     <div class="app-header">
-                        <a href="#" class="back-link" onclick="event.preventDefault(); showHomeView()">Back</a>
+                        <a href="#" class="back-link" onclick="event.preventDefault(); backFromAddDefects()">Back</a>
                         <div class="header-title">Add Defects</div>
                         <button class="icon-btn" onclick="saveAddDefectsContractor()" title="Save Defects">💾</button>
                     </div>
@@ -6295,6 +6295,15 @@
             render();
             initializeAddressDefectForm();
         }
+        // Leaving an Add Defects screen — warn if anything was keyed in but not saved.
+        function backFromAddDefects() {
+            let dirty = false;
+            document.querySelectorAll('#app input, #app textarea').forEach(f => {
+                if ((f.tagName === 'TEXTAREA' || f.type === 'text') && f.value && f.value.trim()) dirty = true;
+            });
+            if (dirty && !confirm('Changes have not been saved.\n\nDo you wish to proceed without saving?')) return;
+            showHomeView();
+        }
         // Clicking a job/address defaults to VIEWING its defects.
         function viewDefectsForJob(addressId) {
             const address = db.getAddress(addressId);
@@ -7579,7 +7588,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12y"></script>
+    <script src="cloud-sync.js?v=2026-06-12z"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
