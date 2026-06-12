@@ -461,9 +461,15 @@
       const { data, error } = await sb.from('dm_defect_photos')
         .select('defect_id');
       if (error) throw error;
+      // uuid -> legacy id. defectUuidToLegacy is only built during a full pull
+      // and isn't persisted, so fall back to the INVERSE of idMap.defects (which
+      // IS persisted/restored) — otherwise a just-added defect's photo resolves
+      // to nothing here and the badge is wiped to 0 right after upload.
+      const uuidToLeg = {};
+      for (const lid in idMap.defects) uuidToLeg[idMap.defects[lid]] = lid;
       const counts = {};
       (data || []).forEach(p => {
-        const lid = defectUuidToLegacy[p.defect_id];
+        const lid = defectUuidToLegacy[p.defect_id] != null ? defectUuidToLegacy[p.defect_id] : uuidToLeg[p.defect_id];
         if (lid != null) counts[lid] = (counts[lid] || 0) + 1;
       });
       photoCounts = counts;
@@ -772,9 +778,13 @@
       defect_id: uuid, storage_path: path, bytes: blob.size
     });
     if (ins.error) { console.error(ins.error); showToastSafe('Saved file but record failed'); return; }
-    photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;
+    photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;   // optimistic badge
     showToastSafe('Photo added (' + Math.round(blob.size / 1024) + ' KB)');
     if (typeof render === 'function') render();
+    // Re-query authoritatively: a realtime/visibility pull fired by the new
+    // defect can run refreshPhotoCounts() between insert and now and wipe the
+    // optimistic count — this restores it from the DB (the photo row now exists).
+    refreshPhotoCounts();
   }
 
   async function deleteOnePhoto(path) {
