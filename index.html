@@ -6186,14 +6186,21 @@
             const cj = window.CloudJobs;
             const uid = (cj && cj.currentUserId) ? cj.currentUserId() : null;
             const isMgr = !!(cj && cj.isManager && cj.isManager());
-            // Only jobs currently IN CONSTRUCTION (lifecycle status 'active') —
-            // not admin / pre-planner / completed.
-            let list = db.getAddresses().filter(a => a.jobStatus === 'active');
-            // Manager → every in-construction job (supervisor shown), grouped by
-            // supervisor then street. Supervisor → only their own, by street.
-            if (!isMgr) list = uid ? list.filter(a => a.supervisorId === uid) : [];
-            if (isMgr) list = [...list].sort((a, b) =>
-                (a.supervisorName || '~').localeCompare(b.supervisorName || '~') || a.street.localeCompare(b.street));
+            // Jobs in construction = anything NOT in a known non-construction
+            // lifecycle status. FAIL-OPEN: a job whose status hasn't loaded yet
+            // is shown, never hidden — so the list is never falsely empty while
+            // data is still syncing (that empty state was alarming + wrong).
+            const NON_CONSTRUCTION = new Set(['completed', 'admin', 'pre_planner']);
+            let list = db.getAddresses().filter(a => !NON_CONSTRUCTION.has(a.jobStatus));
+            // Supervisors see only their own jobs (when we know who they are);
+            // managers — or an unresolved session — see ALL of them. Only narrow
+            // by supervisor once supervisor data has actually loaded, so a slow
+            // sync doesn't momentarily blank the whole list.
+            const supDataLoaded = list.some(a => a.supervisorId);
+            if (!isMgr && uid && supDataLoaded) list = list.filter(a => a.supervisorId === uid);
+            list = [...list].sort((a, b) => isMgr
+                ? ((a.supervisorName || '~').localeCompare(b.supervisorName || '~') || a.street.localeCompare(b.street))
+                : a.street.localeCompare(b.street));
             // Built from <div>s (not <button>s): iOS Safari mishandles buttons as
             // flex items and was stacking the icons under the address. Icons live
             // in a fixed-width group so they always sit BESIDE the address.
@@ -6216,10 +6223,10 @@
                     </div>
                 </div>`;
             }).join('');
-            const title = isMgr ? 'Active Jobs (in construction)' : 'My Jobs';
+            const title = isMgr ? 'All Active Jobs' : 'My Jobs';
             const emptyMsg = isMgr
-                ? 'No jobs are currently in construction.'
-                : 'No in-construction jobs are allocated to your login. Use the Address search below, or check with the office.';
+                ? 'Loading jobs… if this stays empty, tap ↻ (bottom-left) to refresh.'
+                : 'No jobs allocated to you yet. Use the search at the top, or tap ↻ (bottom-left) to refresh.';
             const body = list.length ? rows : `<div style="padding:16px;opacity:.7;font-size:13px;">${emptyMsg}</div>`;
             return `
                 <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
@@ -7522,7 +7529,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12p"></script>
+    <script src="cloud-sync.js?v=2026-06-12q"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
