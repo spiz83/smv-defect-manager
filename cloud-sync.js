@@ -337,14 +337,17 @@
 
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
-    const [trades, contractors, links, jobs, defects, callups, learning] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, learning, supers] = await Promise.all([
       sb.from('dm_trades').select('*'),
       sb.from('dm_contractors').select('*'),
       sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
       sb.from('jobs').select('id, job_number, lot, street, suburb, active'),
       sb.from('dm_defects').select('*'),
       sb.from('job_order_profiles').select('job_id, rows'),   // Framework call-up; best-effort
-      sb.from('dm_trade_learning').select('phrase_key, trade, n')   // learned trades; best-effort
+      sb.from('dm_trade_learning').select('phrase_key, trade, n'),   // learned trades; best-effort
+      // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
+      // view is readable by authenticated users; an error just means no My Jobs.
+      sb.from('v_jobs_with_current_supervisor').select('id, current_supervisor_id')
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -382,6 +385,13 @@
       });
     });
 
+    // job uuid -> current supervisor's user id (= the logged-in supervisor's id
+    // for their own jobs). Best-effort; empty if the view couldn't be read.
+    const supByJob = {};
+    if (supers && !supers.error && Array.isArray(supers.data)) {
+      supers.data.forEach(s => { supByJob[s.id] = s.current_supervisor_id || null; });
+    }
+
     // CH Tracker jobs -> the app's read-only "addresses". A stable hash of the
     // job uuid is the legacy int id the rest of the app keys off. Address text
     // is "Lot N, Street" + suburb, job_number kept as propertyNumber for search.
@@ -394,7 +404,8 @@
         id: lid,
         street: [j.lot, j.street].filter(Boolean).join(', '),
         suburb: j.suburb || '',
-        propertyNumber: j.job_number || ''
+        propertyNumber: j.job_number || '',
+        supervisorId: supByJob[j.id] || null   // for the "My Jobs" list
       });
     });
 
@@ -1026,6 +1037,8 @@
   // ----- Job visibility (manager-only: reveal handed-over / inactive jobs) -----
   window.CloudJobs = {
     isManager: () => userRole === 'manager',
+    currentUserId: () => userId,          // = current_supervisor_id for my own jobs
+    role: () => userRole,
     showInactive: () => showInactiveJobs,
     // Toggle handed-over jobs on/off and re-pull so the address list updates.
     setShowInactive: async (v) => {

@@ -2057,6 +2057,7 @@
                     <div class="header-title">Defect Manager</div>
                 </div>
                 <div class="home-container">
+                    ${renderMyJobsSection()}
                     <div class="home-2col">
                     <div class="home-col">
                     <div class="section-title">View Defects</div>
@@ -2122,51 +2123,53 @@
                     </div>
                     </div>
 
+                    ${showMultiContractors() ? `
                     <div class="section-title">Multiple Contractors</div>
                     <div class="multi-select-wrapper">
                         <div class="autocomplete-container" style="flex: 1;">
                             <input type="text" id="multi-contractor-1" placeholder="Search"
-                                   oninput="handleAutocomplete(this, 'contractor', 'multi-contractor-1')" 
+                                   oninput="handleAutocomplete(this, 'contractor', 'multi-contractor-1')"
                                    onfocus="handleAutocomplete(this, 'contractor', 'multi-contractor-1')">
                             <div id="multi-contractor-1-dropdown" class="autocomplete-dropdown"></div>
                         </div>
                         <div class="autocomplete-container" style="flex: 1;">
                             <input type="text" id="multi-contractor-2" placeholder="Search"
-                                   oninput="handleAutocomplete(this, 'contractor', 'multi-contractor-2')" 
+                                   oninput="handleAutocomplete(this, 'contractor', 'multi-contractor-2')"
                                    onfocus="handleAutocomplete(this, 'contractor', 'multi-contractor-2')">
                             <div id="multi-contractor-2-dropdown" class="autocomplete-dropdown"></div>
                         </div>
                         <div class="autocomplete-container" style="flex: 1;">
                             <input type="text" id="multi-contractor-3" placeholder="Search"
-                                   oninput="handleAutocomplete(this, 'contractor', 'multi-contractor-3')" 
+                                   oninput="handleAutocomplete(this, 'contractor', 'multi-contractor-3')"
                                    onfocus="handleAutocomplete(this, 'contractor', 'multi-contractor-3')">
                             <div id="multi-contractor-3-dropdown" class="autocomplete-dropdown"></div>
                         </div>
                         <button class="search-btn" onclick="searchMultipleContractors()">🔍 Search</button>
-                    </div>
+                    </div>` : ''}
 
+                    ${showMultiTrades() ? `
                     <div class="section-title">Multiple Trades</div>
                     <div class="multi-select-wrapper">
                         <div class="autocomplete-container" style="flex: 1;">
                             <input type="text" id="multi-trade-1" placeholder="Search"
-                                   oninput="handleAutocomplete(this, 'trade', 'multi-trade-1')" 
+                                   oninput="handleAutocomplete(this, 'trade', 'multi-trade-1')"
                                    onfocus="handleAutocomplete(this, 'trade', 'multi-trade-1')">
                             <div id="multi-trade-1-dropdown" class="autocomplete-dropdown"></div>
                         </div>
                         <div class="autocomplete-container" style="flex: 1;">
                             <input type="text" id="multi-trade-2" placeholder="Search"
-                                   oninput="handleAutocomplete(this, 'trade', 'multi-trade-2')" 
+                                   oninput="handleAutocomplete(this, 'trade', 'multi-trade-2')"
                                    onfocus="handleAutocomplete(this, 'trade', 'multi-trade-2')">
                             <div id="multi-trade-2-dropdown" class="autocomplete-dropdown"></div>
                         </div>
                         <div class="autocomplete-container" style="flex: 1;">
                             <input type="text" id="multi-trade-3" placeholder="Search"
-                                   oninput="handleAutocomplete(this, 'trade', 'multi-trade-3')" 
+                                   oninput="handleAutocomplete(this, 'trade', 'multi-trade-3')"
                                    onfocus="handleAutocomplete(this, 'trade', 'multi-trade-3')">
                             <div id="multi-trade-3-dropdown" class="autocomplete-dropdown"></div>
                         </div>
                         <button class="search-btn" onclick="searchMultipleTrades()">🔍 Search</button>
-                    </div>
+                    </div>` : ''}
 
                     <div class="section-title">Reports</div>
                     <div class="reports-actions">
@@ -2815,6 +2818,26 @@
                                     ${F1_THEMES.map(t => `<option value="${t.id}" ${currentF1Theme() === t.id ? 'selected' : ''}>${t.name} — ${t.sub}</option>`).join('')}
                                 </select>
                             </div>` : ''}
+                        </div>
+
+                        <!-- Home sections: Multiple Contractors / Trades (hidden by default) -->
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                            <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">🏠 Home sections</div>
+                            <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Show or hide the multi-search blocks on the home screen</div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+                                <div style="font-size:14px; color:var(--text-primary);">Multiple Contractors</div>
+                                <div style="display:flex; gap:8px;">
+                                    <button class="btn ${showMultiContractors() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowMultiContractors(true)">Show</button>
+                                    <button class="btn ${!showMultiContractors() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowMultiContractors(false)">Hide</button>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                                <div style="font-size:14px; color:var(--text-primary);">Multiple Trades</div>
+                                <div style="display:flex; gap:8px;">
+                                    <button class="btn ${showMultiTrades() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowMultiTrades(true)">Show</button>
+                                    <button class="btn ${!showMultiTrades() ? 'btn-primary' : 'btn-secondary'}" style="padding:8px 14px; font-size:14px;" onclick="setShowMultiTrades(false)">Hide</button>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Colour Theme -->
@@ -6178,6 +6201,53 @@
             showToast(v ? 'Showing handed-over jobs too' : 'Showing active jobs only');
         }
 
+        // Home-page section visibility toggles (default HIDDEN). Pure localStorage
+        // UI prefs — flip them from Manage. Follows the setDesign() pattern.
+        function showMultiContractors() { return localStorage.getItem('dm_show_multi_contractors') === '1'; }
+        function setShowMultiContractors(v) {
+            localStorage.setItem('dm_show_multi_contractors', v ? '1' : '0');
+            render();
+            showToast(v ? 'Multiple Contractors shown on home' : 'Multiple Contractors hidden');
+        }
+        function showMultiTrades() { return localStorage.getItem('dm_show_multi_trades') === '1'; }
+        function setShowMultiTrades(v) {
+            localStorage.setItem('dm_show_multi_trades', v ? '1' : '0');
+            render();
+            showToast(v ? 'Multiple Trades shown on home' : 'Multiple Trades hidden');
+        }
+
+        // "My Jobs" — the jobs allocated to the logged-in supervisor (matched by
+        // current_supervisor_id === my user id). Tap a job to start logging defects.
+        function renderMyJobsSection() {
+            const uid = (window.CloudJobs && window.CloudJobs.currentUserId) ? window.CloudJobs.currentUserId() : null;
+            const mine = uid ? db.getAddresses().filter(a => a.supervisorId === uid) : [];
+            const rowStyle = 'display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 14px;border:none;border-bottom:1px solid var(--brd,rgba(128,128,128,.25));background:transparent;color:inherit;cursor:pointer;font:inherit;';
+            const rows = mine.map(a => `
+                <button style="${rowStyle}" onclick="startDefectsForJob(${a.id})">
+                    <span style="flex:1;min-width:0;">
+                        <span style="display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.street}</span>
+                        <span style="display:block;font-size:12px;opacity:.65;">${a.suburb || ''}${a.propertyNumber ? ' · ' + a.propertyNumber : ''}</span>
+                    </span>
+                    <span style="font-size:13px;font-weight:700;color:var(--acc,#2563eb);white-space:nowrap;">Add defects ›</span>
+                </button>`).join('');
+            const body = mine.length
+                ? rows
+                : `<div style="padding:16px;opacity:.7;font-size:13px;">No jobs are currently allocated to your login. Use the Address search below, or check with the office.</div>`;
+            return `
+                <div class="section-title">My Jobs${mine.length ? ` (${mine.length})` : ''}</div>
+                <div style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:340px;overflow-y:auto;margin-bottom:18px;">
+                    ${body}
+                </div>`;
+        }
+        function startDefectsForJob(addressId) {
+            const address = db.getAddress(addressId);
+            if (!address) { showToast('Job not found'); return; }
+            state.currentView = 'add-defects-address';
+            state.filters = { addressId: address.id };
+            render();
+            initializeAddressDefectForm();
+        }
+
         /* ---- F1 Telemetry themes (ported from CH Tracker) ---- */
         const F1_THEMES = [
             { id:'mercedes', name:'Teal Carbon', sub:'Dark · Modern', vars:{'--acc':'#00A19A','--acc2':'#00C9C0','--bg':'#06090A','--sur':'#10171A','--ele':'#1A2529','--inp':'#0A1316','--brd':'#243137','--brd2':'#162026','--t1':'#F0F5F6','--t2':'#9BB0B4','--t3':'#5C7177','--accFg':'#fff'} },
@@ -7400,7 +7470,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12e"></script>
+    <script src="cloud-sync.js?v=2026-06-12f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal. -->
     <script>
       if ('serviceWorker' in navigator) {
