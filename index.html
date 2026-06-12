@@ -7485,9 +7485,9 @@
             catch (e) { console.error(e); impOverlayMessage('Could not generate PDF: ' + (e.message || e)); }
         }
 
-        // Floating "refresh / get latest version" button. This app has no
-        // service worker, so on a home-screen (standalone) launch we cache-bust
-        // index.html to force the newest deploy rather than a cached copy.
+        // Floating "refresh / get latest version" button — a manual escape hatch
+        // to force the newest deploy (cache-busts the URL) if the auto-update
+        // hasn't kicked in yet.
         function mountRefreshButton() {
             if (document.getElementById('app-refresh')) return;
             const b = document.createElement('button');
@@ -7530,12 +7530,23 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12j"></script>
-    <!-- Service worker: precaches the app shell so the app OPENS with no signal. -->
+    <script src="cloud-sync.js?v=2026-06-12k"></script>
+    <!-- Service worker: precaches the app shell so the app OPENS with no signal,
+         and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
       if ('serviceWorker' in navigator) {
+        let swReloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (swReloaded) return;
+          swReloaded = true;
+          window.location.reload();   // a newer version just activated — show it now
+        });
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[SW] register failed', e));
+          navigator.serviceWorker.register('sw.js').then((reg) => {
+            reg.update();
+            // Re-check for a new version whenever the app is brought back to front.
+            document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update(); });
+          }).catch((e) => console.warn('[SW] register failed', e));
         });
       }
     </script>

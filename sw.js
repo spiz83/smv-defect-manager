@@ -13,13 +13,13 @@
  *
  * Bump CACHE (and the cloud-sync ?v= below) whenever the shell changes.
  */
-const CACHE = 'deffixer-shell-2026-06-12j';
+const CACHE = 'deffixer-shell-2026-06-12k';
 
 // Same-origin shell. All of these must exist or install precache will fail.
 const CORE = [
   './',
   './index.html',
-  './cloud-sync.js?v=2026-06-12j',
+  './cloud-sync.js?v=2026-06-12k',
   './manifest.webmanifest',
   './icon.svg',
   './favicon-48.png',
@@ -64,10 +64,13 @@ self.addEventListener('fetch', (event) => {
     (url.pathname.endsWith('/') || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/cloud-sync.js'));
 
   // Network-first for navigations + app code: fresh online, cached when offline.
+  // Use cache:'reload' to BYPASS the browser HTTP cache — GitHub Pages serves
+  // index.html with a 10-min max-age, which would otherwise hand back stale code
+  // for minutes after a deploy.
   if (isNav || isAppCode) {
     event.respondWith((async () => {
       try {
-        const res = await fetch(req);
+        const res = await fetch(req, { cache: 'reload' });
         const cache = await caches.open(CACHE);
         cache.put(isNav ? './index.html' : req, res.clone());
         return res;
