@@ -7517,6 +7517,22 @@
             catch (e) { console.error(e); impOverlayMessage('Could not generate PDF: ' + (e.message || e)); }
         }
 
+        // True while the user is actively entering data we must NOT destroy with
+        // a background re-render or an auto-update reload. Covers: a focused text
+        // field, the add-defects forms, and any open overlay/modal (e.g. the
+        // report import + defect-entry overlay). Exposed for cloud-sync.js too.
+        function isBusyEditing() {
+            try {
+                const ae = document.activeElement;
+                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT')) return true;
+                const v = (typeof state !== 'undefined') && state ? state.currentView : '';
+                if (v === 'add-defects-address' || v === 'add-defects-contractor') return true;
+                if (document.querySelector('#imp-ov, .modal.active, #cs-overlay')) return true;
+            } catch (e) {}
+            return false;
+        }
+        window.isBusyEditing = isBusyEditing;
+
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
         // hasn't kicked in yet.
@@ -7562,7 +7578,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12w"></script>
+    <script src="cloud-sync.js?v=2026-06-12x"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
@@ -7570,8 +7586,16 @@
         let swReloaded = false;
         navigator.serviceWorker.addEventListener('controllerchange', () => {
           if (swReloaded) return;
-          swReloaded = true;
-          window.location.reload();   // a newer version just activated — show it now
+          // NEVER reload out from under someone entering data — that loses their
+          // input. Wait until they're idle (not typing, not in a form/overlay),
+          // then apply the update. Falls back to the next launch / manual ↻.
+          const applyWhenIdle = () => {
+            if (swReloaded) return;
+            if (window.isBusyEditing && window.isBusyEditing()) { setTimeout(applyWhenIdle, 4000); return; }
+            swReloaded = true;
+            window.location.reload();
+          };
+          applyWhenIdle();
         });
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('sw.js').then((reg) => {

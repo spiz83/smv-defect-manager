@@ -471,7 +471,8 @@
     suppressPush = false;
     snapshot = cloneSnap(db.data);
     dirty = false; persistSyncState();   // we're now in sync with the cloud
-    if (typeof render === 'function') render();
+    // Don't re-render over a form the user is filling in (would lose input).
+    if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     refreshPhotoCounts();      // load photo badges (async, re-renders when ready)
   }
 
@@ -493,7 +494,7 @@
         if (lid != null) counts[lid] = (counts[lid] || 0) + 1;
       });
       photoCounts = counts;
-      if (typeof render === 'function') render();
+      if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     } catch (e) { console.warn('[CloudSync] photo counts', e); }
   }
 
@@ -800,7 +801,7 @@
     if (ins.error) { console.error(ins.error); showToastSafe('Saved file but record failed'); return; }
     photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;   // optimistic badge
     showToastSafe('Photo added (' + Math.round(blob.size / 1024) + ' KB)');
-    if (typeof render === 'function') render();
+    if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     // Re-query authoritatively: a realtime/visibility pull fired by the new
     // defect can run refreshPhotoCounts() between insert and now and wipe the
     // optimistic count — this restores it from the DB (the photo row now exists).
