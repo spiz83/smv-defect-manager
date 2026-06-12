@@ -153,8 +153,8 @@
     ov.innerHTML = `
       <div id="cs-card">
         <h1>DefFixer</h1>
-        <p class="sub">Sign in to access your central defect database.</p>
-        <input id="cs-email" type="text" placeholder="Email or username" autocapitalize="none" autocorrect="off" autocomplete="username"/>
+        <p class="sub">Sign in with your CH Tracker login — same email &amp; password.</p>
+        <input id="cs-email" type="text" placeholder="Email (your CH Tracker login)" autocapitalize="none" autocorrect="off" autocomplete="username"/>
         <input id="cs-pass" type="password" placeholder="Password" autocomplete="current-password"/>
         <input id="cs-name" type="text" placeholder="Your name (for sign up)" style="display:none"/>
         <label id="cs-keep-wrap" style="display:flex;align-items:center;gap:8px;font-size:13px;color:#475569;margin:4px 2px 2px;">
@@ -191,8 +191,10 @@
         email = 'svladimiroski@hotmail.com';
         pass = 'admin!983';
       }
-      // Allow a username shorthand (no @) — default the domain to hotmail.com
-      if (email && !email.includes('@')) email += '@hotmail.com';
+      // Allow a username shorthand (no @) — default to the company domain so a
+      // supervisor can type just "ischroeder" and sign in with their CH Tracker
+      // login. (Spiro's hotmail manager account uses the qwqw alias / full email.)
+      if (email && !email.includes('@')) email += '@creationhomes.com.au';
       const keep = $('cs-keep') ? $('cs-keep').checked : true;
       if (!email || !pass) { msg('Enter your email/username and password.'); return; }
       $('cs-go').disabled = true;
