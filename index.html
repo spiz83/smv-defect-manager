@@ -3303,12 +3303,25 @@
                 return;
             }
             
-            dropdown.innerHTML = items.slice(0, 5).map(item => `
+            // Home address search boxes: show each match on ONE row with View +
+            // Add icons beside it, instead of the label wrapping to 3 lines.
+            const homeAddr = (input.id === 'search-address' || input.id === 'add-address');
+            const ico = 'flex:0 0 auto;width:34px;height:34px;border:1px solid var(--brd,rgba(128,128,128,.3));border-radius:7px;background:transparent;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;';
+            dropdown.innerHTML = items.slice(0, 5).map(item => {
+                if (item.type === 'address' && homeAddr) {
+                    return `
+                    <div class="autocomplete-item" style="display:flex;align-items:center;gap:6px;">
+                        <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" onclick="viewDefectsForJob(${item.id})">${item.label}</span>
+                        <button type="button" title="View defects" onclick="event.stopPropagation();viewDefectsForJob(${item.id})" style="${ico}font-size:15px;">👁️</button>
+                        <button type="button" title="Add defects" onclick="event.stopPropagation();startDefectsForJob(${item.id})" style="${ico}font-size:18px;font-weight:800;color:var(--acc,#2563eb);">＋</button>
+                    </div>`;
+                }
+                return `
                 <div class="autocomplete-item" onclick="selectAutocomplete('${input.id}', '${item.value.replace(/'/g, "\\'")}', '${dropdownId}', ${item.id}, '${item.type}', ${isViewField})">
                     ${item.label}
-                </div>
-            `).join('');
-            
+                </div>`;
+            }).join('');
+
             dropdown.classList.add('active');
         }
 
@@ -7517,7 +7530,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12i"></script>
+    <script src="cloud-sync.js?v=2026-06-12j"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal. -->
     <script>
       if ('serviceWorker' in navigator) {
