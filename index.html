@@ -4274,7 +4274,7 @@
         function flushStatus() { try { window.CloudSync && window.CloudSync.flush(); } catch (e) {} }
 
         // Location / area of the house, per defect
-        const DEFECT_LOCATIONS = ['Kitchen','Living','Lounge','Dining','Family','Meals','Master Bedroom','Bed 2','Bed 3','Bed 4','Ensuite','Bathroom','Powder Room','WC / Toilet','Laundry','WIR / Robe','Hallway','Entry','Stairs','Study','Garage','Alfresco','Porch','Balcony','Facade / External','Roof','Driveway','Backyard','Other'];
+        const DEFECT_LOCATIONS = ['Throughout','Kitchen','Living','Lounge','Dining','Family','Meals','Master Bedroom','Bed 2','Bed 3','Bed 4','Ensuite','Bathroom','Powder Room','WC / Toilet','Laundry','WIR / Robe','Hallway','Entry','Stairs','Study','Garage','Alfresco','Porch','Balcony','Facade / External','Roof','Driveway','Backyard','Other'];
         function locationControl(defect) {
             const cur = defect.location || '';
             return `<button class="loc-btn ${cur ? 'has-loc' : ''}" title="${cur || 'Set location'}" onclick="event.stopPropagation(); openLocationPicker(${defect.id})">📍</button>`;
@@ -7562,7 +7562,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12v"></script>
+    <script src="cloud-sync.js?v=2026-06-12w"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
