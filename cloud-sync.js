@@ -112,6 +112,16 @@
         border-radius:6px;padding:2px 8px;cursor:pointer;font-size:11px;}
       body.cs-authed{padding-top:26px;}
 
+      /* Offline / sync banner — slides up from the bottom, very visible on a phone */
+      #cs-banner{position:fixed;left:0;right:0;bottom:0;z-index:9997;
+        padding:11px 16px;text-align:center;font:600 13.5px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;
+        color:#fff;transform:translateY(110%);transition:transform .28s ease;
+        box-shadow:0 -4px 18px rgba(0,0,0,.25);}
+      #cs-banner.show{transform:translateY(0);}
+      #cs-banner.offline{background:#b45309;}      /* amber-brown: saved, waiting */
+      #cs-banner.syncing{background:#1d4ed8;}       /* blue: uploading */
+      #cs-banner.ok{background:#047857;}            /* green: done */
+
       /* Photo gallery */
       #cs-gallery{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);
         display:flex;align-items:center;justify-content:center;padding:16px;}
@@ -234,22 +244,85 @@
     if (st) st.textContent = text;
   }
 
+  // Big, reassuring bottom banner for offline / reconnecting / uploaded states.
+  // kind: 'offline' | 'syncing' | 'ok'. autohideMs hides it after a delay.
+  let bannerTimer = null;
+  function setBanner(text, kind, autohideMs) {
+    let b = document.getElementById('cs-banner');
+    if (!b) { b = document.createElement('div'); b.id = 'cs-banner'; document.body.appendChild(b); }
+    b.textContent = text;
+    b.className = 'show ' + (kind || '');
+    clearTimeout(bannerTimer);
+    if (autohideMs) bannerTimer = setTimeout(hideBanner, autohideMs);
+  }
+  function hideBanner() {
+    const b = document.getElementById('cs-banner');
+    if (b) b.className = b.className.replace('show', '').trim();
+  }
+
+  // ---- Persistent outbox -----------------------------------------------------
+  // `dirty` and `snapshot` normally live only in memory, so a reload/kill while
+  // offline would lose the "these edits aren't uploaded yet" knowledge — and the
+  // next boot pull would overwrite the un-uploaded local rows. Persisting both
+  // means an offline edit survives the app being closed: on next boot we restore
+  // the baseline + dirty flag, push the offline edits, THEN pull. Nothing lost.
+  function persistSyncState() {
+    try {
+      localStorage.setItem('cs_snapshot', JSON.stringify(snapshot));
+      // idMap (legacy id -> cloud uuid) MUST be persisted too: pushing offline
+      // edits before the first pull needs it to resolve existing rows. Without
+      // it an offline-edited defect would be re-INSERTED as a duplicate, and an
+      // offline-created defect on an unmapped address would be silently dropped.
+      localStorage.setItem('cs_idmap', JSON.stringify(idMap));
+      localStorage.setItem('cs_dirty', dirty ? '1' : '0');
+    } catch (e) { /* storage quota — best-effort */ }
+  }
+  function restoreSyncState() {
+    try {
+      const snap = localStorage.getItem('cs_snapshot');
+      if (snap) snapshot = JSON.parse(snap);
+      const ids = localStorage.getItem('cs_idmap');
+      if (ids) {
+        const m = JSON.parse(ids);
+        idMap.trades = m.trades || {}; idMap.contractors = m.contractors || {};
+        idMap.addresses = m.addresses || {}; idMap.defects = m.defects || {};
+      }
+      dirty = localStorage.getItem('cs_dirty') === '1';
+    } catch (e) { /* corrupt/absent — start clean */ }
+  }
+
   // ===========================================================================
   //  2. Role resolution (CH Tracker: profiles.role drives what you can see)
   // ===========================================================================
   async function resolveRole() {
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) throw new Error('SESSION_EXPIRED');
+    let user = null;
+    try { ({ data: { user } } = await sb.auth.getUser()); } catch (e) { user = null; }
+    if (!user) {
+      // Online with no user = genuinely signed out (e.g. password changed).
+      // Offline, getUser can't reach the server — trust the cached session so
+      // the app stays usable in a dead zone instead of locking the user out.
+      if (navigator.onLine) throw new Error('SESSION_EXPIRED');
+      const { data: { session } } = await sb.auth.getSession();
+      user = session && session.user;
+      if (!user) throw new Error('SESSION_EXPIRED');
+    }
     userId = user.id;
     userEmail = user.email || null;
-    const { data, error } = await sb
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle();
-    if (error) throw error;
-    // No profile row → treat as supervisor (RLS will still gate everything).
-    userRole = (data && data.role) || 'supervisor';
+    try {
+      const { data, error } = await sb
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (error) throw error;
+      // No profile row → treat as supervisor (RLS will still gate everything).
+      userRole = (data && data.role) || 'supervisor';
+    } catch (e) {
+      // Offline: can't fetch the role — default to supervisor (RLS still gates
+      // on the server once requests resume). Don't block app start.
+      if (navigator.onLine) throw e;
+      userRole = userRole || 'supervisor';
+    }
   }
 
   // ===========================================================================
@@ -377,6 +450,7 @@
     db.save();                 // writes local cache; push suppressed
     suppressPush = false;
     snapshot = cloneSnap(db.data);
+    dirty = false; persistSyncState();   // we're now in sync with the cloud
     if (typeof render === 'function') render();
     refreshPhotoCounts();      // load photo badges (async, re-renders when ready)
   }
@@ -557,6 +631,7 @@
       origSave();                       // keep the local cache up to date
       if (suppressPush || !userId) return;
       dirty = true;                     // we now hold an un-pushed local edit
+      persistSyncState();               // survive a reload/kill while offline
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(runSync, 400);
     };
@@ -565,11 +640,21 @@
   function runSync() {
     setStatus('Saving…', 'syncing');
     syncing = syncing.then(pushDiff).then(reconcilePhotos).then(
-      () => { dirty = false; setStatus('Synced'); },
+      () => {
+        dirty = false; persistSyncState(); setStatus('Synced');
+        // If we'd been showing an offline/uploading banner, confirm & clear it.
+        const b = document.getElementById('cs-banner');
+        if (b && b.className.indexOf('show') !== -1) {
+          setBanner('✅ All changes uploaded', 'ok', 3000);
+        }
+      },
       (err) => {
         console.error('[CloudSync] push failed', err);
         setStatus('Sync error — will retry', 'offline');
-        // keep `dirty` true so no pull clobbers the un-pushed edit; retry shortly
+        // Reassure the user their data is safe — this is the "poor reception"
+        // path where the request failed even though the browser thinks it's
+        // online. keep `dirty` true so no pull clobbers the un-pushed edit.
+        setBanner('📴 Weak connection — your changes are saved on this phone and will upload automatically.', 'offline');
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(runSync, 4000);
       }
@@ -965,6 +1050,48 @@
   window.CloudSync = { flush: () => flushPending() };
 
   // ===========================================================================
+  //  Lifecycle + connection listeners (attached once)
+  // ===========================================================================
+  let lifecycleAttached = false;
+  function attachLifecycleListeners() {
+    if (lifecycleAttached) return;
+    lifecycleAttached = true;
+
+    // Re-pull when the tab regains focus (catch changes from other devices);
+    // flush un-synced edits the moment we lose focus (phone may freeze/kill the
+    // backgrounded tab before the debounce fires).
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) flushPending().catch(() => {});
+      else pullAll().catch(e => console.error('[CloudSync] focus pull', e));
+    });
+    window.addEventListener('focus', () => {
+      pullAll().catch(e => console.error('[CloudSync] focus pull', e));
+    });
+    // Last-ditch flush as the page is torn down (tab close / navigation).
+    window.addEventListener('pagehide', () => { flushPending().catch(() => {}); });
+
+    // Connection awareness — the prompts the user actually sees.
+    window.addEventListener('offline', () => {
+      setStatus('Offline', 'offline');
+      setBanner('📴 Working offline — your changes are saved on this phone and will upload automatically when you reconnect.', 'offline');
+    });
+    window.addEventListener('online', () => {
+      if (dirty) {
+        setBanner('🔄 Back online — uploading your changes…', 'syncing');
+        // Push immediately rather than waiting out the retry timer; runSync's
+        // success path then flips the banner to "✅ All changes uploaded".
+        flushPending().then(() => {
+          if (!dirty) setBanner('✅ All changes uploaded', 'ok', 3000);
+          pullAll().catch(() => {});
+        });
+      } else {
+        setBanner('✅ Back online', 'ok', 2500);
+        pullAll().catch(() => {});
+      }
+    });
+  }
+
+  // ===========================================================================
   //  Boot
   // ===========================================================================
   async function onAuthed() {
@@ -973,30 +1100,30 @@
       await resolveRole();
       showStatusBar();
       setStatus('Loading…', 'syncing');
-      const migrated = await maybeMigrate();
-      if (!migrated) await pullAll();
-      setStatus('Synced');
+      // Restore the persisted outbox FIRST: if we were closed/killed with
+      // un-uploaded offline edits, this re-arms `dirty` + the diff baseline so
+      // the upcoming pull pushes them out instead of overwriting them.
+      restoreSyncState();
+      if (!navigator.onLine) {
+        setBanner('📴 Working offline — your changes are saved on this phone and will upload automatically when you reconnect.', 'offline');
+      }
+      // Attach lifecycle + connection listeners BEFORE the first pull, so an
+      // offline boot (pull fails) still wires up reconnect-driven auto-upload.
+      attachLifecycleListeners();
+      try { subscribeRealtime(); } catch (e) { /* offline: realtime connects later */ }
+      try {
+        const migrated = await maybeMigrate();
+        if (!migrated) await pullAll();
+      } catch (e) {
+        // Offline / network failure on first load — fine. The app is usable, the
+        // offline banner is up, and edits upload when the connection returns.
+        console.warn('[CloudSync] initial pull failed (offline?)', e);
+      }
+      // `dirty` still set means offline edits are waiting (pullAll skipped/failed
+      // to protect them) — don't claim "Synced".
+      const offline = dirty || !navigator.onLine;
+      setStatus(offline ? 'Offline' : 'Synced', offline ? 'offline' : undefined);
       sweepExpiredPhotos();
-      subscribeRealtime();
-      // Belt-and-suspenders: also re-pull whenever this tab/app regains focus,
-      // so a desktop instance reflects mobile changes even if a realtime event
-      // was missed (e.g. asleep / backgrounded). Debounced inside pullAll usage.
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-          // Leaving/​backgrounding: push any un-synced edit out NOW. On a phone
-          // the OS can freeze or kill a backgrounded tab before the 400ms
-          // debounce fires, stranding e.g. a just-completed defect — which the
-          // next pull then reverts ("marked complete but it reappears").
-          flushPending().catch(() => {});
-        } else {
-          pullAll().catch(e => console.error('[CloudSync] focus pull', e));
-        }
-      });
-      window.addEventListener('focus', () => {
-        pullAll().catch(e => console.error('[CloudSync] focus pull', e));
-      });
-      // Last-ditch flush as the page is torn down (tab close / navigation).
-      window.addEventListener('pagehide', () => { flushPending().catch(() => {}); });
     } catch (err) {
       console.error('[CloudSync] init failed', err);
       // Stale/expired session (e.g. password changed): clear it and re-show login
@@ -1006,8 +1133,17 @@
         return;
       }
       setStatus('Offline', 'offline');
-      alert('Could not connect to the central database:\n' + (err.message || err) +
-            '\n\nThe app is still usable on this device.');
+      // Offline / network failure: show the calm banner, not a blocking alert.
+      // The app stays usable and uploads automatically on reconnect. Only pop
+      // the alert for genuinely unexpected (non-network) init errors.
+      const offlineish = !navigator.onLine ||
+        /fetch|network|load failed|timeout|connection/i.test(String(err && err.message));
+      if (offlineish) {
+        setBanner('📴 Working offline — your changes are saved on this phone and will upload automatically when you reconnect.', 'offline');
+      } else {
+        alert('Could not connect to the central database:\n' + (err.message || err) +
+              '\n\nThe app is still usable on this device.');
+      }
     }
   }
 
@@ -1018,7 +1154,9 @@
     // revokes it). If not, clear it and show the login screen instead of crashing.
     let user = null;
     try { ({ data: { user } } = await sb.auth.getUser()); } catch (e) { user = null; }
-    if (user) {
+    // Offline with a cached session → still open the app (offline mode) rather
+    // than signing the user out; they couldn't sign back in without a network.
+    if (user || !navigator.onLine) {
       await onAuthed();
     } else {
       try { await sb.auth.signOut(); } catch (e) {}
