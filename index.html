@@ -2057,70 +2057,8 @@
                     <div class="header-title">Defect Manager</div>
                 </div>
                 <div class="home-container">
-                    <div class="home-2col">
-                    <div class="home-col">
-                    <div class="section-title">View Defects</div>
-
-                    <div class="search-row">
-                        <div class="search-label">Address</div>
-                        <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="search-address" placeholder="Address"
-                                   oninput="handleAutocomplete(this, 'address')" 
-                                   onfocus="handleAutocomplete(this, 'address')">
-                            <div id="search-address-dropdown" class="autocomplete-dropdown"></div>
-                            <button class="search-btn" onclick="searchByAddress()">🔍</button>
-                        </div>
-                    </div>
-
-                    <div class="search-row">
-                        <div class="search-label">Contractor</div>
-                        <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="search-contractor" placeholder="Contractor" 
-                                   oninput="handleAutocomplete(this, 'contractor')" 
-                                   onfocus="handleAutocomplete(this, 'contractor')">
-                            <div id="search-contractor-dropdown" class="autocomplete-dropdown"></div>
-                            <button class="search-btn" onclick="searchByContractor()">🔍</button>
-                        </div>
-                    </div>
-
-                    <div class="search-row">
-                        <div class="search-label">Trade</div>
-                        <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="search-trade" placeholder="Trade" 
-                                   oninput="handleAutocomplete(this, 'trade')" 
-                                   onfocus="handleAutocomplete(this, 'trade')">
-                            <div id="search-trade-dropdown" class="autocomplete-dropdown"></div>
-                            <button class="search-btn" onclick="searchByTrade()">🔍</button>
-                        </div>
-                    </div>
-
-                    </div>
-                    <div class="home-col">
-                    <div class="section-title">Add Defects</div>
-
-                    <div class="search-row">
-                        <div class="search-label">Address</div>
-                        <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="add-address" placeholder="Address"
-                                   oninput="handleAutocomplete(this, 'address', 'add-address')" 
-                                   onfocus="handleAutocomplete(this, 'address', 'add-address')">
-                            <div id="add-address-dropdown" class="autocomplete-dropdown"></div>
-                            <button class="search-btn" onclick="addDefectsByAddress()">🔍</button>
-                        </div>
-                    </div>
-
-                    <div class="search-row">
-                        <div class="search-label">Contractor</div>
-                        <div class="search-input-wrapper autocomplete-container">
-                            <input type="text" id="add-contractor" placeholder="Contractor" 
-                                   oninput="handleAutocomplete(this, 'contractor', 'add-contractor')" 
-                                   onfocus="handleAutocomplete(this, 'contractor', 'add-contractor')">
-                            <div id="add-contractor-dropdown" class="autocomplete-dropdown"></div>
-                            <button class="search-btn" onclick="addDefectsByContractor()">🔍</button>
-                        </div>
-                    </div>
-                    </div>
-                    </div>
+                    <div class="section-title">Search Defects</div>
+                    ${renderUnifiedSearch()}
 
                     ${renderMyJobsSection()}
 
@@ -3305,22 +3243,24 @@
                 return;
             }
             
-            // Home address search boxes: show each match on ONE row with View +
-            // Add icons beside it, instead of the label wrapping to 3 lines.
-            const homeAddr = (input.id === 'search-address' || input.id === 'add-address');
+            // Unified top search: each match on its own row with View (+ Add)
+            // icons beside it. Add applies to address/contractor only (you can't
+            // "add defects" to a trade). Addresses render two lines.
             // <div>s not <button>s — iOS Safari stacks buttons used as flex items.
+            const withIcons = (input.id === 'unified-search');
             const ico = 'flex:0 0 auto;width:34px;height:34px;border:1px solid var(--brd,rgba(128,128,128,.3));border-radius:7px;cursor:pointer;text-align:center;line-height:32px;';
             dropdown.innerHTML = items.slice(0, 5).map(item => {
-                if (item.type === 'address' && homeAddr) {
+                if (withIcons) {
+                    const canAdd = (item.type === 'address' || item.type === 'contractor');
+                    const main = item.type === 'address'
+                        ? `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.street}</div>${item.sub ? `<div style="font-size:12px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.sub}</div>` : ''}`
+                        : `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.label}</div>`;
                     return `
                     <div class="autocomplete-item" style="display:flex;flex-wrap:nowrap;align-items:center;gap:6px;">
-                        <div style="flex:1 1 auto;min-width:0;overflow:hidden;" onclick="viewDefectsForJob(${item.id})">
-                            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.street}</div>
-                            ${item.sub ? `<div style="font-size:12px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.sub}</div>` : ''}
-                        </div>
+                        <div style="flex:1 1 auto;min-width:0;overflow:hidden;" onclick="viewDefectsFor('${item.type}', ${item.id})">${main}</div>
                         <div style="flex:0 0 auto;display:flex;gap:6px;">
-                            <div style="${ico}font-size:15px;" onclick="event.stopPropagation();viewDefectsForJob(${item.id})" title="View defects">👁️</div>
-                            <div style="${ico}font-size:18px;font-weight:800;color:var(--acc,#2563eb);" onclick="event.stopPropagation();startDefectsForJob(${item.id})" title="Add defects">＋</div>
+                            <div style="${ico}font-size:15px;" onclick="event.stopPropagation();viewDefectsFor('${item.type}', ${item.id})" title="View defects">👁️</div>
+                            ${canAdd ? `<div style="${ico}font-size:18px;font-weight:800;color:var(--acc,#2563eb);" onclick="event.stopPropagation();addDefectsFor('${item.type}', ${item.id})" title="Add defects">＋</div>` : ''}
                         </div>
                     </div>`;
                 }
@@ -6321,6 +6261,43 @@
             render();
         }
 
+        // ---- Unified top search: one box, pick Address / Contractor / Trade ----
+        let _searchType = 'address';
+        function currentSearchType() { return _searchType; }
+        function setSearchType(t) {
+            _searchType = t;
+            render();
+            setTimeout(() => { const i = document.getElementById('unified-search'); if (i) i.focus(); }, 0);
+        }
+        function renderUnifiedSearch() {
+            const types = [['address', 'Address'], ['contractor', 'Contractor'], ['trade', 'Trade']];
+            const tabStyle = 'flex:1 1 0;text-align:center;padding:10px 6px;border-radius:9px;border:1px solid var(--brd,rgba(128,128,128,.3));cursor:pointer;font-weight:700;font-size:14px;';
+            const tabs = types.map(([t, label]) => {
+                const on = currentSearchType() === t;
+                return `<div onclick="setSearchType('${t}')" style="${tabStyle}${on ? 'background:var(--acc,#2563eb);color:#fff;border-color:var(--acc,#2563eb);' : 'background:transparent;color:inherit;'}">${label}</div>`;
+            }).join('');
+            const ph = currentSearchType() === 'address' ? 'Start typing an address…'
+                : currentSearchType() === 'contractor' ? 'Start typing a contractor…' : 'Start typing a trade…';
+            return `
+                <div style="display:flex;gap:6px;margin-bottom:10px;">${tabs}</div>
+                <div class="autocomplete-container" style="position:relative;">
+                    <input type="text" id="unified-search" placeholder="${ph}" autocapitalize="none" autocorrect="off"
+                           oninput="handleAutocomplete(this, currentSearchType())" onfocus="handleAutocomplete(this, currentSearchType())"
+                           style="width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--brd,rgba(128,128,128,.3));border-radius:10px;background:var(--inp,transparent);color:inherit;font:inherit;font-size:16px;">
+                    <div id="unified-search-dropdown" class="autocomplete-dropdown" style="right:0;"></div>
+                </div>`;
+        }
+        // Generic view / add navigation used by the unified search result icons.
+        function viewDefectsFor(type, id) {
+            if (type === 'address') { viewDefectsForJob(id); }
+            else if (type === 'contractor') { state.currentView = 'view-defects-contractor'; state.filters = { contractorId: id }; render(); }
+            else if (type === 'trade') { showDefectsForTrade(id); }
+        }
+        function addDefectsFor(type, id) {
+            if (type === 'address') { startDefectsForJob(id); }
+            else if (type === 'contractor') { state.currentView = 'add-defects-contractor'; state.filters = { contractorId: id }; render(); }
+        }
+
         /* ---- F1 Telemetry themes (ported from CH Tracker) ---- */
         const F1_THEMES = [
             { id:'mercedes', name:'Teal Carbon', sub:'Dark · Modern', vars:{'--acc':'#00A19A','--acc2':'#00C9C0','--bg':'#06090A','--sur':'#10171A','--ele':'#1A2529','--inp':'#0A1316','--brd':'#243137','--brd2':'#162026','--t1':'#F0F5F6','--t2':'#9BB0B4','--t3':'#5C7177','--accFg':'#fff'} },
@@ -7543,7 +7520,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12n"></script>
+    <script src="cloud-sync.js?v=2026-06-12o"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
