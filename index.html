@@ -3248,19 +3248,21 @@
             // "add defects" to a trade). Addresses render two lines.
             // <div>s not <button>s — iOS Safari stacks buttons used as flex items.
             const withIcons = (input.id === 'unified-search');
-            const ico = 'flex:0 0 auto;width:34px;height:34px;border:1px solid var(--brd,rgba(128,128,128,.3));border-radius:7px;cursor:pointer;text-align:center;line-height:32px;';
+            // Match the My Jobs list row styling exactly (same padding, text
+            // sizes, 40px icons) so search results look identical to the list.
+            const ico = 'flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid var(--brd,rgba(128,128,128,.3));cursor:pointer;font-size:18px;line-height:38px;text-align:center;';
             dropdown.innerHTML = items.slice(0, 5).map(item => {
                 if (withIcons) {
                     const canAdd = (item.type === 'address' || item.type === 'contractor');
                     const main = item.type === 'address'
-                        ? `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.street}</div>${item.sub ? `<div style="font-size:12px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.sub}</div>` : ''}`
-                        : `<div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.label}</div>`;
+                        ? `<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.street}</div>${item.sub ? `<div style="font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.sub}</div>` : ''}`
+                        : `<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.label}</div>`;
                     return `
-                    <div class="autocomplete-item" style="display:flex;flex-wrap:nowrap;align-items:center;gap:6px;">
-                        <div style="flex:1 1 auto;min-width:0;overflow:hidden;" onclick="viewDefectsFor('${item.type}', ${item.id})">${main}</div>
+                    <div class="autocomplete-item" style="display:flex;flex-wrap:nowrap;align-items:center;gap:8px;padding:10px 12px;font-size:15px;">
+                        <div style="flex:1 1 auto;min-width:0;overflow:hidden;cursor:pointer;" onclick="viewDefectsFor('${item.type}', ${item.id})">${main}</div>
                         <div style="flex:0 0 auto;display:flex;gap:6px;">
-                            <div style="${ico}font-size:15px;" onclick="event.stopPropagation();viewDefectsFor('${item.type}', ${item.id})" title="View defects">👁️</div>
-                            ${canAdd ? `<div style="${ico}font-size:18px;font-weight:800;color:var(--acc,#2563eb);" onclick="event.stopPropagation();addDefectsFor('${item.type}', ${item.id})" title="Add defects">＋</div>` : ''}
+                            <div style="${ico}" onclick="event.stopPropagation();viewDefectsFor('${item.type}', ${item.id})" title="View defects">👁️</div>
+                            ${canAdd ? `<div style="${ico}color:var(--acc,#2563eb);font-weight:800;" onclick="event.stopPropagation();addDefectsFor('${item.type}', ${item.id})" title="Add defects">＋</div>` : ''}
                         </div>
                     </div>`;
                 }
@@ -7520,7 +7522,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12o"></script>
+    <script src="cloud-sync.js?v=2026-06-12p"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
