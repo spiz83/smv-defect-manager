@@ -3575,8 +3575,9 @@
         }
 
         function openAddDefectsForAddress(addressId) {
-            state.currentAddressForAdd = addressId;
-            openModal('quick-add-defects-address-modal');
+            // Open the FULL add-defects form (multiple suppliers, 5 blocks),
+            // not the single-supplier quick modal.
+            startDefectsForJob(addressId);
         }
 
         function saveQuickDefectsForContractor() {
@@ -7561,7 +7562,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12t"></script>
+    <script src="cloud-sync.js?v=2026-06-12u"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
