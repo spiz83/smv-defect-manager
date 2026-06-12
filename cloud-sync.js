@@ -383,7 +383,9 @@
         .filter(Boolean).join(', ');
       newData.contractors.push({
         id: lid, name: c.name, email: c.email || '', phone: c.phone || '',
-        tradeIds, trades: tradeNames || 'No Trade Assigned'
+        tradeIds, trades: tradeNames || 'No Trade Assigned',
+        isShared: c.is_shared !== false,        // false = private to its adder
+        addedBy: c.added_by || null             // supervisor who added it (if private)
       });
     });
 
@@ -535,8 +537,10 @@
     // ---- Contractors ---- (trade links handled after)
     await diffEntity({
       cur: cur.contractors, snap: snapshot.contractors, table: 'dm_contractors', map: idMap.contractors,
-      toRow: (c) => ({ legacy_id: c.id, name: c.name, email: c.email || null, phone: c.phone || null }),
-      changed: (a, b) => a.name !== b.name || a.email !== b.email || a.phone !== b.phone
+      toRow: (c) => ({ legacy_id: c.id, name: c.name, email: c.email || null, phone: c.phone || null,
+                       is_shared: c.isShared !== false, added_by: c.addedBy || null }),
+      changed: (a, b) => a.name !== b.name || a.email !== b.email || a.phone !== b.phone ||
+                         ((a.isShared !== false) !== (b.isShared !== false)) || (a.addedBy || '') !== (b.addedBy || '')
     });
 
     // Addresses are CH Tracker jobs — read-only, never pushed.

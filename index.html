@@ -1764,13 +1764,17 @@
                     return trade ? trade.name : '';
                 }).filter(Boolean).join(', ') || 'No Trade Assigned';
                 
-                const newContractor = { 
-                    id, 
-                    name: contractor.name, 
+                const newContractor = {
+                    id,
+                    name: contractor.name,
                     email: contractor.email || '',
                     phone: contractor.phone || '',
-                    tradeIds, 
-                    trades 
+                    tradeIds,
+                    trades,
+                    // Sharing: managers create team-wide contractors; supervisors
+                    // create ones private to themselves until a manager shares them.
+                    isShared: contractor.isShared !== false,
+                    addedBy: contractor.addedBy || null
                 };
                 this.data.contractors.push(newContractor);
                 this.save();
@@ -2357,6 +2361,10 @@
                         <div class="lot-title" onclick="viewDefectsForAddress(${addressId})" style="cursor: pointer;" title="View this job's defects">${formatAddress(address)} ›</div>
                     </div>
 
+                    <div style="padding: 0 14px;">
+                        <div onclick="openAddContractor('')" style="display:inline-flex;align-items:center;gap:6px;margin:4px 0;padding:8px 12px;border:1px dashed var(--border-color,#ccc);border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--blue,#2563eb);">👤＋ Contractor missing? Add one</div>
+                    </div>
+
                     <div style="padding: 14px;">
                         <!-- Contractor 1 -->
                         <div style="margin-bottom: 12px; padding: 12px 15px; background: var(--bg-primary); border-radius: 10px; border: 1px solid var(--border-color);">
@@ -2691,6 +2699,7 @@
                     </div>
                     
                     <div class="manage-container">
+                        ${renderPendingContractors()}
                         <!-- Dark Mode Toggle -->
                         <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
                             <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -6304,6 +6313,131 @@
             if (dirty && !confirm('Changes have not been saved.\n\nDo you wish to proceed without saving?')) return;
             showHomeView();
         }
+
+        // ---- Add a missing contractor on the spot (never get stuck) ----------
+        // Supervisors: the new contractor is PRIVATE to them until a manager
+        // shares it. Managers: it's added team-wide immediately. Optional vCard
+        // import pulls name/phone/email from a phone contact (.vcf).
+        let _editingContractorId = null;
+        function openAddContractor(prefillName, editC) {
+            _editingContractorId = editC ? editC.id : null;
+            const isMgr = !!(window.CloudJobs && window.CloudJobs.isManager && window.CloudJobs.isManager());
+            const inp = 'width:100%;box-sizing:border-box;padding:11px 12px;margin:4px 0 12px;border:1px solid var(--border-color,#ccc);border-radius:9px;font-size:15px;';
+            const lbl = 'font-size:13px;font-weight:600;color:var(--text-secondary,#666);';
+            const curTrade = editC && editC.tradeIds && editC.tradeIds.length ? editC.tradeIds[0] : '';
+            const tradeOpts = db.getTrades(false).map(t => `<option value="${t.id}" ${t.id === curTrade ? 'selected' : ''}>${t.name}</option>`).join('');
+            const esc = (s) => (s || '').replace(/"/g, '&quot;');
+            impOverlay(`
+                <div id="imp-head"><strong>👤 ${editC ? 'Edit' : 'Add'} contractor</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body" style="padding:16px;">
+                    <div style="font-size:12.5px;color:var(--text-secondary,#888);margin-bottom:12px;line-height:1.4;">
+                        ${editC ? 'Clean up the details, then Save. Use “Share to team” in Manage to make it visible to everyone.'
+                                : isMgr ? 'Added for the whole team straight away.'
+                                : '🔒 Only you will see this contractor until a manager checks it and shares it to the team.'}
+                    </div>
+                    <label style="${lbl}">Name</label>
+                    <input id="ac-name" type="text" value="${esc(editC ? editC.name : prefillName)}" placeholder="Contractor / business name" style="${inp}">
+                    <label style="${lbl}">Phone</label>
+                    <input id="ac-phone" type="text" inputmode="tel" value="${esc(editC && editC.phone)}" placeholder="Phone" style="${inp}">
+                    <label style="${lbl}">Email <span style="font-weight:400;">(optional)</span></label>
+                    <input id="ac-email" type="text" inputmode="email" value="${esc(editC && editC.email)}" placeholder="Email" style="${inp}">
+                    <label style="${lbl}">Trade</label>
+                    <select id="ac-trade-existing" style="${inp}"><option value="">— pick an existing trade —</option>${tradeOpts}</select>
+                    <input id="ac-trade-new" type="text" placeholder="…or type a new trade" style="${inp}">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button onclick="saveNewContractor()" style="flex:1;min-width:140px;background:var(--blue,#2563eb);color:#fff;border:none;border-radius:9px;padding:12px;font-weight:700;font-size:15px;cursor:pointer;">Save</button>
+                        <label style="flex:0 0 auto;border:1px solid var(--border-color,#ccc);border-radius:9px;padding:12px 14px;font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">📇 From contact
+                            <input type="file" accept=".vcf,text/vcard,text/x-vcard" style="display:none" onchange="importVcardToContractor(event)">
+                        </label>
+                    </div>
+                </div>`);
+        }
+        function importVcardToContractor(e) {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                const text = String(reader.result || '');
+                const grab = (re) => { const m = text.match(re); return m ? m[1].trim() : ''; };
+                const fn = grab(/^FN[^:\n]*:(.+)$/im) || grab(/^N[^:\n]*:(.+)$/im);
+                const tel = grab(/^TEL[^:\n]*:(.+)$/im);
+                const email = grab(/^EMAIL[^:\n]*:(.+)$/im);
+                const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+                set('ac-name', fn); set('ac-phone', tel); set('ac-email', email);
+                showToast('Contact loaded — check the details and save');
+            };
+            reader.onerror = () => showToast('Could not read that contact file');
+            reader.readAsText(file);
+        }
+        function saveNewContractor() {
+            const val = (id) => (document.getElementById(id) || {}).value || '';
+            const name = val('ac-name').trim();
+            if (!name) { showToast('Enter a contractor name'); return; }
+            const newTrade = val('ac-trade-new').trim();
+            const existingTradeId = val('ac-trade-existing');
+            let tradeIds = [];
+            if (newTrade) { const t = db.addTrade({ name: newTrade }); if (t) tradeIds = [t.id]; }
+            else if (existingTradeId) { tradeIds = [parseInt(existingTradeId, 10)]; }
+            const phone = val('ac-phone').trim(), email = val('ac-email').trim();
+            if (_editingContractorId != null) {
+                // Edit existing (manager cleanup) — keep its sharing state.
+                const c = db.getContractor(_editingContractorId);
+                if (c) {
+                    c.name = name; c.phone = phone; c.email = email;
+                    if (tradeIds.length) { c.tradeIds = tradeIds; c.trades = tradeIds.map(id => (db.data.trades.find(t => t.id === id) || {}).name).filter(Boolean).join(', ') || 'No Trade Assigned'; }
+                    db.save();
+                }
+                _editingContractorId = null;
+                impClose(); render(); showToast('Contractor updated');
+                return;
+            }
+            const isMgr = !!(window.CloudJobs && window.CloudJobs.isManager && window.CloudJobs.isManager());
+            const uid = (window.CloudJobs && window.CloudJobs.currentUserId) ? window.CloudJobs.currentUserId() : null;
+            db.addContractor({ name, phone, email, tradeIds, isShared: isMgr, addedBy: isMgr ? null : uid });
+            impClose();
+            // No render() — keep any in-progress add-defects form intact; the new
+            // contractor is in db.data and shows in the autocomplete immediately.
+            showToast(isMgr ? 'Contractor added' : 'Contractor added — private to you for now');
+        }
+        // Manager action: promote a private supervisor-added contractor to the team.
+        function shareContractor(legacyId) {
+            const c = db.getContractor(legacyId);
+            if (!c) return;
+            c.isShared = true; c.addedBy = null;
+            db.save();
+            render();
+            showToast('Contractor shared with the team');
+        }
+        function editContractor(id) { const c = db.getContractor(id); if (c) openAddContractor('', c); }
+        function deletePendingContractor(id) {
+            if (!confirm('Delete this contractor?')) return;
+            const r = db.deleteContractor(id);
+            if (r && r.success === false) { showToast(r.message); return; }
+            render(); showToast('Contractor deleted');
+        }
+        // Manager-only Manage card: supervisor-added contractors awaiting review.
+        function renderPendingContractors() {
+            const isMgr = !!(window.CloudJobs && window.CloudJobs.isManager && window.CloudJobs.isManager());
+            if (!isMgr) return '';
+            const pending = (db.data.contractors || []).filter(c => c.isShared === false);
+            const btn = 'border:1px solid var(--border-color,#ccc);border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700;cursor:pointer;background:transparent;color:inherit;';
+            const rowsHtml = pending.map(c => `
+                <div style="display:flex;align-items:center;gap:6px;padding:10px 0;border-bottom:1px solid var(--border-color,#eee);">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.name}</div>
+                        <div style="font-size:12px;color:var(--text-secondary,#888);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${[c.phone, c.email, c.trades].filter(Boolean).join(' · ') || 'No details'}</div>
+                    </div>
+                    <button onclick="editContractor(${c.id})" style="${btn}">Edit</button>
+                    <button onclick="shareContractor(${c.id})" style="${btn}border-color:#16a34a;color:#16a34a;">✓ Share</button>
+                    <button onclick="deletePendingContractor(${c.id})" style="${btn}border-color:#dc2626;color:#dc2626;">🗑</button>
+                </div>`).join('');
+            return `
+                <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                    <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">🔎 Contractors to review${pending.length ? ' (' + pending.length + ')' : ''}</div>
+                    <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Added by supervisors and private to them. Clean up the details, then <b>Share</b> to make a contractor visible to the whole team.</div>
+                    ${pending.length ? rowsHtml : '<div style="font-size:13px;color:var(--text-secondary);">Nothing to review right now.</div>'}
+                </div>`;
+        }
         // Clicking a job/address defaults to VIEWING its defects.
         function viewDefectsForJob(addressId) {
             const address = db.getAddress(addressId);
@@ -6330,6 +6464,11 @@
             }).join('');
             const ph = currentSearchType() === 'address' ? 'Start typing an address…'
                 : currentSearchType() === 'contractor' ? 'Start typing a contractor…' : 'Start typing a trade…';
+            // On the Contractor tab, offer "add a missing contractor" so a user is
+            // never stuck if the trade/contractor they need isn't listed.
+            const addBtn = currentSearchType() === 'contractor'
+                ? `<div onclick="openAddContractor((document.getElementById('unified-search')||{}).value||'')" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px dashed var(--brd,rgba(128,128,128,.4));border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--acc,#2563eb);">👤＋ Add a contractor that's missing</div>`
+                : '';
             return `
                 <div style="display:flex;gap:6px;margin-bottom:10px;">${tabs}</div>
                 <div class="autocomplete-container" style="position:relative;">
@@ -6337,7 +6476,8 @@
                            oninput="handleAutocomplete(this, currentSearchType())" onfocus="handleAutocomplete(this, currentSearchType())"
                            style="width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--brd,rgba(128,128,128,.3));border-radius:10px;background:var(--inp,transparent);color:inherit;font:inherit;font-size:16px;">
                     <div id="unified-search-dropdown" class="autocomplete-dropdown" style="right:0;"></div>
-                </div>`;
+                </div>
+                ${addBtn}`;
         }
         // Generic view / add navigation used by the unified search result icons.
         function viewDefectsFor(type, id) {
@@ -7588,7 +7728,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12z"></script>
+    <script src="cloud-sync.js?v=2026-06-13a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
