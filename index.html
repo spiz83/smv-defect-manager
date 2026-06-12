@@ -6251,7 +6251,7 @@
             // flex items and was stacking the icons under the address. Icons live
             // in a fixed-width group so they always sit BESIDE the address.
             const rowStyle = 'display:flex;flex-wrap:nowrap;align-items:center;gap:8px;width:100%;padding:10px 12px;border-bottom:1px solid var(--brd,rgba(128,128,128,.25));box-sizing:border-box;';
-            const addrStyle = 'flex:1 1 auto;min-width:0;cursor:pointer;overflow:hidden;';
+            const addrStyle = 'flex:1 1 auto;min-width:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
             const icoStyle = 'flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid var(--brd,rgba(128,128,128,.3));cursor:pointer;font-size:18px;line-height:38px;text-align:center;';
             const rows = list.map(a => {
                 const sub = [a.suburb || '', a.propertyNumber || '', isMgr ? (a.supervisorName || 'Unassigned') : '']
@@ -6260,8 +6260,7 @@
                 return `
                 <div data-job-search="${key}" style="${rowStyle}">
                     <div style="${addrStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">
-                        <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.street}</div>
-                        <div style="font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</div>
+                        <span style="font-weight:700;">${a.street}</span>${sub ? `<span style="font-size:12px;opacity:.6;"> · ${sub}</span>` : ''}
                     </div>
                     <div style="flex:0 0 auto;display:flex;gap:6px;">
                         <div style="${icoStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">👁️</div>
@@ -7538,7 +7537,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12l"></script>
+    <script src="cloud-sync.js?v=2026-06-12m"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
