@@ -6245,7 +6245,7 @@
                 // there are defects logged here that are still outstanding.
                 const rowStyle = baseRow + (flagged ? 'border-left:4px solid var(--red,#DC143C);padding-left:8px;' : '');
                 const badge = flagged
-                    ? `<span title="${oc} outstanding defect${oc > 1 ? 's' : ''}" style="flex:0 0 auto;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 6px;border-radius:11px;background:var(--red,#DC143C);color:#fff;font-size:12px;font-weight:800;">${oc}</span>`
+                    ? `<span title="${oc} outstanding defect${oc > 1 ? 's' : ''}" style="flex:0 0 auto;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 6px;border-radius:11px;background:var(--red,#DC143C);color:#fff;font-size:12px;font-weight:400;">${oc}</span>`
                     : '';
                 return `
                 <div data-job-search="${key}" style="${rowStyle}">
@@ -7562,7 +7562,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-12u"></script>
+    <script src="cloud-sync.js?v=2026-06-12v"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
