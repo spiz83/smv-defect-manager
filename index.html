@@ -6327,6 +6327,16 @@
             const curTrade = editC && editC.tradeIds && editC.tradeIds.length ? editC.tradeIds[0] : '';
             const tradeOpts = db.getTrades(false).map(t => `<option value="${t.id}" ${t.id === curTrade ? 'selected' : ''}>${t.name}</option>`).join('');
             const esc = (s) => (s || '').replace(/"/g, '&quot;');
+            // Real phonebook picker only exists on Android Chrome; iOS Safari has
+            // no contacts API, so there we fall back to importing a contact file.
+            const hasPicker = ('contacts' in navigator) && navigator.contacts && typeof navigator.contacts.select === 'function';
+            const contactBtn = hasPicker
+                ? `<button type="button" onclick="pickPhoneContact()" style="flex:0 0 auto;border:1px solid var(--border-color,#ccc);border-radius:9px;padding:12px 14px;font-weight:600;font-size:14px;cursor:pointer;background:transparent;color:inherit;">📇 From contacts</button>`
+                : `<label style="flex:0 0 auto;border:1px solid var(--border-color,#ccc);border-radius:9px;padding:12px 14px;font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">📇 Contact file
+                       <input type="file" accept=".vcf,text/vcard,text/x-vcard" style="display:none" onchange="importVcardToContractor(event)">
+                   </label>`;
+            const contactHint = hasPicker ? ''
+                : `<div style="font-size:11.5px;color:var(--text-secondary,#999);margin-top:8px;line-height:1.4;">iPhone can’t open your contacts directly. To pull one in: Contacts → the person → <b>Share Contact</b> → <b>Save to Files</b>, then tap <b>Contact file</b> above. Or just type it in.</div>`;
             impOverlay(`
                 <div id="imp-head"><strong>👤 ${editC ? 'Edit' : 'Add'} contractor</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body" style="padding:16px;">
@@ -6346,11 +6356,26 @@
                     <input id="ac-trade-new" type="text" placeholder="…or type a new trade" style="${inp}">
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
                         <button onclick="saveNewContractor()" style="flex:1;min-width:140px;background:var(--blue,#2563eb);color:#fff;border:none;border-radius:9px;padding:12px;font-weight:700;font-size:15px;cursor:pointer;">Save</button>
-                        <label style="flex:0 0 auto;border:1px solid var(--border-color,#ccc);border-radius:9px;padding:12px 14px;font-weight:600;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">📇 From contact
-                            <input type="file" accept=".vcf,text/vcard,text/x-vcard" style="display:none" onchange="importVcardToContractor(event)">
-                        </label>
+                        ${contactBtn}
                     </div>
+                    ${contactHint}
                 </div>`);
+        }
+        // Android Chrome only: open the real phone contacts list and pull one in.
+        async function pickPhoneContact() {
+            try {
+                if (!('contacts' in navigator) || !navigator.contacts.select) {
+                    showToast('Your phone can’t open contacts here — use a contact file or type it'); return;
+                }
+                const sel = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: false });
+                if (!sel || !sel.length) return;
+                const c = sel[0];
+                const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+                set('ac-name', (c.name && c.name[0]) || '');
+                set('ac-phone', (c.tel && c.tel[0]) || '');
+                set('ac-email', (c.email && c.email[0]) || '');
+                showToast('Contact loaded — check the details and save');
+            } catch (e) { /* user cancelled / denied — no-op */ }
         }
         function importVcardToContractor(e) {
             const file = e.target.files && e.target.files[0];
@@ -7729,7 +7754,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-13b"></script>
+    <script src="cloud-sync.js?v=2026-06-13c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
