@@ -84,9 +84,13 @@
     const s = document.createElement('style');
     s.id = 'cs-styles';
     s.textContent = `
-      /* Login — matches the CH Tracker brand (shared theme vars + fonts). */
+      /* Login — pinned to the Blueprint theme so it always matches CH Tracker,
+         regardless of whatever in-app theme the user has chosen. */
       #cs-overlay{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;
-        background:var(--bg,#06090A);font-family:'Titillium Web',-apple-system,'Segoe UI',sans-serif;}
+        --acc:#1E4DA8;--acc2:#3D6FCC;--bg:#EFEBE2;--sur:#FFFFFF;--ele:#F5F1E8;--inp:#FFFFFF;
+        --brd:#A8A8A8;--brd2:#D6D6D6;--t1:#1A1A1A;--t2:#4A4A4A;--t3:#7A7A7A;
+        --green:#2D8030;--amber:#D87E2E;--red:#B81E2E;--accFg:#FFFFFF;--glow:rgba(30,77,168,.25);
+        background:var(--bg);font-family:'Titillium Web',-apple-system,'Segoe UI',sans-serif;}
       #cs-card{position:relative;width:min(92vw,360px);background:var(--sur,#10171A);
         border:1px solid var(--brd,#243137);border-radius:6px;padding:24px;overflow:hidden;
         box-shadow:0 16px 48px rgba(0,0,0,.55);}
