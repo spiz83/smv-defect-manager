@@ -84,23 +84,42 @@
     const s = document.createElement('style');
     s.id = 'cs-styles';
     s.textContent = `
-      #cs-overlay{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;
-        justify-content:center;background:linear-gradient(135deg,#1e293b,#0f172a);
-        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
-      #cs-card{background:#fff;border-radius:16px;padding:32px;width:min(92vw,380px);
-        box-shadow:0 20px 60px rgba(0,0,0,.4);}
-      #cs-card h1{margin:0 0 4px;font-size:22px;color:#0f172a;}
-      #cs-card p.sub{margin:0 0 20px;font-size:13px;color:#64748b;}
-      #cs-card input{width:100%;box-sizing:border-box;padding:12px 14px;margin:6px 0;
-        border:1px solid #cbd5e1;border-radius:10px;font-size:15px;}
-      #cs-card button.cs-primary{width:100%;padding:12px;margin-top:10px;border:0;
-        border-radius:10px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;
-        cursor:pointer;}
-      #cs-card button.cs-primary:disabled{opacity:.6;cursor:default;}
-      #cs-toggle{margin-top:14px;text-align:center;font-size:13px;color:#475569;}
-      #cs-toggle a{color:#2563eb;cursor:pointer;font-weight:600;}
-      #cs-msg{font-size:13px;margin-top:10px;min-height:18px;text-align:center;}
-      #cs-msg.err{color:#dc2626;} #cs-msg.ok{color:#059669;}
+      /* Login — matches the CH Tracker brand (shared theme vars + fonts). */
+      #cs-overlay{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;
+        background:var(--bg,#06090A);font-family:'Titillium Web',-apple-system,'Segoe UI',sans-serif;}
+      #cs-card{position:relative;width:min(92vw,360px);background:var(--sur,#10171A);
+        border:1px solid var(--brd,#243137);border-radius:6px;padding:24px;overflow:hidden;
+        box-shadow:0 16px 48px rgba(0,0,0,.55);}
+      #cs-card:before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+        background:linear-gradient(90deg, var(--acc,#2f6df6) 0%, var(--acc,#2f6df6) 20%, transparent 55%);opacity:.55;}
+      #cs-brand{display:flex;align-items:center;gap:10px;margin-bottom:20px;}
+      #cs-mark{width:30px;height:30px;border-radius:6px;flex:0 0 auto;
+        background:linear-gradient(135deg, var(--acc,#2f6df6), var(--acc2,#4f8bff));color:var(--accFg,#fff);
+        display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.04em;}
+      #cs-brand .lt{font-family:'Titillium Web',sans-serif;font-weight:900;font-style:italic;font-size:12px;
+        line-height:1;letter-spacing:.04em;text-transform:uppercase;color:var(--t1,#F0F5F6);}
+      #cs-brand .lb{font-family:'JetBrains Mono',monospace;font-size:8px;line-height:1.5;color:var(--t2,#9BB0B4);letter-spacing:.18em;}
+      #cs-pglbl{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--acc,#2f6df6);text-transform:uppercase;letter-spacing:.2em;margin-bottom:4px;}
+      #cs-welcome{font-family:'Titillium Web',sans-serif;font-weight:900;font-style:italic;font-size:24px;
+        letter-spacing:-.015em;line-height:1;text-transform:uppercase;color:var(--t1,#F0F5F6);margin-bottom:20px;}
+      #cs-card .cs-field-lbl{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;
+        letter-spacing:.15em;color:var(--t3,#5C7177);margin:0 0 5px;display:block;}
+      #cs-card input{width:100%;box-sizing:border-box;background:var(--inp,#0A1316);
+        border:1px solid var(--brd,#243137);border-radius:4px;padding:11px 12px;margin-bottom:13px;font-size:15px;
+        color:var(--t1,#F0F5F6);font-family:'Titillium Web',sans-serif;outline:none;transition:border-color .12s, box-shadow .12s;}
+      #cs-card input::placeholder{color:var(--t3,#5C7177);}
+      #cs-card input:focus{border-color:var(--acc,#2f6df6);box-shadow:0 0 0 2px var(--glow,rgba(47,109,246,.3));}
+      #cs-keep-wrap{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;
+        text-transform:uppercase;letter-spacing:.08em;color:var(--t2,#9BB0B4);margin:2px 1px;text-align:left;}
+      #cs-card button.cs-primary{width:100%;margin-top:16px;border:1px solid var(--acc,#2f6df6);border-radius:5px;
+        background:var(--acc,#2f6df6);color:var(--accFg,#fff);padding:13px;font-size:14px;font-weight:700;
+        font-family:'Titillium Web',sans-serif;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:background .12s;}
+      #cs-card button.cs-primary:hover{background:var(--acc2,#4f8bff);border-color:var(--acc2,#4f8bff);}
+      #cs-card button.cs-primary:disabled{opacity:.45;cursor:default;}
+      #cs-toggle{margin-top:18px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;color:var(--t3,#5C7177);}
+      #cs-toggle a{color:var(--acc,#2f6df6);cursor:pointer;font-weight:700;}
+      #cs-msg{font-size:12px;margin-top:11px;min-height:16px;text-align:center;font-family:'JetBrains Mono',monospace;}
+      #cs-msg.err{color:var(--red,#f87171);} #cs-msg.ok{color:var(--green,#34d399);}
       #cs-statusbar{position:fixed;top:0;left:0;right:0;z-index:9998;
         display:flex;align-items:center;gap:10px;justify-content:flex-end;
         padding:4px 12px;font:500 12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;
@@ -152,12 +171,21 @@
     ov.id = 'cs-overlay';
     ov.innerHTML = `
       <div id="cs-card">
-        <h1>DefFixer</h1>
-        <p class="sub">Sign in with your CH Tracker login — same email &amp; password.</p>
-        <input id="cs-email" type="text" placeholder="Email (your CH Tracker login)" autocapitalize="none" autocorrect="off" autocomplete="username"/>
-        <input id="cs-pass" type="password" placeholder="Password" autocomplete="current-password"/>
+        <div id="cs-brand">
+          <div id="cs-mark">CH</div>
+          <div>
+            <div class="lt">Creation Homes</div>
+            <div class="lb">DEFECT MANAGER</div>
+          </div>
+        </div>
+        <div id="cs-pglbl">sign in</div>
+        <div id="cs-welcome">Welcome back</div>
+        <span class="cs-field-lbl">Email</span>
+        <input id="cs-email" type="text" autocapitalize="none" autocorrect="off" autocomplete="username"/>
+        <span class="cs-field-lbl">Password</span>
+        <input id="cs-pass" type="password" autocomplete="current-password"/>
         <input id="cs-name" type="text" placeholder="Your name (for sign up)" style="display:none"/>
-        <label id="cs-keep-wrap" style="display:flex;align-items:center;gap:8px;font-size:13px;color:#475569;margin:4px 2px 2px;">
+        <label id="cs-keep-wrap">
           <input type="checkbox" id="cs-keep" checked style="width:auto"/> Keep me signed in
         </label>
         <button class="cs-primary" id="cs-go">Sign in</button>

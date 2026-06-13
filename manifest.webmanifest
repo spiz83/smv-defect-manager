@@ -1,6 +1,6 @@
 {
-  "name": "DefFixer — Defect Manager",
-  "short_name": "DefFixer",
+  "name": "Defect Manager",
+  "short_name": "Defect Manager",
   "description": "Construction defect management with central sync, photos and reporting.",
   "start_url": ".",
   "scope": ".",
