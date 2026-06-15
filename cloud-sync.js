@@ -632,18 +632,20 @@
       if (!(id in curMap)) deletes.push(id);
     }
 
-    // Inserts — capture returned uuids into the id map
+    // Inserts — UPSERT on legacy_id (unique). If the row's legacy_id already
+    // exists in the cloud (e.g. a re-push after the local id-map was lost on an
+    // offline reload), this UPDATES that row instead of creating a duplicate.
     if (inserts.length) {
       const rows = inserts.map(toRow);
-      const { data, error } = await sb.from(table).insert(rows).select('id, legacy_id');
+      const { data, error } = await sb.from(table).upsert(rows, { onConflict: 'legacy_id' }).select('id, legacy_id');
       if (error) throw error;
       data.forEach(r => { map[r.legacy_id] = r.id; });
     }
     // Updates — by uuid
     for (const item of updates) {
       const uuid = map[item.id];
-      if (!uuid) { // never inserted (shouldn't happen) — insert instead
-        const { data, error } = await sb.from(table).insert(toRow(item)).select('id, legacy_id').single();
+      if (!uuid) { // id-map lost the uuid — upsert by legacy_id (never duplicates)
+        const { data, error } = await sb.from(table).upsert(toRow(item), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
         if (error) throw error; map[data.legacy_id] = data.id; continue;
       }
       const { error } = await sb.from(table).update(toRow(item)).eq('id', uuid);
