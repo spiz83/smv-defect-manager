@@ -3762,13 +3762,20 @@
             input.type = 'file';
             input.accept = 'image/*';
             input.setAttribute('capture', 'environment');
-            input.onchange = () => {
+            input.onchange = async () => {
                 const f = input.files && input.files[0];
                 if (!f) return;
                 const row = btn.closest('.defect-input-row');
                 if (!row) return;
+                // Offer the markup/text editor on capture (same as the gallery).
+                let img = f;
+                if (window.CloudPhotos && window.CloudPhotos.editPhoto) {
+                    const edited = await window.CloudPhotos.editPhoto(f);
+                    if (edited === null) return;   // cancelled
+                    img = edited || f;
+                }
                 row._photos = row._photos || [];
-                row._photos.push(f);
+                row._photos.push(img);
                 btn.classList.add('has');
                 btn.innerHTML = '📷' + (row._photos.length > 1 ? `<span class="cnt">${row._photos.length}</span>` : '');
                 showToast('Photo attached — it saves with this defect');
@@ -7767,7 +7774,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-16c"></script>
+    <script src="cloud-sync.js?v=2026-06-16d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

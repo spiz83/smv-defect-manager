@@ -1107,6 +1107,10 @@
   window.CloudPhotos = {
     count: (legacyId) => photoCounts[legacyId] || 0,
     openGallery: (legacyId) => openGallery(legacyId),
+    // Open the draw/text editor on a captured photo; resolves to the edited Blob,
+    // the original File ("use as-is"), or null (cancelled). Used by defect-entry
+    // row photos so markup works on every screen, not just the gallery.
+    editPhoto: (file) => openPhotoEditor(file),
     getForPdf: (legacyId) => photoDataUrlsForDefect(legacyId),
     // Signed URLs (valid 7 days) for emailing photo links to a supplier
     getLinks: async (legacyId) => {
@@ -1142,7 +1146,9 @@
     // the insert to populate idMap.defects[legacyId]; loop a few times so a
     // transient push error (which runSync retries) still resolves.
     uploadWhenReady: async (legacyId, file) => {
-      for (let i = 0; i < 8 && !idMap.defects[legacyId]; i++) {
+      // Wait (up to ~15s) for the just-saved defect to reach the cloud so its
+      // uuid exists, flushing the pending push each loop to hurry it along.
+      for (let i = 0; i < 30 && !idMap.defects[legacyId]; i++) {
         await flushPending();
         if (idMap.defects[legacyId]) break;
         await new Promise(r => setTimeout(r, 500));
