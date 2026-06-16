@@ -820,13 +820,16 @@
   async function uploadDefectPhoto(legacyId, file) {
     const uuid = idMap.defects[legacyId];
     if (!uuid) { showToastSafe('Save the defect before adding photos'); return; }
+    // First path folder is the job uuid when we can resolve it (keeps photos
+    // grouped per job), otherwise the defect uuid — we no longer BLOCK on a
+    // missing job mapping (the bucket RLS no longer requires it).
     const jobUuid = jobUuidForDefect(legacyId);
-    if (!jobUuid) { showToastSafe('This defect has no linked job — cannot store photo'); return; }
+    const folder1 = jobUuid || uuid;
     showToastSafe('Compressing photo…');
     let blob;
     try { blob = await compressImage(file); } catch (e) { showToastSafe('Could not read that image'); return; }
     if (!blob) { showToastSafe('Could not process that image'); return; }
-    const path = `${jobUuid}/${uuid}/${randName()}`;
+    const path = `${folder1}/${uuid}/${randName()}`;
     const up = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
     if (up.error) {
       console.error('[CloudSync] upload', up.error);
@@ -854,9 +857,9 @@
   // Remove every photo for a defect (used on complete / delete).
   async function deleteAllPhotosForDefect(legacyId) {
     const uuid = idMap.defects[legacyId];
-    const jobUuid = jobUuidForDefect(legacyId);
-    if (uuid && jobUuid) {
-      const prefix = `${jobUuid}/${uuid}`;
+    if (uuid) {
+      const folder1 = jobUuidForDefect(legacyId) || uuid;
+      const prefix = `${folder1}/${uuid}`;
       const { data: list } = await sb.storage.from(PHOTO_BUCKET).list(prefix);
       if (list && list.length) {
         await sb.storage.from(PHOTO_BUCKET).remove(list.map(f => `${prefix}/${f.name}`));
