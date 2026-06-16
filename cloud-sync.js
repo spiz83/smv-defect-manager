@@ -826,7 +826,8 @@
         const ctx = canvas.getContext('2d');
         const lw = Math.max(4, Math.round(w / 170));
         const fsz = Math.max(20, Math.round(w / 20));
-        let color = '#e11d2a', tool = 'pen';
+        let color = '#e11d2a';
+        let textY = Math.round(fsz * 0.6);   // stacking position for added text
         const anns = [];
         function redraw() {
           ctx.drawImage(img, 0, 0, w, h);
@@ -847,30 +848,37 @@
         const ov = document.createElement('div');
         ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#111;display:flex;flex-direction:column;';
         ov.innerHTML =
-          '<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:#1b1b1b;flex-wrap:wrap;">' +
-            '<button data-act="cancel" style="' + bs('#333') + '">✕</button>' +
-            '<button data-tool="pen" style="' + bs('#2563eb') + '">✏️ Draw</button>' +
-            '<button data-tool="text" style="' + bs('#2a2a2a') + '">🅣 Text</button>' +
-            '<button data-act="undo" style="' + bs('#2a2a2a') + '">↶</button>' +
-            '<span style="flex:1"></span>' +
-            cols.map((c) => '<button data-color="' + c + '" style="width:26px;height:26px;border-radius:50%;border:2px solid ' + (c === color ? '#fff' : '#555') + ';background:' + c + ';cursor:pointer;"></button>').join('') +
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;background:#1b1b1b;">' +
+            '<button data-act="cancel" style="' + bs('#333') + '">✕ Cancel</button>' +
+            '<button data-act="text" style="' + bs('#2563eb') + 'font-weight:700;">🅣 Add text</button>' +
+            '<button data-act="undo" style="' + bs('#333') + '">↶ Undo</button>' +
           '</div>' +
-          '<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:6px;"><div id="cs-edit-wrap" style="display:flex;max-width:100%;max-height:100%;"></div></div>' +
+          '<div style="display:flex;align-items:center;gap:7px;padding:4px 14px 9px;background:#1b1b1b;">' +
+            cols.map((c) => '<button data-color="' + c + '" aria-label="colour" style="flex:1;height:36px;border-radius:9px;border:3px solid ' + (c === color ? '#fff' : 'transparent') + ';background:' + c + ';cursor:pointer;box-shadow:0 0 0 1px #555;"></button>').join('') +
+          '</div>' +
+          '<div style="text-align:center;font-size:11px;color:#aaa;padding:0 0 6px;background:#1b1b1b;">Draw on the photo with your finger · pick a colour above · tap “Add text” for notes</div>' +
+          '<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:6px;background:#111;"><div id="cs-edit-wrap" style="display:flex;max-width:100%;max-height:100%;"></div></div>' +
           '<div style="display:flex;gap:10px;padding:10px 12px;background:#1b1b1b;">' +
-            '<button data-act="asis" style="' + bs('#333') + 'flex:1;">Use as-is</button>' +
-            '<button data-act="save" style="' + bs('#2563eb') + 'flex:2;font-weight:700;">Save ✓</button>' +
+            '<button data-act="asis" style="' + bs('#444') + 'flex:1;">Use as-is</button>' +
+            '<button data-act="save" style="' + bs('#16a34a') + 'flex:2;font-weight:700;">Save ✓</button>' +
           '</div>';
         document.body.appendChild(ov);
         ov.querySelector('#cs-edit-wrap').appendChild(canvas);
         const done = (r) => { ov.remove(); URL.revokeObjectURL(url); resolve(r); };
-        ov.querySelectorAll('[data-tool]').forEach((b) => b.onclick = () => {
-          tool = b.getAttribute('data-tool');
-          ov.querySelectorAll('[data-tool]').forEach((x) => x.style.background = x.getAttribute('data-tool') === tool ? '#2563eb' : '#2a2a2a');
-        });
         ov.querySelectorAll('[data-color]').forEach((b) => b.onclick = () => {
           color = b.getAttribute('data-color');
-          ov.querySelectorAll('[data-color]').forEach((x) => x.style.borderColor = x.getAttribute('data-color') === color ? '#fff' : '#555');
+          ov.querySelectorAll('[data-color]').forEach((x) => x.style.borderColor = x.getAttribute('data-color') === color ? '#fff' : 'transparent');
         });
+        ov.querySelector('[data-act="text"]').onclick = () => {
+          const t = window.prompt('Type the note to add to the photo:');
+          if (t && t.trim()) {
+            const margin = Math.round(canvas.width * 0.04);
+            anns.push({ type: 'text', x: margin, y: textY, color, text: t.trim(), size: fsz });
+            textY += Math.round(fsz * 1.3);
+            if (textY > canvas.height - fsz) textY = Math.round(fsz * 0.6);
+            redraw();
+          }
+        };
         ov.querySelector('[data-act="undo"]').onclick = () => { anns.pop(); redraw(); };
         ov.querySelector('[data-act="cancel"]').onclick = () => done(null);
         ov.querySelector('[data-act="asis"]').onclick = () => done(file);
@@ -880,11 +888,6 @@
         canvas.addEventListener('pointerdown', (ev) => {
           ev.preventDefault();
           const p = ptOf(ev);
-          if (tool === 'text') {
-            const t = window.prompt('Add text:');
-            if (t && t.trim()) { anns.push({ type: 'text', x: p.x, y: p.y, color, text: t.trim(), size: fsz }); redraw(); }
-            return;
-          }
           cur = { type: 'stroke', color, w: lw, pts: [p] }; anns.push(cur);
           try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
         });
