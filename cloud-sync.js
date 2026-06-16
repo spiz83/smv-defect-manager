@@ -513,18 +513,15 @@
   // Load the per-defect photo counts so the camera badge shows a number.
   async function refreshPhotoCounts() {
     try {
+      // Pull the defect's legacy id STRAIGHT from the DB via the FK join, so the
+      // badge count never depends on the (sometimes-stale) local uuid<->legacy
+      // map. This is what makes photos reliably show in every view.
       const { data, error } = await sb.from('dm_defect_photos')
-        .select('defect_id');
+        .select('defect:dm_defects!inner(legacy_id)');
       if (error) throw error;
-      // uuid -> legacy id. defectUuidToLegacy is only built during a full pull
-      // and isn't persisted, so fall back to the INVERSE of idMap.defects (which
-      // IS persisted/restored) — otherwise a just-added defect's photo resolves
-      // to nothing here and the badge is wiped to 0 right after upload.
-      const uuidToLeg = {};
-      for (const lid in idMap.defects) uuidToLeg[idMap.defects[lid]] = lid;
       const counts = {};
       (data || []).forEach(p => {
-        const lid = defectUuidToLegacy[p.defect_id] != null ? defectUuidToLegacy[p.defect_id] : uuidToLeg[p.defect_id];
+        const lid = p.defect && p.defect.legacy_id;
         if (lid != null) counts[lid] = (counts[lid] || 0) + 1;
       });
       photoCounts = counts;
@@ -642,22 +639,19 @@
       data.forEach(r => { map[r.legacy_id] = r.id; });
     }
     // Updates — by uuid
+    // Updates — UPSERT on the UNIQUE legacy_id, never by the local uuid. If the
+    // phone's uuid map has drifted, a status change / edit still lands on the
+    // correct cloud row (and refreshes the uuid), so completions/edits stop
+    // "reverting" on the next pull.
     for (const item of updates) {
-      const uuid = map[item.id];
-      if (!uuid) { // id-map lost the uuid — upsert by legacy_id (never duplicates)
-        const { data, error } = await sb.from(table).upsert(toRow(item), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
-        if (error) throw error; map[data.legacy_id] = data.id; continue;
-      }
-      const { error } = await sb.from(table).update(toRow(item)).eq('id', uuid);
+      const { data, error } = await sb.from(table).upsert(toRow(item), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
       if (error) throw error;
+      if (data) map[data.legacy_id] = data.id;
     }
-    // Deletes — by uuid, then drop from map
+    // Deletes — by legacy_id (robust against a stale uuid), then drop from map.
     for (const legacyId of deletes) {
-      const uuid = map[legacyId];
-      if (uuid) {
-        const { error } = await sb.from(table).delete().eq('id', uuid);
-        if (error) throw error;
-      }
+      const { error } = await sb.from(table).delete().eq('legacy_id', legacyId);
+      if (error) throw error;
       delete map[legacyId];
     }
   }
@@ -970,12 +964,14 @@
     delete photoCounts[legacyId];
   }
 
-  // After each sync: drop photos for defects that are now completed or deleted.
+  // After each sync: drop photos for defects that are now COMPLETED. Only acts on
+  // defects we can positively see as completed in the local data — it must NEVER
+  // delete just because a defect is "missing locally" (the local copy can be
+  // incomplete/stale, which previously wiped live photos + their badges).
   async function reconcilePhotos() {
     for (const lid of Object.keys(photoCounts)) {
       const d = (db.data.defects || []).find(x => String(x.id) === String(lid));
-      const completed = d && (d.status === 'completed' || d.completed);
-      if (!d || completed) {
+      if (d && (d.status === 'completed' || d.completed)) {
         try { await deleteAllPhotosForDefect(lid); } catch (e) { console.warn('reconcilePhotos', e); }
       }
     }
@@ -1040,8 +1036,8 @@
     const body = document.getElementById('cs-gallery-body');
     if (!body) return;
     const { data: rows, error } = await sb.from('dm_defect_photos')
-      .select('id, storage_path, created_at, expires_at')
-      .eq('defect_id', uuid).order('created_at', { ascending: false });
+      .select('id, storage_path, created_at, expires_at, dm_defects!inner(legacy_id)')
+      .eq('dm_defects.legacy_id', legacyId).order('created_at', { ascending: false });
     if (error) { body.innerHTML = '<div style="padding:20px;color:#b00">Could not load photos.</div>'; return; }
     photoCounts[legacyId] = (rows || []).length;
     if (!rows || !rows.length) {
