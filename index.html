@@ -3799,7 +3799,8 @@
             const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" data-val="${String(val).replace(/"/g, '&quot;')}">${label}</button>`;
             const items = opt('', '— None —') + DEFECT_LOCATIONS.map(l => opt(l, l)).join('');
             impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body"><div class="loc-grid">${items}</div></div>`);
+                <div id="imp-body">${LOC_SEARCH_INPUT}<div class="loc-grid">${items}</div></div>`);
+            focusLocSearch();
             document.querySelectorAll('#imp-ov .loc-opt').forEach(b => {
                 b.onclick = () => {
                     const val = b.getAttribute('data-val') || '';
@@ -4294,8 +4295,20 @@
             const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" onclick="pickLocation(${defectId}, '${String(val).replace(/'/g, "\\'")}')">${label}</button>`;
             const items = opt('', '— None —') + DEFECT_LOCATIONS.map(l => opt(l, l)).join('');
             impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body"><div class="loc-grid">${items}</div></div>`);
+                <div id="imp-body">${LOC_SEARCH_INPUT}<div class="loc-grid">${items}</div></div>`);
+            focusLocSearch();
         }
+        // Live filter for the location picker grid (type to narrow, no scrolling).
+        const LOC_SEARCH_INPUT = '<input id="loc-search" type="text" placeholder="🔍 Search location…" oninput="filterLocOpts(this.value)" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px 12px;margin-bottom:10px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;">';
+        function filterLocOpts(q) {
+            q = (q || '').trim().toLowerCase();
+            document.querySelectorAll('#imp-ov .loc-opt').forEach(b => {
+                const t = (b.textContent || '').toLowerCase();
+                const isNone = t.indexOf('none') !== -1;
+                b.style.display = (!q ? true : (!isNone && t.indexOf(q) !== -1)) ? '' : 'none';
+            });
+        }
+        function focusLocSearch() { const el = document.getElementById('loc-search'); if (el) setTimeout(() => el.focus(), 50); }
         function pickLocation(defectId, loc) {
             db.setDefectLocation(defectId, loc);
             impClose(); render();
@@ -7754,7 +7767,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-16b"></script>
+    <script src="cloud-sync.js?v=2026-06-16c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

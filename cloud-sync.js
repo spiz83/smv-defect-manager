@@ -806,6 +806,102 @@
     return blob;
   }
 
+  // In-app photo editor — opens after a photo is captured/picked so the user can
+  // MARK IT UP (draw arrows/circles) and ADD TEXT before it's saved. Resolves to
+  // the flattened image (Blob) on Save, the original File on "Use as-is", or null
+  // if cancelled.
+  function openPhotoEditor(file) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.onload = () => {
+        const MAXD = 1600;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        const s = Math.min(1, MAXD / Math.max(w, h));
+        w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.style.cssText = 'max-width:100%;max-height:100%;display:block;touch-action:none;border-radius:6px;';
+        const ctx = canvas.getContext('2d');
+        const lw = Math.max(4, Math.round(w / 170));
+        const fsz = Math.max(20, Math.round(w / 20));
+        let color = '#e11d2a', tool = 'pen';
+        const anns = [];
+        function redraw() {
+          ctx.drawImage(img, 0, 0, w, h);
+          for (const a of anns) {
+            if (a.type === 'stroke') {
+              ctx.strokeStyle = a.color; ctx.lineWidth = a.w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+              ctx.beginPath(); a.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+            } else {
+              ctx.font = 'bold ' + a.size + 'px -apple-system, Arial, sans-serif'; ctx.textBaseline = 'top';
+              ctx.lineWidth = Math.max(3, a.size / 7); ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineJoin = 'round';
+              ctx.strokeText(a.text, a.x, a.y); ctx.fillStyle = a.color; ctx.fillText(a.text, a.x, a.y);
+            }
+          }
+        }
+        redraw();
+        const bs = (bg) => 'border:none;border-radius:8px;padding:9px 12px;font-size:14px;cursor:pointer;color:#fff;background:' + bg + ';';
+        const cols = ['#e11d2a', '#f5c518', '#2563eb', '#16a34a', '#ffffff', '#111111'];
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#111;display:flex;flex-direction:column;';
+        ov.innerHTML =
+          '<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:#1b1b1b;flex-wrap:wrap;">' +
+            '<button data-act="cancel" style="' + bs('#333') + '">✕</button>' +
+            '<button data-tool="pen" style="' + bs('#2563eb') + '">✏️ Draw</button>' +
+            '<button data-tool="text" style="' + bs('#2a2a2a') + '">🅣 Text</button>' +
+            '<button data-act="undo" style="' + bs('#2a2a2a') + '">↶</button>' +
+            '<span style="flex:1"></span>' +
+            cols.map((c) => '<button data-color="' + c + '" style="width:26px;height:26px;border-radius:50%;border:2px solid ' + (c === color ? '#fff' : '#555') + ';background:' + c + ';cursor:pointer;"></button>').join('') +
+          '</div>' +
+          '<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:6px;"><div id="cs-edit-wrap" style="display:flex;max-width:100%;max-height:100%;"></div></div>' +
+          '<div style="display:flex;gap:10px;padding:10px 12px;background:#1b1b1b;">' +
+            '<button data-act="asis" style="' + bs('#333') + 'flex:1;">Use as-is</button>' +
+            '<button data-act="save" style="' + bs('#2563eb') + 'flex:2;font-weight:700;">Save ✓</button>' +
+          '</div>';
+        document.body.appendChild(ov);
+        ov.querySelector('#cs-edit-wrap').appendChild(canvas);
+        const done = (r) => { ov.remove(); URL.revokeObjectURL(url); resolve(r); };
+        ov.querySelectorAll('[data-tool]').forEach((b) => b.onclick = () => {
+          tool = b.getAttribute('data-tool');
+          ov.querySelectorAll('[data-tool]').forEach((x) => x.style.background = x.getAttribute('data-tool') === tool ? '#2563eb' : '#2a2a2a');
+        });
+        ov.querySelectorAll('[data-color]').forEach((b) => b.onclick = () => {
+          color = b.getAttribute('data-color');
+          ov.querySelectorAll('[data-color]').forEach((x) => x.style.borderColor = x.getAttribute('data-color') === color ? '#fff' : '#555');
+        });
+        ov.querySelector('[data-act="undo"]').onclick = () => { anns.pop(); redraw(); };
+        ov.querySelector('[data-act="cancel"]').onclick = () => done(null);
+        ov.querySelector('[data-act="asis"]').onclick = () => done(file);
+        ov.querySelector('[data-act="save"]').onclick = () => canvas.toBlob((b) => done(b || file), 'image/jpeg', 0.92);
+        const ptOf = (ev) => { const r = canvas.getBoundingClientRect(); return { x: (ev.clientX - r.left) * (canvas.width / r.width), y: (ev.clientY - r.top) * (canvas.height / r.height) }; };
+        let cur = null;
+        canvas.addEventListener('pointerdown', (ev) => {
+          ev.preventDefault();
+          const p = ptOf(ev);
+          if (tool === 'text') {
+            const t = window.prompt('Add text:');
+            if (t && t.trim()) { anns.push({ type: 'text', x: p.x, y: p.y, color, text: t.trim(), size: fsz }); redraw(); }
+            return;
+          }
+          cur = { type: 'stroke', color, w: lw, pts: [p] }; anns.push(cur);
+          try { canvas.setPointerCapture(ev.pointerId); } catch (e) {}
+        });
+        canvas.addEventListener('pointermove', (ev) => {
+          if (!cur) return;
+          const p = ptOf(ev), prev = cur.pts[cur.pts.length - 1]; cur.pts.push(p);
+          ctx.strokeStyle = cur.color; ctx.lineWidth = cur.w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+        });
+        const endStroke = () => { cur = null; };
+        canvas.addEventListener('pointerup', endStroke);
+        canvas.addEventListener('pointercancel', endStroke);
+      };
+      img.src = url;
+    });
+  }
+
   function randName() {
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) + '.jpg';
   }
@@ -924,7 +1020,12 @@
     ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
     document.getElementById('cs-photo-input').onchange = async (e) => {
       const file = e.target.files && e.target.files[0];
-      if (file) { await uploadDefectPhoto(legacyId, file); await renderGalleryBody(legacyId); }
+      e.target.value = '';   // allow re-picking the same file
+      if (!file) return;
+      const edited = await openPhotoEditor(file);   // mark up / add text, or cancel
+      if (!edited) return;
+      await uploadDefectPhoto(legacyId, edited);
+      await renderGalleryBody(legacyId);
     };
     await renderGalleryBody(legacyId);
   }
