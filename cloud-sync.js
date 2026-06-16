@@ -846,7 +846,9 @@
         const bs = (bg) => 'border:none;border-radius:8px;padding:9px 12px;font-size:14px;cursor:pointer;color:#fff;background:' + bg + ';';
         const cols = ['#e11d2a', '#f5c518', '#2563eb', '#16a34a', '#ffffff', '#111111'];
         const ov = document.createElement('div');
-        ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#111;display:flex;flex-direction:column;';
+        // Pad past the iPhone status bar / Dynamic Island (top) and home indicator
+        // (bottom) so the top toolbar row is actually tappable.
+        ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#111;display:flex;flex-direction:column;box-sizing:border-box;padding-top:env(safe-area-inset-top,28px);padding-bottom:env(safe-area-inset-bottom,0px);';
         ov.innerHTML =
           '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;background:#1b1b1b;">' +
             '<button data-act="cancel" style="' + bs('#333') + '">✕ Cancel</button>' +
@@ -1231,7 +1233,7 @@
   // Let the app force an immediate push (don't wait out the 400ms debounce) for
   // important actions like completing a defect — so the write reaches the cloud
   // before the user can background or close the app.
-  window.CloudSync = { flush: () => flushPending() };
+  window.CloudSync = { flush: () => flushPending(), pull: () => pullAll() };
 
   // ===========================================================================
   //  Lifecycle + connection listeners (attached once)

@@ -4651,7 +4651,8 @@
             showToast('📧 Opening email client...');
         }
 
-        function refreshDefects() {
+        async function refreshDefects() {
+            try { if (window.CloudSync && window.CloudSync.pull) await window.CloudSync.pull(); } catch (e) {}
             render();
             showToast('Defects refreshed');
         }
@@ -7739,8 +7740,17 @@
             b.innerHTML = '↻';
             b.title = 'Refresh — load the latest version';
             b.setAttribute('aria-label', 'Refresh app');
-            b.onclick = function () {
+            b.onclick = async function () {
                 b.disabled = true; b.style.opacity = '0.5';
+                // Push anything pending, then clear the local sync baseline so the
+                // reload does a CLEAN pull from the cloud — fixes a phone that's
+                // drifted out of sync (stale photo badges, deletes reappearing).
+                try { if (window.CloudSync && window.CloudSync.flush) await window.CloudSync.flush(); } catch (e) {}
+                try {
+                    localStorage.setItem('cs_dirty', '0');
+                    localStorage.removeItem('cs_snapshot');
+                    localStorage.removeItem('cs_idmap');
+                } catch (e) {}
                 const u = new URL(window.location.href);
                 u.searchParams.set('_r', Date.now().toString());
                 window.location.replace(u.toString());
@@ -7774,7 +7784,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-16e"></script>
+    <script src="cloud-sync.js?v=2026-06-16f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
