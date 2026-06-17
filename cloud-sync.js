@@ -326,6 +326,28 @@
     } catch (e) { /* corrupt/absent — start clean */ }
   }
 
+  // One-time self-heal (2026-06-17). Older builds could advance this device's
+  // local sync baseline WITHOUT the cloud write actually landing, because the
+  // old dm_defects RLS silently rejected updates on unassigned jobs. That stale
+  // baseline then MASKS edits forever: a "completed" defect looks unchanged vs
+  // the baseline, so it never re-pushes, and the next pull reverts it. Photos on
+  // freshly-added defects drop for the same reason (the defect's cloud id never
+  // settles). Fix: once per device, throw away the baseline and force a full
+  // re-push — every local row upserts to the now-writable DB by legacy_id, so
+  // whatever this phone shows becomes the truth, then normal sync resumes.
+  function healStaleBaseline() {
+    const HEAL = 'snap-2026-06-17';
+    try {
+      if (localStorage.getItem('cs_heal') === HEAL) return;
+      snapshot = emptySnap();                 // empty baseline => everything re-pushes
+      localStorage.removeItem('cs_snapshot');
+      dirty = true;                           // make the first pull push it all up first
+      localStorage.setItem('cs_dirty', '1');
+      localStorage.setItem('cs_heal', HEAL);
+      console.info('[CloudSync] one-time baseline heal armed — forcing a full re-push.');
+    } catch (e) { /* storage blocked — skip heal, normal path still runs */ }
+  }
+
   // ===========================================================================
   //  2. Role resolution (CH Tracker: profiles.role drives what you can see)
   // ===========================================================================
@@ -952,13 +974,19 @@
     const up = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
     if (up.error) {
       console.error('[CloudSync] upload', up.error);
+      setBanner('⚠️ Photo upload failed: ' + (up.error.message || 'storage error'), 'offline', 7000);
       showToastSafe('Upload failed: ' + (up.error.message || 'storage error'));
       return;
     }
     const ins = await sb.from('dm_defect_photos').insert({
       defect_id: uuid, storage_path: path, bytes: blob.size
     });
-    if (ins.error) { console.error(ins.error); showToastSafe('Saved file but record failed'); return; }
+    if (ins.error) {
+      console.error(ins.error);
+      setBanner('⚠️ Photo saved to storage but the record failed: ' + (ins.error.message || ''), 'offline', 7000);
+      showToastSafe('Saved file but record failed');
+      return;
+    }
     photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;   // optimistic badge
     showToastSafe('Photo added (' + Math.round(blob.size / 1024) + ' KB)');
     if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
@@ -1182,12 +1210,20 @@
     uploadWhenReady: async (legacyId, file) => {
       // Wait (up to ~15s) for the just-saved defect to reach the cloud so its
       // uuid exists, flushing the pending push each loop to hurry it along.
-      for (let i = 0; i < 30 && !idMap.defects[legacyId]; i++) {
+      for (let i = 0; i < 60 && !idMap.defects[legacyId]; i++) {
         await flushPending();
         if (idMap.defects[legacyId]) break;
+        // A pull rebuilds the id map from the cloud — try one if the push alone
+        // hasn't surfaced the new defect's id yet (e.g. it was created earlier
+        // and only its photo is outstanding now).
+        if (i === 4 || i === 20) { try { await pullAll(); } catch (e) {} }
         await new Promise(r => setTimeout(r, 500));
       }
-      if (!idMap.defects[legacyId]) { showToastSafe('Could not attach a photo (not synced yet)'); return; }
+      if (!idMap.defects[legacyId]) {
+        setBanner('⚠️ Photo not attached — the defect hasn’t finished syncing. Reopen the defect and add the photo again.', 'offline', 8000);
+        showToastSafe('Could not attach a photo (not synced yet)');
+        return;
+      }
       await uploadDefectPhoto(legacyId, file);
     }
   };
@@ -1319,6 +1355,7 @@
       // un-uploaded offline edits, this re-arms `dirty` + the diff baseline so
       // the upcoming pull pushes them out instead of overwriting them.
       restoreSyncState();
+      healStaleBaseline();          // one-time: clear a poisoned sync baseline
       if (!navigator.onLine) {
         setBanner('📴 Working offline — your changes are saved on this phone and will upload automatically when you reconnect.', 'offline');
       }
