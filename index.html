@@ -5956,6 +5956,16 @@
             if (state.currentView === 'home') {
                 // No need for multi-select rendering in new design
             }
+
+            // Any screen that lists defects shows the 📷 badge; refresh the per-
+            // defect photo counts (debounced) so the number is consistent on every
+            // view, not just the one that happened to be open after the last pull.
+            const showsDefects = ['view-defects-address','view-defects-contractor',
+                'view-defects-trade','view-multiple-contractors','view-all-defects'];
+            if (showsDefects.includes(state.currentView) &&
+                window.CloudPhotos && window.CloudPhotos.refreshCounts) {
+                window.CloudPhotos.refreshCounts();
+            }
         }
 
         function reloadContractorTrades() {
@@ -7784,7 +7794,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-16g"></script>
+    <script src="cloud-sync.js?v=2026-06-17a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

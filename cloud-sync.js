@@ -62,6 +62,7 @@
   // Photos (#4)
   const PHOTO_BUCKET = 'defect-photos';
   let photoCounts = {};               // legacyDefectId -> number of photos
+  let refreshCountsTimer = null;      // debounce for CloudPhotos.refreshCounts()
   const defectUuidToLegacy = {};      // cloud uuid -> legacy defect id
 
   // Framework call-up (BPI import): address legacy id -> the job's Order Profile
@@ -524,8 +525,11 @@
         const lid = p.defect && p.defect.legacy_id;
         if (lid != null) counts[lid] = (counts[lid] || 0) + 1;
       });
+      // Only re-render when the numbers actually changed — render() re-triggers
+      // refreshCounts(), so re-rendering unconditionally would loop forever.
+      const changed = JSON.stringify(counts) !== JSON.stringify(photoCounts);
       photoCounts = counts;
-      if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
+      if (changed && typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     } catch (e) { console.warn('[CloudSync] photo counts', e); }
   }
 
@@ -629,30 +633,50 @@
       if (!(id in curMap)) deletes.push(id);
     }
 
+    // A permanent (non-network) error on ONE row must not abort the whole push:
+    // that used to leave `dirty` stuck true forever, which froze ALL syncing on
+    // the device (later edits silently lost, completions "reverting" on resync).
+    // So: rethrow only TRANSIENT errors (network/offline) to keep the offline
+    // retry; on a PERMANENT error (RLS/constraint — has a Postgres code) skip
+    // that one row so the rest of the batch still lands.
+    const isTransient = (e) => {
+      if (!e) return false;
+      if (e.code) return false;                       // PostgREST/Postgres = permanent
+      return /fetch|network|load failed|timeout|connection|Failed to/i.test(String(e.message || e));
+    };
+    const note = (e, what) => {
+      if (isTransient(e)) throw e;                     // offline → let runSync retry
+      console.warn('[CloudSync] skipping un-pushable ' + table + ' ' + what, e);
+    };
+
     // Inserts — UPSERT on legacy_id (unique). If the row's legacy_id already
     // exists in the cloud (e.g. a re-push after the local id-map was lost on an
     // offline reload), this UPDATES that row instead of creating a duplicate.
-    if (inserts.length) {
-      const rows = inserts.map(toRow);
-      const { data, error } = await sb.from(table).upsert(rows, { onConflict: 'legacy_id' }).select('id, legacy_id');
-      if (error) throw error;
-      data.forEach(r => { map[r.legacy_id] = r.id; });
+    for (const item of inserts) {
+      try {
+        const { data, error } = await sb.from(table).upsert(toRow(item), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
+        if (error) throw error;
+        if (data) map[data.legacy_id] = data.id;
+      } catch (e) { note(e, 'insert#' + item.id); }
     }
-    // Updates — by uuid
     // Updates — UPSERT on the UNIQUE legacy_id, never by the local uuid. If the
     // phone's uuid map has drifted, a status change / edit still lands on the
     // correct cloud row (and refreshes the uuid), so completions/edits stop
     // "reverting" on the next pull.
     for (const item of updates) {
-      const { data, error } = await sb.from(table).upsert(toRow(item), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
-      if (error) throw error;
-      if (data) map[data.legacy_id] = data.id;
+      try {
+        const { data, error } = await sb.from(table).upsert(toRow(item), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
+        if (error) throw error;
+        if (data) map[data.legacy_id] = data.id;
+      } catch (e) { note(e, 'update#' + item.id); }
     }
     // Deletes — by legacy_id (robust against a stale uuid), then drop from map.
     for (const legacyId of deletes) {
-      const { error } = await sb.from(table).delete().eq('legacy_id', legacyId);
-      if (error) throw error;
-      delete map[legacyId];
+      try {
+        const { error } = await sb.from(table).delete().eq('legacy_id', legacyId);
+        if (error) throw error;
+        delete map[legacyId];
+      } catch (e) { note(e, 'delete#' + legacyId); }
     }
   }
 
@@ -995,8 +1019,10 @@
 
   // ----- Gallery modal -----
   async function openGallery(legacyId) {
-    const uuid = idMap.defects[legacyId];
-    if (!uuid) { showToastSafe('Save the defect first'); return; }
+    // Open + show photos by the defect's LEGACY id (renderGalleryBody queries via
+    // the FK join), so VIEWING works on every screen even if this device's local
+    // uuid map is briefly stale. Only ADDING a photo needs the cloud uuid, which
+    // uploadDefectPhoto resolves/guards on its own.
     injectStyles();
 
     let ov = document.getElementById('cs-gallery');
@@ -1025,7 +1051,11 @@
       if (!file) return;
       const edited = await openPhotoEditor(file);   // mark up / add text, or cancel
       if (!edited) return;
-      await uploadDefectPhoto(legacyId, edited);
+      // uploadWhenReady flushes a pending insert + waits for the cloud uuid, so a
+      // photo added right after creating the defect (or with a momentarily stale
+      // id map) still lands instead of silently failing.
+      if (idMap.defects[legacyId]) await uploadDefectPhoto(legacyId, edited);
+      else await window.CloudPhotos.uploadWhenReady(legacyId, edited);
       await renderGalleryBody(legacyId);
     };
     await renderGalleryBody(legacyId);
@@ -1107,6 +1137,9 @@
   // Public API used by the per-defect camera button in index.html
   window.CloudPhotos = {
     count: (legacyId) => photoCounts[legacyId] || 0,
+    // Re-pull the per-defect photo counts from the DB (badge numbers). Safe to
+    // call on view navigation; debounced so rapid renders don't spam queries.
+    refreshCounts: () => { clearTimeout(refreshCountsTimer); refreshCountsTimer = setTimeout(refreshPhotoCounts, 150); },
     openGallery: (legacyId) => openGallery(legacyId),
     // Open the draw/text editor on a captured photo; resolves to the edited Blob,
     // the original File ("use as-is"), or null (cancelled). Used by defect-entry
