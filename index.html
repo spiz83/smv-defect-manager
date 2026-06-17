@@ -1307,6 +1307,28 @@
         body.design-f1 #cs-statusbar { background: var(--sur) !important; border-bottom: 1px solid var(--brd); }
         body.design-f1 .defects-header { background: linear-gradient(180deg, rgba(0,161,154,.06), var(--sur)) !important; border-bottom: 1px solid var(--brd) !important; }
 
+        /* ---- Unified hero header: give the View + Add-defect screens the same
+                gradient banner + white bold title as Home (Spiro 2026-06-17).
+                The title font is already shared (Titillium 900 italic); this
+                carries the home BANNER across every screen. Back link goes white
+                so it stays readable on the gradient. ---- */
+        body.design-f1 .app-header:not(.home-hero) {
+            background: linear-gradient(135deg, var(--acc) 0%, color-mix(in srgb, var(--acc) 38%, #000) 100%) !important;
+            border-bottom: none !important;
+            box-shadow: 0 6px 18px rgba(0,0,0,.35);
+        }
+        body.design-f1 .app-header:not(.home-hero) .header-title { color: #fff !important; }
+        body.design-f1 .app-header:not(.home-hero) .back-link { color: rgba(255,255,255,.95) !important; }
+
+        body.design-modern .app-header:not(.home-hero) {
+            background: linear-gradient(135deg, var(--blue), color-mix(in srgb, var(--blue) 50%, #7C3AED)) !important;
+            border: none !important;
+            box-shadow: var(--shadow-md);
+            backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+        }
+        body.design-modern .app-header:not(.home-hero) .header-title { color: #fff !important; font-weight: 800; }
+        body.design-modern .app-header:not(.home-hero) .back-link { color: #fff !important; }
+
         /* Pinned top-right theme picker (F1 mode) */
         #f1-picker {
             position: fixed;
@@ -7794,7 +7816,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-17a"></script>
+    <script src="cloud-sync.js?v=2026-06-17b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
