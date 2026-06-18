@@ -531,6 +531,7 @@
     // Don't re-render over a form the user is filling in (would lose input).
     if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     refreshPhotoCounts();      // load photo badges (async, re-renders when ready)
+    uploadPendingPhotos().catch(() => {});   // flush any photos waiting on a now-synced defect
   }
 
   // Load the per-defect photo counts so the camera badge shows a number.
@@ -1162,6 +1163,74 @@
     }
   };
 
+  // ===========================================================================
+  //  Pending-photo outbox (IndexedDB) — a photo attached to a freshly-added
+  //  defect uploads only AFTER that defect reaches the cloud (so its uuid
+  //  exists). That used to live only in memory, so closing/navigating the app
+  //  mid-upload silently dropped the photo (e.g. the Costas Plumbing item).
+  //  Persisting the blob means it survives a reload and uploads on the next
+  //  boot/pull. Best-effort: if IndexedDB is unavailable we just skip it and the
+  //  in-memory uploadWhenReady path still runs.
+  // ===========================================================================
+  const PHOTO_IDB = 'dm-pending-photos';
+  function idbOpen() {
+    return new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open(PHOTO_IDB, 1); } catch (e) { reject(e); return; }
+      req.onupgradeneeded = () => { try { req.result.createObjectStore('q', { keyPath: 'key' }); } catch (e) {} };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function pendingPut(legacyId, blob) {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('q', 'readwrite');
+      tx.objectStore('q').put({ key: `${legacyId}|${Date.now()}|${Math.random().toString(36).slice(2)}`, legacyId, blob, ts: Date.now() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function pendingAll() {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('q', 'readonly');
+      const req = tx.objectStore('q').getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function pendingDelete(key) {
+    const db = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('q', 'readwrite');
+      tx.objectStore('q').delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // Upload every persisted pending photo whose defect now has a cloud uuid.
+  // Called after a pull (id map rebuilt) and on boot. Leaves un-resolvable
+  // ones (defect not synced yet) for the next sweep.
+  let sweepingPhotos = false;
+  async function uploadPendingPhotos() {
+    if (sweepingPhotos) return;
+    sweepingPhotos = true;
+    try {
+      let items = [];
+      try { items = await pendingAll(); } catch (e) { return; }
+      for (const it of items) {
+        const uuid = idMap.defects[it.legacyId];
+        if (!uuid) continue;                       // defect not in the cloud yet
+        try {
+          await uploadDefectPhoto(it.legacyId, it.blob);
+          await pendingDelete(it.key);             // uploaded → drop from the outbox
+        } catch (e) { /* leave it queued; next sweep retries */ }
+      }
+    } finally { sweepingPhotos = false; }
+  }
+
   // Public API used by the per-defect camera button in index.html
   window.CloudPhotos = {
     count: (legacyId) => photoCounts[legacyId] || 0,
@@ -1225,6 +1294,23 @@
         return;
       }
       await uploadDefectPhoto(legacyId, file);
+    },
+    // Durable path for photos attached to a freshly-added defect: persist the
+    // blob to the IndexedDB outbox FIRST (so it can't be lost if the app is
+    // closed mid-upload), then try to upload right away. uploadPendingPhotos()
+    // re-tries on every pull + on boot until it lands.
+    queueRowPhoto: async (legacyId, file) => {
+      let persisted = false;
+      try { await pendingPut(legacyId, file); persisted = true; } catch (e) { /* IDB unavailable */ }
+      if (persisted) {
+        showToastSafe('Photo queued — uploading…');
+        uploadPendingPhotos().catch(() => {});
+        // Nudge the defect to the cloud so the sweep can resolve its uuid soon.
+        try { await flushPending(); uploadPendingPhotos().catch(() => {}); } catch (e) {}
+      } else {
+        // No IndexedDB → fall back to the in-memory wait-and-upload path.
+        await window.CloudPhotos.uploadWhenReady(legacyId, file);
+      }
     }
   };
 
@@ -1376,6 +1462,7 @@
       const offline = dirty || !navigator.onLine;
       setStatus(offline ? 'Offline' : 'Synced', offline ? 'offline' : undefined);
       sweepExpiredPhotos();
+      uploadPendingPhotos().catch(() => {});   // resume any photo dropped by a previous app close
     } catch (err) {
       console.error('[CloudSync] init failed', err);
       // Stale/expired session (e.g. password changed): clear it and re-show login

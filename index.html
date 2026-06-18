@@ -3805,14 +3805,18 @@
             input.click();
         }
 
-        // Upload any row photos once the defect exists in the cloud.
+        // Upload any row photos once the defect exists in the cloud. Prefer the
+        // durable queue (persists each photo to IndexedDB so it can't be lost if
+        // the app is closed before it finishes uploading); fall back to the
+        // in-memory wait-and-upload path if that isn't available.
         function uploadRowPhotos(row, legacyId) {
             if (!row || !row._photos || !row._photos.length) return;
-            if (!(window.CloudPhotos && window.CloudPhotos.uploadWhenReady)) {
+            const cp = window.CloudPhotos;
+            if (!(cp && (cp.queueRowPhoto || cp.uploadWhenReady))) {
                 showToast('Log in to attach photos', true);
                 return;
             }
-            row._photos.forEach(file => window.CloudPhotos.uploadWhenReady(legacyId, file));
+            row._photos.forEach(file => (cp.queueRowPhoto || cp.uploadWhenReady)(legacyId, file));
         }
 
         // Apply the row's chosen location + queued photos to the saved defect
@@ -7816,7 +7820,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-17c"></script>
+    <script src="cloud-sync.js?v=2026-06-18a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
