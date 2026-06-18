@@ -1434,7 +1434,43 @@
   // Let the app force an immediate push (don't wait out the 400ms debounce) for
   // important actions like completing a defect — so the write reaches the cloud
   // before the user can background or close the app.
-  window.CloudSync = { flush: () => flushPending(), pull: () => pullAll() };
+  window.CloudSync = {
+    flush: () => flushPending(),
+    pull: () => pullAll(),
+    // Stage 1 of the direct-write migration. Write a defect's status STRAIGHT to
+    // the DB (authoritative, immediate), bypassing the local-copy diff that let a
+    // stale phone revert it. We also advance the diff baseline (snapshot) to the
+    // new status so the legacy diff engine neither re-pushes nor reverts it.
+    // Offline / not-yet-synced → fall back to the normal queued sync (db.save
+    // already marked it dirty), which the cloud-wins concurrency check protects.
+    commitStatus: async (legacyId, status) => {
+      try {
+        const uuid = await resolveDefectUuid(legacyId);
+        if (!uuid) { flushPending().catch(() => {}); return; }   // not in cloud yet — let the insert carry it
+        const patch = {
+          status,
+          completed_at: status === 'completed' ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        };
+        const { error } = await sb.from('dm_defects').update(patch).eq('id', uuid);
+        if (error) { flushPending().catch(() => {}); return; }    // RLS/offline → normal queue
+        // Advance the diff baseline to the status we just wrote, so the legacy
+        // engine sees no pending status change for this defect (no redundant
+        // re-push). We do NOT clear `dirty` — other pending edits still need to
+        // flush via the normal push.
+        if (snapshot.defects && snapshot.defects[legacyId]) {
+          snapshot.defects[legacyId].status = status;
+          snapshot.defects[legacyId].completed = (status === 'completed');
+        }
+        const d = (db.data.defects || []).find((x) => String(x.id) === String(legacyId));
+        if (d) { d.status = status; d.completed = (status === 'completed'); }
+        persistSyncState();
+      } catch (e) {
+        // Genuine offline — the queued pushDiff (already armed by db.save) covers it.
+        flushPending().catch(() => {});
+      }
+    },
+  };
 
   // ===========================================================================
   //  Lifecycle + connection listeners (attached once)
