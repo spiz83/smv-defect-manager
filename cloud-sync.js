@@ -1338,15 +1338,12 @@
     // the insert to populate idMap.defects[legacyId]; loop a few times so a
     // transient push error (which runSync retries) still resolves.
     uploadWhenReady: async (legacyId, file) => {
-      // Wait (up to ~15s) for the just-saved defect to reach the cloud so its
-      // uuid exists, flushing the pending push each loop to hurry it along.
-      for (let i = 0; i < 60 && !idMap.defects[legacyId]; i++) {
-        await flushPending();
+      // Direct-write the defect so its row (and uuid) exists, then upload. Retry
+      // a few times for a transient/offline hiccup.
+      for (let i = 0; i < 30 && !idMap.defects[legacyId]; i++) {
+        try { await commitDefect(legacyId); } catch (e) {}
         if (idMap.defects[legacyId]) break;
-        // A pull rebuilds the id map from the cloud — try one if the push alone
-        // hasn't surfaced the new defect's id yet (e.g. it was created earlier
-        // and only its photo is outstanding now).
-        if (i === 4 || i === 20) { try { await pullAll(); } catch (e) {} }
+        if (i === 4 || i === 12) { try { await pullAll(); } catch (e) {} }
         await new Promise(r => setTimeout(r, 500));
       }
       if (!idMap.defects[legacyId]) {
@@ -1365,9 +1362,12 @@
       try { await pendingPut(legacyId, file); persisted = true; } catch (e) { /* IDB unavailable */ }
       if (persisted) {
         showToastSafe('Photo queued — uploading…');
+        // Make sure the defect ROW exists in the DB first (direct write), so the
+        // photo has something to attach to — the old flushPending no longer
+        // inserts defects (they're direct-write now), which is why photos on a
+        // brand-new defect from the quick-add modal weren't landing.
+        try { await commitDefect(legacyId); } catch (e) {}
         uploadPendingPhotos().catch(() => {});
-        // Nudge the defect to the cloud so the sweep can resolve its uuid soon.
-        try { await flushPending(); uploadPendingPhotos().catch(() => {}); } catch (e) {}
       } else {
         // No IndexedDB → fall back to the in-memory wait-and-upload path.
         await window.CloudPhotos.uploadWhenReady(legacyId, file);
