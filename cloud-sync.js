@@ -630,7 +630,9 @@
         (a.lastSmsAt || '') !== (b.lastSmsAt || '') ||
         (a.lastUpdateAt || '') !== (b.lastUpdateAt || '') ||
         (a.followupAt || '') !== (b.followupAt || '') ||
-        (a.bookingAt || '') !== (b.bookingAt || '')
+        (a.bookingAt || '') !== (b.bookingAt || ''),
+      // Cloud wins on a status conflict (completed elsewhere can't be reverted).
+      concurrencyCol: 'status'
     });
 
     // ---- Contractor <-> Trade links ----
@@ -640,7 +642,12 @@
   }
 
   // Generic insert/update/delete diff for one entity type.
-  async function diffEntity({ cur, snap, table, map, toRow, changed }) {
+  // concurrencyCol (optional): a column whose value, if it changed in the cloud
+  // since our last sync, means someone else edited the row — we then SKIP our
+  // update and adopt theirs on the next pull (last-write-wins → cloud-wins on a
+  // real conflict). Used for dm_defects.status so a "completed" set in the CH
+  // Tracker (or another phone) can't be reverted to "open" by a stale push.
+  async function diffEntity({ cur, snap, table, map, toRow, changed, concurrencyCol }) {
     const curMap = byId(cur);
     const inserts = [], updates = [], deletes = [];
 
@@ -682,11 +689,34 @@
         if (data) map[data.legacy_id] = data.id;
       } catch (e) { note(e, 'insert#' + item.id); }
     }
+    // Optimistic concurrency: drop any update whose concurrencyCol diverged in
+    // the cloud since our baseline — someone else changed it (e.g. completed in
+    // the CH Tracker, or on another phone). We do NOT overwrite it; the next
+    // pull adopts the cloud value. This is what stops a completed defect being
+    // reverted to open by a stale local copy.
+    let liveUpdates = updates;
+    if (concurrencyCol && updates.length) {
+      try {
+        const ids = updates.map((u) => u.id);
+        const { data: cloudRows } = await sb.from(table).select('legacy_id, ' + concurrencyCol).in('legacy_id', ids);
+        const cloudVal = {};
+        (cloudRows || []).forEach((r) => { cloudVal[r.legacy_id] = r[concurrencyCol]; });
+        liveUpdates = updates.filter((item) => {
+          const cv = cloudVal[item.id];
+          const base = snap[item.id] ? snap[item.id][concurrencyCol] : undefined;
+          if (cv !== undefined && base !== undefined && cv !== base) {
+            console.info('[CloudSync] keep cloud ' + table + ' #' + item.id + ' ' + concurrencyCol + ' (cloud=' + cv + ', base=' + base + ') — not overwriting');
+            return false;   // cloud diverged → adopt it on the next pull
+          }
+          return true;
+        });
+      } catch (e) { /* network hiccup: fall through to the normal push */ }
+    }
     // Updates — UPSERT on the UNIQUE legacy_id, never by the local uuid. If the
     // phone's uuid map has drifted, a status change / edit still lands on the
     // correct cloud row (and refreshes the uuid), so completions/edits stop
     // "reverting" on the next pull.
-    for (const item of updates) {
+    for (const item of liveUpdates) {
       try {
         const { data, error } = await sb.from(table).upsert(toRow(item), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
         if (error) throw error;

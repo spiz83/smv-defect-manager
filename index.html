@@ -7811,11 +7811,14 @@
             b.title = 'Refresh — load the latest version';
             b.setAttribute('aria-label', 'Refresh app');
             b.onclick = async function () {
+                // Pull-WINS recovery for a phone that's showing out-of-date items.
+                // Crucially we do NOT push the local copy first — a stale push can
+                // revert a completion done in the CH Tracker / on another phone.
+                // We just drop the local sync baseline so the reload does a clean
+                // pull and ADOPTS the cloud truth. Unsynced local-only edits are
+                // replaced by the server's version, so confirm before doing it.
+                if (!confirm('Reload the latest defects from the server?\n\nUse this if items look out of date or keep reappearing. Any changes on THIS phone that haven’t uploaded yet will be replaced by the server’s version.')) return;
                 b.disabled = true; b.style.opacity = '0.5';
-                // Push anything pending, then clear the local sync baseline so the
-                // reload does a CLEAN pull from the cloud — fixes a phone that's
-                // drifted out of sync (stale photo badges, deletes reappearing).
-                try { if (window.CloudSync && window.CloudSync.flush) await window.CloudSync.flush(); } catch (e) {}
                 try {
                     localStorage.setItem('cs_dirty', '0');
                     localStorage.removeItem('cs_snapshot');
@@ -7854,7 +7857,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-18d"></script>
+    <script src="cloud-sync.js?v=2026-06-18e"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
