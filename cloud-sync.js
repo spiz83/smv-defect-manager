@@ -959,9 +959,24 @@
     return d ? (idMap.addresses[d.addressId] || null) : null;
   }
 
+  // Resolve a defect's cloud uuid: prefer the local id map, but fall back to a
+  // direct DB lookup by legacy_id. The map can be stale (a pull was skipped
+  // while dirty), which silently blocked photo uploads on a defect that IS in
+  // the cloud — this makes uploads independent of sync state.
+  async function resolveDefectUuid(legacyId) {
+    if (idMap.defects[legacyId]) return idMap.defects[legacyId];
+    try {
+      const { data } = await sb.from('dm_defects').select('id').eq('legacy_id', legacyId).maybeSingle();
+      if (data && data.id) { idMap.defects[legacyId] = data.id; return data.id; }
+    } catch (e) { /* offline / not found */ }
+    return null;
+  }
+
+  // Returns true on success, false on any bail/failure (so the pending-photo
+  // outbox knows whether to keep retrying).
   async function uploadDefectPhoto(legacyId, file) {
-    const uuid = idMap.defects[legacyId];
-    if (!uuid) { showToastSafe('Save the defect before adding photos'); return; }
+    const uuid = await resolveDefectUuid(legacyId);
+    if (!uuid) { showToastSafe('Save the defect before adding photos'); return false; }
     // First path folder is the job uuid when we can resolve it (keeps photos
     // grouped per job), otherwise the defect uuid — we no longer BLOCK on a
     // missing job mapping (the bucket RLS no longer requires it).
@@ -969,15 +984,15 @@
     const folder1 = jobUuid || uuid;
     showToastSafe('Compressing photo…');
     let blob;
-    try { blob = await compressImage(file); } catch (e) { showToastSafe('Could not read that image'); return; }
-    if (!blob) { showToastSafe('Could not process that image'); return; }
+    try { blob = await compressImage(file); } catch (e) { showToastSafe('Could not read that image'); return false; }
+    if (!blob) { showToastSafe('Could not process that image'); return false; }
     const path = `${folder1}/${uuid}/${randName()}`;
     const up = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
     if (up.error) {
       console.error('[CloudSync] upload', up.error);
       setBanner('⚠️ Photo upload failed: ' + (up.error.message || 'storage error'), 'offline', 7000);
       showToastSafe('Upload failed: ' + (up.error.message || 'storage error'));
-      return;
+      return false;
     }
     const ins = await sb.from('dm_defect_photos').insert({
       defect_id: uuid, storage_path: path, bytes: blob.size
@@ -986,7 +1001,7 @@
       console.error(ins.error);
       setBanner('⚠️ Photo saved to storage but the record failed: ' + (ins.error.message || ''), 'offline', 7000);
       showToastSafe('Saved file but record failed');
-      return;
+      return false;
     }
     photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;   // optimistic badge
     showToastSafe('Photo added (' + Math.round(blob.size / 1024) + ' KB)');
@@ -995,6 +1010,7 @@
     // defect can run refreshPhotoCounts() between insert and now and wipe the
     // optimistic count — this restores it from the DB (the photo row now exists).
     refreshPhotoCounts();
+    return true;
   }
 
   async function deleteOnePhoto(path) {
@@ -1083,8 +1099,10 @@
       // uploadWhenReady flushes a pending insert + waits for the cloud uuid, so a
       // photo added right after creating the defect (or with a momentarily stale
       // id map) still lands instead of silently failing.
-      if (idMap.defects[legacyId]) await uploadDefectPhoto(legacyId, edited);
-      else await window.CloudPhotos.uploadWhenReady(legacyId, edited);
+      // uploadDefectPhoto self-resolves the uuid (map or DB lookup); only fall
+      // back to the wait-for-sync path if the defect truly isn't in the cloud yet.
+      const ok = await uploadDefectPhoto(legacyId, edited);
+      if (!ok) await window.CloudPhotos.uploadWhenReady(legacyId, edited);
       await renderGalleryBody(legacyId);
     };
     await renderGalleryBody(legacyId);
@@ -1221,11 +1239,12 @@
       let items = [];
       try { items = await pendingAll(); } catch (e) { return; }
       for (const it of items) {
-        const uuid = idMap.defects[it.legacyId];
-        if (!uuid) continue;                       // defect not in the cloud yet
         try {
-          await uploadDefectPhoto(it.legacyId, it.blob);
-          await pendingDelete(it.key);             // uploaded → drop from the outbox
+          // uploadDefectPhoto self-resolves the defect uuid (local map or a DB
+          // lookup) and returns false if it genuinely can't yet — keep those
+          // queued for the next sweep.
+          const ok = await uploadDefectPhoto(it.legacyId, it.blob);
+          if (ok) await pendingDelete(it.key);
         } catch (e) { /* leave it queued; next sweep retries */ }
       }
     } finally { sweepingPhotos = false; }
