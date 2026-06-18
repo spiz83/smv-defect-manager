@@ -391,6 +391,10 @@
     // skip this pull entirely and let the retry settle it.
     await flushPending();
     if (dirty) return;
+    // Land any queued direct defect writes before we overwrite the local cache;
+    // if some still won't go (offline), skip the pull so it can't clobber them.
+    await flushDefectOutbox();
+    if (defectOutbox.length) return;
 
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
@@ -631,8 +635,11 @@
         (a.lastUpdateAt || '') !== (b.lastUpdateAt || '') ||
         (a.followupAt || '') !== (b.followupAt || '') ||
         (a.bookingAt || '') !== (b.bookingAt || ''),
-      // Cloud wins on a status conflict (completed elsewhere can't be reverted).
-      concurrencyCol: 'status'
+      // Defect inserts/updates now go through the direct-write layer
+      // (commitDefect). The diff engine only keeps DELETES here (used when a
+      // whole address is removed) — so a stale local copy can no longer push an
+      // insert/update that reverts a change made elsewhere.
+      deletesOnly: true
     });
 
     // ---- Contractor <-> Trade links ----
@@ -647,16 +654,20 @@
   // update and adopt theirs on the next pull (last-write-wins → cloud-wins on a
   // real conflict). Used for dm_defects.status so a "completed" set in the CH
   // Tracker (or another phone) can't be reverted to "open" by a stale push.
-  async function diffEntity({ cur, snap, table, map, toRow, changed, concurrencyCol }) {
+  async function diffEntity({ cur, snap, table, map, toRow, changed, concurrencyCol, deletesOnly }) {
     const curMap = byId(cur);
     const inserts = [], updates = [], deletes = [];
 
-    for (const id in curMap) {
-      const item = curMap[id];
-      if (!(id in snap)) {
-        inserts.push(item);
-      } else if (changed(item, snap[id])) {
-        updates.push(item);
+    // deletesOnly: inserts/updates are handled elsewhere (direct-write layer);
+    // only compute what's been removed so the cloud row can be deleted too.
+    if (!deletesOnly) {
+      for (const id in curMap) {
+        const item = curMap[id];
+        if (!(id in snap)) {
+          inserts.push(item);
+        } else if (changed(item, snap[id])) {
+          updates.push(item);
+        }
       }
     }
     for (const id in snap) {
@@ -1431,45 +1442,97 @@
     }
   };
 
-  // Let the app force an immediate push (don't wait out the 400ms debounce) for
-  // important actions like completing a defect — so the write reaches the cloud
-  // before the user can background or close the app.
+  // ===========================================================================
+  //  DIRECT-WRITE LAYER (migration Stages 2–4) — defects write STRAIGHT to the
+  //  DB per change, instead of the local-copy diff that let a stale phone revert
+  //  completions/edits. The local data is now a read cache only; the diff engine
+  //  no longer inserts/updates defects (it keeps deletes for whole-address
+  //  removal). Offline writes queue in a persistent outbox and replay on
+  //  reconnect/boot — no data loss.
+  // ===========================================================================
+  // The cloud row for one local defect.
+  function defectRow(d) {
+    return {
+      legacy_id: d.id,
+      job_id: idMap.addresses[d.addressId] || null,
+      contractor_id: idMap.contractors[d.contractorId] || null,
+      description: d.description,
+      status: d.status || (d.completed ? 'completed' : 'open'),
+      completed_at: (d.status === 'completed' || d.completed) ? (d.completedAt || new Date().toISOString()) : null,
+      unassigned: !!d.unassigned,
+      location: d.location || null,
+      last_email_at: d.lastEmailAt || null,
+      last_sms_at: d.lastSmsAt || null,
+      last_update_at: d.lastUpdateAt || null,
+      followup_at: d.followupAt || null,
+      booking_at: d.bookingAt || null,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  // Persistent outbox of legacy ids whose direct write hasn't landed yet.
+  let defectOutbox = [];
+  function loadDefectOutbox() { try { defectOutbox = JSON.parse(localStorage.getItem('cs_defect_outbox') || '[]'); } catch (e) { defectOutbox = []; } }
+  function saveDefectOutbox() { try { localStorage.setItem('cs_defect_outbox', JSON.stringify(defectOutbox)); } catch (e) {} }
+  function outboxAdd(id) { id = Number(id); if (!defectOutbox.includes(id)) { defectOutbox.push(id); saveDefectOutbox(); } }
+  function outboxRemove(id) { id = Number(id); const i = defectOutbox.indexOf(id); if (i >= 0) { defectOutbox.splice(i, 1); saveDefectOutbox(); } }
+
+  // Write ONE defect straight to dm_defects (upsert by legacy_id). Advances the
+  // diff baseline so the legacy engine won't also touch it. On any failure the
+  // id is queued in the outbox for retry — so an offline edit is never lost.
+  async function commitDefect(legacyId) {
+    const d = (db.data.defects || []).find((x) => String(x.id) === String(legacyId));
+    if (!d) { outboxRemove(legacyId); return; }   // deleted locally — nothing to write
+    if (!idMap.addresses[d.addressId]) { outboxAdd(legacyId); return; }   // job not mapped yet (RLS) — retry later
+    try {
+      const { data, error } = await sb.from('dm_defects')
+        .upsert(defectRow(d), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
+      if (error) throw error;
+      if (data) { idMap.defects[data.legacy_id] = data.id; defectUuidToLegacy[data.id] = d.id; }
+      if (snapshot.defects) snapshot.defects[d.id] = { ...d };   // baseline now matches the cloud
+      outboxRemove(legacyId);
+      persistSyncState();
+    } catch (e) {
+      outboxAdd(legacyId);   // offline / transient → replay on reconnect
+      console.warn('[CloudSync] commitDefect queued #' + legacyId, e && e.message);
+    }
+  }
+
+  // Retry every queued direct write. Safe to call repeatedly.
+  let flushingOutbox = false;
+  async function flushDefectOutbox() {
+    if (flushingOutbox || !defectOutbox.length) return;
+    flushingOutbox = true;
+    try { for (const id of [...defectOutbox]) await commitDefect(id); }
+    finally { flushingOutbox = false; }
+  }
+
+  // Wrap the db defect mutators so every change writes through immediately.
+  let directHooksInstalled = false;
+  function installDirectWriteHooks() {
+    if (directHooksInstalled || typeof db === 'undefined') return;
+    directHooksInstalled = true;
+    const commit = (id) => { if (id != null) commitDefect(id).catch(() => {}); };
+    const wrap = (name, ids) => {
+      const orig = db[name] && db[name].bind(db);
+      if (!orig) return;
+      db[name] = function (...args) {
+        const r = orig(...args);
+        if (!suppressPush) { try { (ids(args, r) || []).forEach(commit); } catch (e) {} }
+        return r;
+      };
+    };
+    wrap('addDefect', (a, r) => (r && r.id != null ? [r.id] : []));
+    wrap('setDefectStatus', (a) => [a[0]]);
+    wrap('setDefectLocation', (a) => [a[0]]);
+    wrap('setContractorBooking', (a) => (db.data.defects || [])
+      .filter((x) => x.contractorId === a[0] && x.addressId === a[1]).map((x) => x.id));
+  }
+
   window.CloudSync = {
     flush: () => flushPending(),
     pull: () => pullAll(),
-    // Stage 1 of the direct-write migration. Write a defect's status STRAIGHT to
-    // the DB (authoritative, immediate), bypassing the local-copy diff that let a
-    // stale phone revert it. We also advance the diff baseline (snapshot) to the
-    // new status so the legacy diff engine neither re-pushes nor reverts it.
-    // Offline / not-yet-synced → fall back to the normal queued sync (db.save
-    // already marked it dirty), which the cloud-wins concurrency check protects.
-    commitStatus: async (legacyId, status) => {
-      try {
-        const uuid = await resolveDefectUuid(legacyId);
-        if (!uuid) { flushPending().catch(() => {}); return; }   // not in cloud yet — let the insert carry it
-        const patch = {
-          status,
-          completed_at: status === 'completed' ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
-        };
-        const { error } = await sb.from('dm_defects').update(patch).eq('id', uuid);
-        if (error) { flushPending().catch(() => {}); return; }    // RLS/offline → normal queue
-        // Advance the diff baseline to the status we just wrote, so the legacy
-        // engine sees no pending status change for this defect (no redundant
-        // re-push). We do NOT clear `dirty` — other pending edits still need to
-        // flush via the normal push.
-        if (snapshot.defects && snapshot.defects[legacyId]) {
-          snapshot.defects[legacyId].status = status;
-          snapshot.defects[legacyId].completed = (status === 'completed');
-        }
-        const d = (db.data.defects || []).find((x) => String(x.id) === String(legacyId));
-        if (d) { d.status = status; d.completed = (status === 'completed'); }
-        persistSyncState();
-      } catch (e) {
-        // Genuine offline — the queued pushDiff (already armed by db.save) covers it.
-        flushPending().catch(() => {});
-      }
-    },
+    commitDefect: (legacyId) => commitDefect(legacyId),
   };
 
   // ===========================================================================
@@ -1499,12 +1562,12 @@
       setBanner('📴 Working offline — your changes are saved on this phone and will upload automatically when you reconnect.', 'offline');
     });
     window.addEventListener('online', () => {
-      if (dirty) {
+      if (dirty || defectOutbox.length) {
         setBanner('🔄 Back online — uploading your changes…', 'syncing');
         // Push immediately rather than waiting out the retry timer; runSync's
         // success path then flips the banner to "✅ All changes uploaded".
-        flushPending().then(() => {
-          if (!dirty) setBanner('✅ All changes uploaded', 'ok', 3000);
+        flushDefectOutbox().then(flushPending).then(() => {
+          if (!dirty && !defectOutbox.length) setBanner('✅ All changes uploaded', 'ok', 3000);
           pullAll().catch(() => {});
         });
       } else {
@@ -1520,6 +1583,8 @@
   async function onAuthed() {
     try {
       installSaveHook();
+      installDirectWriteHooks();    // defects write straight to the DB per change
+      loadDefectOutbox();           // restore any offline direct writes awaiting retry
       await resolveRole();
       showStatusBar();
       setStatus('Loading…', 'syncing');
