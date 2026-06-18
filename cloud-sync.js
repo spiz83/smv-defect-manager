@@ -1083,7 +1083,8 @@
         <div id="cs-gallery-body"><div style="padding:20px;text-align:center;color:#888">Loading…</div></div>
         <div id="cs-gallery-foot">
           <label class="cs-addphoto">📷 Add / Take Photo
-            <input type="file" accept="image/*" capture="environment" style="display:none" id="cs-photo-input">
+            <input type="file" accept="image/*" capture="environment" id="cs-photo-input"
+                   style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
           </label>
         </div>
       </div>`;

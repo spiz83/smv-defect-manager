@@ -3802,16 +3802,31 @@
             input.type = 'file';
             input.accept = 'image/*';
             input.setAttribute('capture', 'environment');
+            // iOS reliability: a DETACHED file input frequently fails to deliver
+            // the photo on the FIRST capture (onchange never fires), so the user
+            // has to tap the camera twice. Attach it to the DOM (off-screen)
+            // before clicking, and clean it up afterwards.
+            input.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
+            document.body.appendChild(input);
+            let done = false;
+            const cleanup = () => {
+                if (done) return; done = true;
+                window.removeEventListener('focus', onFocus);
+                setTimeout(() => { try { input.remove(); } catch (e) {} }, 0);
+            };
+            // Cancelling the camera fires no change event — clean up on return.
+            const onFocus = () => setTimeout(() => { if (!input.files || !input.files.length) cleanup(); }, 1500);
+            window.addEventListener('focus', onFocus);
             input.onchange = async () => {
                 const f = input.files && input.files[0];
-                if (!f) return;
+                if (!f) { cleanup(); return; }
                 const row = btn.closest('.defect-input-row');
-                if (!row) return;
+                if (!row) { cleanup(); return; }
                 // Offer the markup/text editor on capture (same as the gallery).
                 let img = f;
                 if (window.CloudPhotos && window.CloudPhotos.editPhoto) {
                     const edited = await window.CloudPhotos.editPhoto(f);
-                    if (edited === null) return;   // cancelled
+                    if (edited === null) { cleanup(); return; }   // cancelled
                     img = edited || f;
                 }
                 row._photos = row._photos || [];
@@ -3819,6 +3834,7 @@
                 btn.classList.add('has');
                 btn.innerHTML = '📷' + (row._photos.length > 1 ? `<span class="cnt">${row._photos.length}</span>` : '');
                 showToast('Photo attached — it saves with this defect');
+                cleanup();
             };
             input.click();
         }
@@ -7838,7 +7854,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-18c"></script>
+    <script src="cloud-sync.js?v=2026-06-18d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
