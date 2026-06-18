@@ -1908,6 +1908,24 @@
             }
 
             addDefect(defect) {
+                // Duplicate guard (root-cause fix for items "reappearing"): if a
+                // NON-completed defect with the same address + description already
+                // exists, return it instead of creating a second copy. A double-
+                // tap on Save, or re-importing the same source, used to add the
+                // item again under a fresh id — and because each copy had its own
+                // legacy id, the cloud's legacy-id upsert never merged them, so the
+                // list doubled up. Completed defects are NOT matched, so a genuine
+                // re-occurrence of a closed item can still be raised again.
+                const norm = (s) => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+                const dup = (this.data.defects || []).find(d =>
+                    d.addressId === defect.addressId &&
+                    norm(d.description) === norm(defect.description) &&
+                    d.status !== 'completed' && !d.completed
+                );
+                if (dup) {
+                    try { if (typeof showToast === 'function') showToast('Already on the list — duplicate skipped'); } catch (e) {}
+                    return dup;
+                }
                 const id = Math.max(0, ...this.data.defects.map(d => d.id)) + 1;
                 const newDefect = { id, status: 'open', ...defect, completed: false };
                 this.data.defects.push(newDefect);
@@ -7820,7 +7838,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-18b"></script>
+    <script src="cloud-sync.js?v=2026-06-18c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
