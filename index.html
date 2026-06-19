@@ -3801,6 +3801,7 @@
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = 'image/*';
+            input.multiple = true;   // allow selecting several photos at once
             // No `capture` attribute → the OS picker offers BOTH "Take Photo" and
             // "Photo Library", so a photo can be shot now or chosen from the gallery.
             // iOS reliability: a DETACHED file input frequently fails to deliver
@@ -3819,22 +3820,25 @@
             const onFocus = () => setTimeout(() => { if (!input.files || !input.files.length) cleanup(); }, 1500);
             window.addEventListener('focus', onFocus);
             input.onchange = async () => {
-                const f = input.files && input.files[0];
-                if (!f) { cleanup(); return; }
+                const files = Array.from(input.files || []);
+                if (!files.length) { cleanup(); return; }
                 const row = btn.closest('.defect-input-row');
                 if (!row) { cleanup(); return; }
-                // Offer the markup/text editor on capture (same as the gallery).
-                let img = f;
-                if (window.CloudPhotos && window.CloudPhotos.editPhoto) {
-                    const edited = await window.CloudPhotos.editPhoto(f);
-                    if (edited === null) { cleanup(); return; }   // cancelled
-                    img = edited || f;
-                }
                 row._photos = row._photos || [];
-                row._photos.push(img);
+                for (const f of files) {
+                    let img = f;
+                    // Offer the markup/text editor only for a SINGLE photo; a bulk
+                    // gallery import skips it (editing each would be tedious).
+                    if (files.length === 1 && window.CloudPhotos && window.CloudPhotos.editPhoto) {
+                        const edited = await window.CloudPhotos.editPhoto(f);
+                        if (edited === null) { cleanup(); return; }   // cancelled
+                        img = edited || f;
+                    }
+                    row._photos.push(img);
+                }
                 btn.classList.add('has');
                 btn.innerHTML = '📷' + (row._photos.length > 1 ? `<span class="cnt">${row._photos.length}</span>` : '');
-                showToast('Photo attached — it saves with this defect');
+                showToast(files.length > 1 ? `${files.length} photos attached` : 'Photo attached — it saves with this defect');
                 cleanup();
             };
             input.click();
@@ -7858,7 +7862,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-18j"></script>
+    <script src="cloud-sync.js?v=2026-06-18k"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

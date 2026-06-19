@@ -1126,7 +1126,7 @@
         <div id="cs-gallery-body"><div style="padding:20px;text-align:center;color:#888">Loading…</div></div>
         <div id="cs-gallery-foot">
           <label class="cs-addphoto">📷 Take or Choose Photo
-            <input type="file" accept="image/*" id="cs-photo-input"
+            <input type="file" accept="image/*" multiple id="cs-photo-input"
                    style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
           </label>
         </div>
@@ -1135,18 +1135,22 @@
     document.getElementById('cs-gallery-close').onclick = () => ov.remove();
     ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
     document.getElementById('cs-photo-input').onchange = async (e) => {
-      const file = e.target.files && e.target.files[0];
-      e.target.value = '';   // allow re-picking the same file
-      if (!file) return;
-      const edited = await openPhotoEditor(file);   // mark up / add text, or cancel
-      if (!edited) return;
-      // uploadWhenReady flushes a pending insert + waits for the cloud uuid, so a
-      // photo added right after creating the defect (or with a momentarily stale
-      // id map) still lands instead of silently failing.
-      // uploadDefectPhoto self-resolves the uuid (map or DB lookup); only fall
-      // back to the wait-for-sync path if the defect truly isn't in the cloud yet.
-      const ok = await uploadDefectPhoto(legacyId, edited);
-      if (!ok) await window.CloudPhotos.uploadWhenReady(legacyId, edited);
+      const files = Array.from(e.target.files || []);
+      e.target.value = '';   // allow re-picking the same file(s)
+      if (!files.length) return;
+      for (const file of files) {
+        // Mark-up/text editor only for a SINGLE photo; a multi-select import
+        // uploads each as-is (editing each would be tedious).
+        let img = file;
+        if (files.length === 1) {
+          img = await openPhotoEditor(file);
+          if (!img) return;   // cancelled
+        }
+        // uploadDefectPhoto self-resolves the uuid (map or DB lookup); only fall
+        // back to the wait-for-sync path if the defect truly isn't in the cloud yet.
+        const ok = await uploadDefectPhoto(legacyId, img);
+        if (!ok) await window.CloudPhotos.uploadWhenReady(legacyId, img);
+      }
       await renderGalleryBody(legacyId);
     };
     await renderGalleryBody(legacyId);
