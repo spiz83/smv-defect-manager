@@ -2394,9 +2394,9 @@
                     <div class="app-header">
                         <a href="#" class="back-link" onclick="event.preventDefault(); backFromAddDefects()">Back</a>
                         <div class="header-title">Add Defects</div>
-                        <span style="display:inline-flex;gap:2px;">
-                            <button class="icon-btn" onclick="openBulkPhotoImport(${addressId})" title="Bulk import photos — pick lots of photos, fill in the details for each after">🖼️</button>
-                            <button class="icon-btn" onclick="saveAddDefectsAddress()" title="Save Defects">💾</button>
+                        <span style="display:inline-flex;gap:6px;">
+                            <button class="icon-btn" onclick="openBulkPhotoImport(${addressId})" title="Bulk import photos — pick lots of photos, fill in the details for each after" style="font-size:30px;padding:8px 12px;line-height:1;">🖼️</button>
+                            <button class="icon-btn" onclick="saveAddDefectsAddress()" title="Save Defects" style="font-size:30px;padding:8px 12px;line-height:1;">💾</button>
                         </span>
                     </div>
 
@@ -7998,7 +7998,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-18m"></script>
+    <script src="cloud-sync.js?v=2026-06-18n"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
