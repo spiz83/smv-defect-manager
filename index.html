@@ -2394,7 +2394,10 @@
                     <div class="app-header">
                         <a href="#" class="back-link" onclick="event.preventDefault(); backFromAddDefects()">Back</a>
                         <div class="header-title">Add Defects</div>
-                        <button class="icon-btn" onclick="saveAddDefectsAddress()" title="Save Defects">💾</button>
+                        <span style="display:inline-flex;gap:2px;">
+                            <button class="icon-btn" onclick="openBulkPhotoImport(${addressId})" title="Bulk import photos — pick lots of photos, fill in the details for each after">🖼️</button>
+                            <button class="icon-btn" onclick="saveAddDefectsAddress()" title="Save Defects">💾</button>
+                        </span>
                     </div>
 
                     <div class="defects-header">
@@ -3862,6 +3865,106 @@
         function applyRowExtras(row, legacyId) {
             if (row && row._location) db.setDefectLocation(legacyId, row._location);
             uploadRowPhotos(row, legacyId);
+        }
+
+        // ===== Bulk photo import =====================================================
+        // "Shoot everything first, do the admin after." Pick many photos from the
+        // gallery for a job address, then step through each one filling in
+        // Location / Supplier / Description — each becomes a defect with its photo.
+        let bulkPhotoState = null;   // { addressId, files:[File], idx:int }
+        function _escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
+
+        function openBulkPhotoImport(addressId) {
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = 'image/*'; input.multiple = true;
+            input.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
+            document.body.appendChild(input);
+            let done = false;
+            const cleanup = () => { if (done) return; done = true; window.removeEventListener('focus', onFocus); setTimeout(() => { try { input.remove(); } catch (e) {} }, 0); };
+            const onFocus = () => setTimeout(() => { if (!input.files || !input.files.length) cleanup(); }, 1500);
+            window.addEventListener('focus', onFocus);
+            input.onchange = () => {
+                const files = Array.from(input.files || []);
+                cleanup();
+                if (!files.length) return;
+                bulkPhotoState = { addressId, files, idx: 0 };
+                renderBulkPhotoStep();
+            };
+            input.click();
+        }
+
+        function _revokeBulkUrl() { const ov = document.getElementById('bulk-photo-ov'); if (ov && ov._url) { try { URL.revokeObjectURL(ov._url); } catch (e) {} } }
+
+        function renderBulkPhotoStep() {
+            const st = bulkPhotoState;
+            if (!st) return;
+            if (st.idx >= st.files.length) {   // finished
+                const n = st.files.length;
+                _revokeBulkUrl();
+                const ov = document.getElementById('bulk-photo-ov'); if (ov) ov.remove();
+                bulkPhotoState = null;
+                showToast(`${n} photo defect(s) added`);
+                render();
+                return;
+            }
+            const file = st.files[st.idx];
+            const url = URL.createObjectURL(file);
+            const locOpts = ['<option value="">— Location —</option>'].concat(DEFECT_LOCATIONS.map(l => `<option value="${_escHtml(l)}">${_escHtml(l)}</option>`)).join('');
+            const supOpts = ['<option value="">— Supplier / Trade (optional) —</option>'].concat(db.getContractors().map(c => `<option value="${c.id}">${_escHtml(c.name)}</option>`)).join('');
+            let ov = document.getElementById('bulk-photo-ov'); if (ov) ov.remove();
+            ov = document.createElement('div');
+            ov.id = 'bulk-photo-ov';
+            ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:var(--bg-primary,#fff);display:flex;flex-direction:column;box-sizing:border-box;padding-top:env(safe-area-inset-top,24px);';
+            ov.innerHTML =
+                `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border-color,#eee);">
+                    <strong style="font-size:15px;color:var(--text-primary,#111);">Bulk Import — Photo ${st.idx + 1} of ${st.files.length}</strong>
+                    <button onclick="closeBulkPhoto(true)" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary,#777);">✕</button>
+                </div>
+                <div style="flex:1;overflow:auto;padding:12px 14px;">
+                    <div style="text-align:center;margin-bottom:12px;"><img src="${url}" style="max-width:100%;max-height:38vh;border-radius:10px;object-fit:contain;"></div>
+                    <label style="display:block;font-size:12px;color:var(--text-secondary);margin:8px 0 3px;">Location</label>
+                    <select id="bulk-loc" style="width:100%;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;background:var(--input-bg,#fff);color:var(--text-primary);">${locOpts}</select>
+                    <label style="display:block;font-size:12px;color:var(--text-secondary);margin:10px 0 3px;">Supplier / Trade</label>
+                    <select id="bulk-sup" style="width:100%;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;background:var(--input-bg,#fff);color:var(--text-primary);">${supOpts}</select>
+                    <label style="display:block;font-size:12px;color:var(--text-secondary);margin:10px 0 3px;">Defect description</label>
+                    <input id="bulk-desc" type="text" placeholder="Describe the defect" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                </div>
+                <div style="display:flex;gap:10px;padding:12px 14px;border-top:1px solid var(--border-color,#eee);">
+                    <button onclick="skipBulkPhoto()" style="flex:1;padding:13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary,#f2f2f2);color:var(--text-secondary,#777);font-size:15px;cursor:pointer;">Skip</button>
+                    <button onclick="saveBulkPhoto()" style="flex:2;padding:13px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-weight:700;font-size:15px;cursor:pointer;">${st.idx === st.files.length - 1 ? 'Save &amp; Finish' : 'Save &amp; Next'}</button>
+                </div>`;
+            document.body.appendChild(ov);
+            ov._url = url;
+            setTimeout(() => { const d = document.getElementById('bulk-desc'); if (d) d.focus(); }, 60);
+        }
+
+        function closeBulkPhoto(ask) {
+            if (ask && bulkPhotoState && bulkPhotoState.idx < bulkPhotoState.files.length) {
+                if (!confirm('Stop the bulk import? Photos you haven\'t saved yet are discarded (already-saved ones stay).')) return;
+            }
+            _revokeBulkUrl();
+            const ov = document.getElementById('bulk-photo-ov'); if (ov) ov.remove();
+            bulkPhotoState = null;
+            render();
+        }
+
+        function skipBulkPhoto() { _revokeBulkUrl(); if (bulkPhotoState) bulkPhotoState.idx++; renderBulkPhotoStep(); }
+
+        function saveBulkPhoto() {
+            const st = bulkPhotoState; if (!st) return;
+            const descEl = document.getElementById('bulk-desc');
+            const desc = (descEl && descEl.value || '').trim();
+            if (!desc) { showToast('Enter a description', true); if (descEl) descEl.focus(); return; }
+            const location = document.getElementById('bulk-loc').value || '';
+            const supId = document.getElementById('bulk-sup').value;
+            const contractorId = supId ? Number(supId) : null;
+            const file = st.files[st.idx];
+            const d = db.addDefect({ addressId: st.addressId, contractorId, description: desc, location: location || undefined, unassigned: !contractorId });
+            const cp = window.CloudPhotos;
+            if (cp && (cp.queueRowPhoto || cp.uploadWhenReady)) (cp.queueRowPhoto || cp.uploadWhenReady)(d.id, file);
+            _revokeBulkUrl();
+            st.idx++;
+            renderBulkPhotoStep();
         }
 
         // Pin beside an Enter-defect row → pick the location for that defect
@@ -7862,7 +7965,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-18k"></script>
+    <script src="cloud-sync.js?v=2026-06-18l"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
