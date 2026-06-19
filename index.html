@@ -3801,7 +3801,8 @@
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = 'image/*';
-            input.setAttribute('capture', 'environment');
+            // No `capture` attribute → the OS picker offers BOTH "Take Photo" and
+            // "Photo Library", so a photo can be shot now or chosen from the gallery.
             // iOS reliability: a DETACHED file input frequently fails to deliver
             // the photo on the FIRST capture (onchange never fires), so the user
             // has to tap the camera twice. Attach it to the DOM (off-screen)
@@ -7857,7 +7858,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-18i"></script>
+    <script src="cloud-sync.js?v=2026-06-18j"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
