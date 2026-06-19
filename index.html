@@ -3909,8 +3909,6 @@
             }
             const file = st.files[st.idx];
             const url = URL.createObjectURL(file);
-            const locOpts = ['<option value="">— Location —</option>'].concat(DEFECT_LOCATIONS.map(l => `<option value="${_escHtml(l)}">${_escHtml(l)}</option>`)).join('');
-            const supOpts = ['<option value="">— Supplier / Trade (optional) —</option>'].concat(db.getContractors().map(c => `<option value="${c.id}">${_escHtml(c.name)}</option>`)).join('');
             let ov = document.getElementById('bulk-photo-ov'); if (ov) ov.remove();
             ov = document.createElement('div');
             ov.id = 'bulk-photo-ov';
@@ -3923,9 +3921,15 @@
                 <div style="flex:1;overflow:auto;padding:12px 14px;">
                     <div style="text-align:center;margin-bottom:12px;"><img src="${url}" style="max-width:100%;max-height:38vh;border-radius:10px;object-fit:contain;"></div>
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:8px 0 3px;">Location</label>
-                    <select id="bulk-loc" style="width:100%;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;background:var(--input-bg,#fff);color:var(--text-primary);">${locOpts}</select>
+                    <div style="position:relative;">
+                        <input id="bulk-loc" type="text" autocomplete="off" placeholder="Type to search location…" oninput="bulkComboFilter('loc')" onfocus="bulkComboFilter('loc')" onblur="bulkComboBlur('loc')" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                        <div id="bulk-loc-list" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:6;max-height:190px;overflow:auto;background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:9px;box-shadow:0 8px 20px rgba(0,0,0,.25);margin-top:2px;"></div>
+                    </div>
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:10px 0 3px;">Supplier / Trade</label>
-                    <select id="bulk-sup" style="width:100%;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;background:var(--input-bg,#fff);color:var(--text-primary);">${supOpts}</select>
+                    <div style="position:relative;">
+                        <input id="bulk-sup" type="text" autocomplete="off" placeholder="Type to search supplier / trade…" oninput="bulkComboFilter('sup')" onfocus="bulkComboFilter('sup')" onblur="bulkComboBlur('sup')" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                        <div id="bulk-sup-list" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:6;max-height:190px;overflow:auto;background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:9px;box-shadow:0 8px 20px rgba(0,0,0,.25);margin-top:2px;"></div>
+                    </div>
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:10px 0 3px;">Defect description</label>
                     <input id="bulk-desc" type="text" placeholder="Describe the defect" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
                 </div>
@@ -3955,9 +3959,12 @@
             const descEl = document.getElementById('bulk-desc');
             const desc = (descEl && descEl.value || '').trim();
             if (!desc) { showToast('Enter a description', true); if (descEl) descEl.focus(); return; }
-            const location = document.getElementById('bulk-loc').value || '';
-            const supId = document.getElementById('bulk-sup').value;
-            const contractorId = supId ? Number(supId) : null;
+            const location = (document.getElementById('bulk-loc').value || '').trim();
+            // Resolve the supplier by the name the picker filled in (exact, case-
+            // insensitive). Typed-but-not-picked = no supplier (logged unassigned).
+            const supName = (document.getElementById('bulk-sup').value || '').trim();
+            const contractor = supName ? db.getContractors().find(c => (c.name || '').toLowerCase() === supName.toLowerCase()) : null;
+            const contractorId = contractor ? contractor.id : null;
             const file = st.files[st.idx];
             const d = db.addDefect({ addressId: st.addressId, contractorId, description: desc, location: location || undefined, unassigned: !contractorId });
             const cp = window.CloudPhotos;
@@ -3965,6 +3972,32 @@
             _revokeBulkUrl();
             st.idx++;
             renderBulkPhotoStep();
+        }
+
+        // Type-to-search dropdowns for the bulk wizard (location + supplier/trade).
+        function bulkComboFilter(field) {
+            const input = document.getElementById('bulk-' + field);
+            const list = document.getElementById('bulk-' + field + '-list');
+            if (!input || !list) return;
+            const q = input.value.trim().toLowerCase();
+            const items = field === 'loc'
+                ? DEFECT_LOCATIONS.map(l => ({ label: l }))
+                : db.getContractors().map(c => ({ label: c.name }));
+            const filtered = (q ? items.filter(it => (it.label || '').toLowerCase().includes(q)) : items).slice(0, 60);
+            if (!filtered.length) { list.style.display = 'none'; return; }
+            list.innerHTML = filtered.map((it, i) => `<div data-i="${i}" style="padding:11px 12px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--border-color,#eee);color:var(--text-primary,#111);">${_escHtml(it.label)}</div>`).join('');
+            list._items = filtered;
+            list.onclick = (e) => {
+                const el = e.target.closest('[data-i]'); if (!el) return;
+                const it = list._items[Number(el.getAttribute('data-i'))];
+                input.value = it.label;
+                list.style.display = 'none';
+            };
+            list.style.display = 'block';
+        }
+        function bulkComboBlur(field) {
+            // Delay so a tap on an option registers before the list hides.
+            setTimeout(() => { const l = document.getElementById('bulk-' + field + '-list'); if (l) l.style.display = 'none'; }, 180);
         }
 
         // Pin beside an Enter-defect row → pick the location for that defect
@@ -7965,7 +7998,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-18l"></script>
+    <script src="cloud-sync.js?v=2026-06-18m"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
