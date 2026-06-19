@@ -390,10 +390,12 @@
     // to the cloud first; if it still hasn't landed (offline / push error),
     // skip this pull entirely and let the retry settle it.
     await flushPending();
-    if (dirty) return;
-    // Land any queued direct defect writes before we overwrite the local cache;
-    // if some still won't go (offline), skip the pull so it can't clobber them.
+    // Land any queued direct defect writes FIRST — even if `dirty` (legacy diff)
+    // is still set — since these are push-only and recover stranded work.
     await flushDefectOutbox();
+    if (dirty) return;
+    // If some writes still won't go (offline), skip the pull so it can't clobber
+    // the un-uploaded local rows.
     if (defectOutbox.length) return;
 
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
@@ -1507,6 +1509,32 @@
     finally { flushingOutbox = false; }
   }
 
+  // RECOVERY: push every LOCAL-ONLY defect (one that's in the local cache but
+  // never reached the cloud — not in idMap.defects) up to the DB. Catches work
+  // stranded on a phone whose old sync got stuck (e.g. a whole job's defects +
+  // their photos that never uploaded). Push-only — never deletes or clobbers.
+  // Runs on boot BEFORE the first pull so the pull can't wipe the local-only
+  // rows; once they're in the cloud the pull brings them straight back.
+  async function reconcileLocalDefectsUp() {
+    const locals = (db.data.defects || []).filter((d) => !idMap.defects[d.id]);
+    if (!locals.length) return;
+    // Make sure the address→job-uuid map is available so commitDefect can set
+    // job_id; if it's empty (cold boot), fetch the jobs to build it.
+    if (!Object.keys(idMap.addresses).length) {
+      try {
+        const { data: jobs } = await sb.from('jobs').select('id, active');
+        (jobs || []).forEach((j) => { if (showInactiveJobs || j.active !== false) idMap.addresses[hashId(j.id)] = j.id; });
+      } catch (e) { /* offline — try again next boot */ }
+    }
+    setBanner('⬆️ Uploading ' + locals.length + ' change(s) saved on this phone…', 'syncing');
+    let ok = 0;
+    for (const d of locals) { await commitDefect(d.id); if (idMap.defects[d.id]) ok++; }
+    await flushDefectOutbox();   // and any photos waiting on those defects
+    uploadPendingPhotos().catch(() => {});
+    if (ok) setBanner('✅ Uploaded ' + ok + ' change(s) from this phone', 'ok', 4000);
+    persistSyncState();
+  }
+
   // Wrap the db defect mutators so every change writes through immediately.
   let directHooksInstalled = false;
   function installDirectWriteHooks() {
@@ -1602,7 +1630,10 @@
       try { subscribeRealtime(); } catch (e) { /* offline: realtime connects later */ }
       try {
         const migrated = await maybeMigrate();
-        if (!migrated) await pullAll();
+        if (!migrated) {
+          await reconcileLocalDefectsUp();   // recover local-only work BEFORE the pull
+          await pullAll();
+        }
       } catch (e) {
         // Offline / network failure on first load — fine. The app is usable, the
         // offline banner is up, and edits upload when the connection returns.
