@@ -7728,6 +7728,35 @@
             catch (e) { console.error(e); impOverlayMessage('Could not generate PDF: ' + (e.message || e)); }
         }
 
+        // PDF filename: <lot><streetname>_defects_<contractor-initials>_<d.m>.pdf
+        // e.g. 903woodlawn_defects_HK_9.6.pdf. Each part is dropped when it doesn't
+        // apply (report not scoped to a single job / single contractor).
+        function buildReportFilename(opts) {
+            opts = opts || {};
+            const now = new Date();
+            const dm = now.getDate() + '.' + (now.getMonth() + 1);
+            const STREET_TYPES = /\b(rd|road|st|street|ave|avenue|dr|drive|drv|ct|court|cres|crescent|pl|place|blvd|boulevard|ln|lane|tce|terrace|cl|close|pde|parade|cct|circuit|gr|grove|hwy|highway|way|esp|esplanade|sq|square|vista|cir|circle|grn|green|rise|view|walk|prom|promenade)\b/gi;
+            let addrPart = '';
+            if (opts.addressIds && opts.addressIds.length === 1) {
+                const a = db.getAddress(opts.addressIds[0]);
+                if (a) {
+                    const lot = String(a.lotNo || (String(a.street || '').match(/lot\s*(\d+)/i) || [])[1] || '').replace(/\D/g, '');
+                    let nm = (a.streetName || a.street || '').replace(/^\s*\(?\d+[a-z]?\)?[\s,]+/i, '').replace(/,.*$/, '').replace(STREET_TYPES, ' ');
+                    nm = nm.replace(/[^a-z0-9]/gi, '').toLowerCase();
+                    addrPart = lot + nm;
+                }
+            }
+            let who = '';
+            if (opts.contractorIds && opts.contractorIds.length === 1) {
+                const c = db.getContractor(opts.contractorIds[0]);
+                if (c && c.name) who = c.name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+            }
+            let name = addrPart ? (addrPart + '_defects') : 'defects';
+            if (who) name += '_' + who;
+            name += '_' + dm;
+            return name + '.pdf';
+        }
+
         async function generateDefectPDF(list, opts) {
             await ensureJsPdf();
             const { jsPDF } = window.jspdf;
@@ -7881,7 +7910,7 @@
                 doc.text('Page ' + p + ' of ' + pages, pageW - M, pageH - 7.5, { align: 'right' });
             }
 
-            doc.save('Defect-Report-' + dateStr + '.pdf');
+            doc.save(buildReportFilename(opts));
         }
 
         // One-tap PDF for the screen you're on — per job (address) or per supplier (contractor)
@@ -8019,7 +8048,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-20c"></script>
+    <script src="cloud-sync.js?v=2026-06-20d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
