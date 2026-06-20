@@ -1015,6 +1015,58 @@
     return null;
   }
 
+  // ── Clean photo-upload progress strip (replaces the chatty toasts) ──────────
+  // A small bottom pill with an indeterminate bar: "Uploading photo…" while
+  // working, "Photo saved" (green) when done, the reason on failure. Counts
+  // concurrent uploads so a multi-photo batch reads "Uploading 3 photos…".
+  let _ppActive = 0, _ppBatch = 0, _ppHideTimer = null;
+  function _ppEl() {
+    let el = document.getElementById('cs-photo-prog');
+    if (el) return el;
+    if (!document.getElementById('cs-photo-prog-style')) {
+      const st = document.createElement('style'); st.id = 'cs-photo-prog-style';
+      st.textContent =
+        '#cs-photo-prog{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;z-index:99998;min-width:190px;max-width:84vw;background:rgba(17,24,39,.96);color:#fff;border-radius:11px;padding:9px 14px 11px;box-shadow:0 8px 26px rgba(0,0,0,.4);font:600 13px/1.3 -apple-system,Segoe UI,Roboto,sans-serif;display:none;flex-direction:column;gap:7px;}' +
+        '#cs-photo-prog .cs-pp-row{display:flex;align-items:center;gap:8px;}' +
+        '#cs-photo-prog .cs-pp-track{height:4px;border-radius:3px;background:rgba(255,255,255,.18);overflow:hidden;}' +
+        '#cs-photo-prog .cs-pp-track i{display:block;height:100%;width:40%;border-radius:3px;background:#3d6fcc;animation:cs-pp-slide 1.1s ease-in-out infinite;}' +
+        '#cs-photo-prog.done .cs-pp-track i{width:100%;background:#16a34a;animation:none;}' +
+        '#cs-photo-prog.error .cs-pp-track i{width:100%;background:#dc2626;animation:none;}' +
+        '@keyframes cs-pp-slide{0%{margin-left:-40%}100%{margin-left:100%}}';
+      document.head.appendChild(st);
+    }
+    el = document.createElement('div'); el.id = 'cs-photo-prog';
+    el.innerHTML = '<div class="cs-pp-row"><span class="cs-pp-ic">📤</span><span class="cs-pp-text"></span></div><div class="cs-pp-track"><i></i></div>';
+    document.body.appendChild(el);
+    return el;
+  }
+  function photoProgStart() {
+    _ppActive++; _ppBatch++;
+    clearTimeout(_ppHideTimer);
+    const el = _ppEl(); el.className = ''; el.style.display = 'flex';
+    el.querySelector('.cs-pp-ic').textContent = '📤';
+    el.querySelector('.cs-pp-text').textContent = _ppActive > 1 ? 'Uploading ' + _ppActive + ' photos…' : 'Uploading photo…';
+  }
+  function photoProgDone() {
+    _ppActive = Math.max(0, _ppActive - 1);
+    const el = _ppEl();
+    if (_ppActive > 0) { el.querySelector('.cs-pp-text').textContent = 'Uploading ' + _ppActive + ' photo' + (_ppActive > 1 ? 's' : '') + '…'; return; }
+    el.className = 'done';
+    el.querySelector('.cs-pp-ic').textContent = '✓';
+    el.querySelector('.cs-pp-text').textContent = _ppBatch > 1 ? _ppBatch + ' photos saved' : 'Photo saved';
+    _ppBatch = 0;
+    clearTimeout(_ppHideTimer);
+    _ppHideTimer = setTimeout(() => { el.style.display = 'none'; }, 1700);
+  }
+  function photoProgError(msg) {
+    _ppActive = Math.max(0, _ppActive - 1); _ppBatch = 0;
+    const el = _ppEl(); el.className = 'error';
+    el.querySelector('.cs-pp-ic').textContent = '⚠️';
+    el.querySelector('.cs-pp-text').textContent = msg || 'Upload failed';
+    clearTimeout(_ppHideTimer);
+    _ppHideTimer = setTimeout(() => { el.style.display = 'none'; }, 5000);
+  }
+
   // Returns true on success, false on any bail/failure (so the pending-photo
   // outbox knows whether to keep retrying).
   async function uploadDefectPhoto(legacyId, file) {
@@ -1025,16 +1077,15 @@
     // missing job mapping (the bucket RLS no longer requires it).
     const jobUuid = jobUuidForDefect(legacyId);
     const folder1 = jobUuid || uuid;
-    showToastSafe('Compressing photo…');
+    photoProgStart();
     let blob;
-    try { blob = await compressImage(file); } catch (e) { showToastSafe('Could not read that image'); return false; }
-    if (!blob) { showToastSafe('Could not process that image'); return false; }
+    try { blob = await compressImage(file); } catch (e) { photoProgError('Couldn’t read that image'); return false; }
+    if (!blob) { photoProgError('Couldn’t process that image'); return false; }
     const path = `${folder1}/${uuid}/${randName()}`;
     const up = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
     if (up.error) {
       console.error('[CloudSync] upload', up.error);
-      setBanner('⚠️ Photo upload failed: ' + (up.error.message || 'storage error'), 'offline', 7000);
-      showToastSafe('Upload failed: ' + (up.error.message || 'storage error'));
+      photoProgError('Upload failed: ' + (up.error.message || 'storage error'));
       return false;
     }
     const ins = await sb.from('dm_defect_photos').insert({
@@ -1042,12 +1093,11 @@
     });
     if (ins.error) {
       console.error(ins.error);
-      setBanner('⚠️ Photo saved to storage but the record failed: ' + (ins.error.message || ''), 'offline', 7000);
-      showToastSafe('Saved file but record failed');
+      photoProgError('Photo saved but the record failed');
       return false;
     }
     photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;   // optimistic badge
-    showToastSafe('Photo added (' + Math.round(blob.size / 1024) + ' KB)');
+    photoProgDone();
     if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     // Re-query authoritatively: a realtime/visibility pull fired by the new
     // defect can run refreshPhotoCounts() between insert and now and wipe the
@@ -1359,8 +1409,7 @@
         await new Promise(r => setTimeout(r, 500));
       }
       if (!idMap.defects[legacyId]) {
-        setBanner('⚠️ Photo not attached — the defect hasn’t finished syncing. Reopen the defect and add the photo again.', 'offline', 8000);
-        showToastSafe('Could not attach a photo (not synced yet)');
+        photoProgError('Photo not attached — defect still syncing. Reopen it and add the photo again.');
         return;
       }
       await uploadDefectPhoto(legacyId, file);
@@ -1373,7 +1422,7 @@
       let persisted = false;
       try { await pendingPut(legacyId, file); persisted = true; } catch (e) { /* IDB unavailable */ }
       if (persisted) {
-        showToastSafe('Photo queued — uploading…');
+        // The progress strip is shown by uploadDefectPhoto when the upload runs.
         // Make sure the defect ROW exists in the DB first (direct write), so the
         // photo has something to attach to — the old flushPending no longer
         // inserts defects (they're direct-write now), which is why photos on a
