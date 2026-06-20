@@ -406,7 +406,7 @@
       sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
       sb.from('jobs').select('id, job_number, lot, street, suburb, active'),
       sb.from('dm_defects').select('*'),
-      sb.from('job_order_profiles').select('job_id, rows'),   // Framework call-up; best-effort
+      sb.from('job_call_up_archive').select('job_id, cost_centre, supplier_name'),   // Framework call-up archive (accumulates across uploads); best-effort
       sb.from('dm_trade_learning').select('phrase_key, trade, n'),   // learned trades; best-effort
       // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
       // view is readable by authenticated users; an error just means no My Jobs.
@@ -481,14 +481,18 @@
       });
     });
 
-    // Framework call-up rows, keyed by address legacy id. Best-effort: a SELECT
-    // error (RLS / table absent) just yields no suggestions, never breaks a pull.
+    // Framework call-up rows, keyed by address legacy id. Now sourced from the
+    // accumulating job_call_up_archive (one flat row per cost_centre+supplier,
+    // across every upload) instead of the rolling Order Profile snapshot — so
+    // early-trade subs that scrolled out of the window are still suggestable.
+    // Best-effort: a SELECT error (RLS / table absent) just yields no
+    // suggestions, never breaks a pull.
     callupsByAddress = {};
     if (callups && !callups.error && Array.isArray(callups.data)) {
-      callups.data.forEach(p => {
-        const lid = uuidToLegacy.addresses[p.job_id];
+      callups.data.forEach(r => {
+        const lid = uuidToLegacy.addresses[r.job_id];
         if (lid == null) return;                          // job not visible to this user
-        callupsByAddress[lid] = Array.isArray(p.rows) ? p.rows : [];
+        (callupsByAddress[lid] = callupsByAddress[lid] || []).push({ supplier_name: r.supplier_name, cost_centre: r.cost_centre });
       });
     }
 
