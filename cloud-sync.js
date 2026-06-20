@@ -1225,7 +1225,13 @@
       const { data, error } = await sb.functions.invoke('extract-defects', { body: { text } });
       if (error) throw new Error(error.message || 'AI extraction failed');
       if (data && data.error) throw new Error(data.error);
-      return (data && data.defects) || [];
+      // Normalise to {description, location} objects (the review handles these,
+      // pre-filling the area); tolerate the old flat-string shape too.
+      return ((data && data.defects) || [])
+        .map((d) => (typeof d === 'string'
+          ? { description: d, location: '' }
+          : { description: (d && d.description) || '', location: (d && d.location) || '' }))
+        .filter((d) => d.description && d.description.trim());
     }
   };
 

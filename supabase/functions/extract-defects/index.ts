@@ -32,13 +32,24 @@ Deno.serve(async (req: Request) => {
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) return json({ error: "Server not configured: ANTHROPIC_API_KEY missing" }, 500);
 
+  // Structured output: each defect carries its own description + the room/area
+  // it's in. Location pre-fills the review and sharpens the trade allocator
+  // (which runs on location + description).
   const schema = {
     type: "object",
     additionalProperties: false,
     properties: {
       defects: {
         type: "array",
-        items: { type: "string" },
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            description: { type: "string", description: "One concise, actionable defect in the inspector's own wording." },
+            location: { type: "string", description: "Room/area of the home (e.g. Kitchen, Master Bedroom, Ensuite, Garage, Alfresco, Facade / External, Roof), or '' if not stated." },
+          },
+          required: ["description", "location"],
+        },
       },
     },
     required: ["defects"],
@@ -49,15 +60,18 @@ Deno.serve(async (req: Request) => {
     max_tokens: 8000,
     thinking: { type: "disabled" },
     system:
-      "You extract building/construction defect items from an inspection report. " +
-      "Return each distinct defect as its own concise description string. " +
-      "Join lines that are clearly one wrapped item. " +
-      "Exclude headings, section titles, page numbers, dates, addresses, names, " +
-      "signatures, and boilerplate. Do not invent or infer defects that are not stated.",
+      "You read a residential building inspection report and extract every distinct defect/item noted for rectification. " +
+      "For each, return a concise, actionable one-line description in the inspector's own wording, plus the room/area it is in.\n" +
+      "Rules:\n" +
+      "• Capture each defect ONCE. Reports often list an item in a summary table AND again in a detailed/photos section — do not duplicate.\n" +
+      "• Put the room or area in `location` (Kitchen, Master Bedroom, Bed 2/3/4, Ensuite, Bathroom, Laundry, WIR/Robe, Hallway, Entry, Garage, Alfresco, Porch, Facade / External, Roof, Driveway, etc.); use '' if not stated. Do NOT repeat the location inside `description`.\n" +
+      "• Exclude headings, scores/ratings, page numbers, the date, the address, names, signatures, photo captions, disclaimers and general boilerplate.\n" +
+      "• Do NOT invent, infer, or summarise defects that are not explicitly stated.\n" +
+      "• Strip leading item numbers and 'Observation:' / 'Defect:' / 'Note:' labels; keep the technical wording.",
     messages: [
       {
         role: "user",
-        content: "Extract every defect item from this inspection report:\n\n" + text.slice(0, 100000),
+        content: "Extract the defects from this inspection report:\n\n" + text.slice(0, 120000),
       },
     ],
     output_config: { format: { type: "json_schema", schema } },
@@ -84,11 +98,15 @@ Deno.serve(async (req: Request) => {
   }
 
   const block = (data.content || []).find((b: any) => b.type === "text");
-  let defects: string[] = [];
+  let defects: { description: string; location: string }[] = [];
   try {
     const parsed = JSON.parse(block?.text || "{}");
     if (Array.isArray(parsed.defects)) {
-      defects = parsed.defects.map((d: unknown) => String(d).trim()).filter(Boolean);
+      defects = parsed.defects
+        .map((d: any) => (typeof d === "string"
+          ? { description: d.trim(), location: "" }
+          : { description: String(d?.description ?? "").trim(), location: String(d?.location ?? "").trim() }))
+        .filter((d: { description: string }) => d.description);
     }
   } catch (_) { /* fall through with empty list */ }
 
