@@ -6848,7 +6848,14 @@
             ov.id = 'imp-ov';
             ov.innerHTML = `<div id="imp-card">${inner}</div>`;
             document.body.appendChild(ov);
-            ov.addEventListener('click', (e) => { if (e.target === ov) impClose(); });
+            ov.addEventListener('click', (e) => {
+                if (e.target !== ov) return;
+                // Mid-review, a tap outside must NOT dismiss — that loses entries
+                // you're part-way through. Use Skip / Save & next / Finish (or ✕).
+                // Other overlays (pickers, messages) still close on tap-out.
+                if (_review) return;
+                impClose();
+            });
             const x = document.getElementById('imp-close'); if (x) x.onclick = impClose;
             return ov;
         }
@@ -7544,6 +7551,11 @@
                 </div>`);
             document.getElementById('rv-skip').onclick = () => { r.index++; renderReviewItem(); };
             document.getElementById('rv-finish').onclick = finishReview;
+            // The ✕ is an explicit exit — confirm (so it's not an accidental tap),
+            // then end the review (which also releases the tap-out guard). Already-
+            // saved items are kept; only the remaining unreviewed ones are dropped.
+            const _x = document.getElementById('imp-close');
+            if (_x) _x.onclick = () => { if (confirm('Close the review? Items you’ve saved are kept; the rest won’t be reviewed.')) { _review = null; impClose(); } };
             // Searchable Address + Contractor pickers. Picking an address re-renders
             // (to refresh the call-up suggestion); see rvCombo.
             rvCombo('address');
@@ -7998,7 +8010,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-20a"></script>
+    <script src="cloud-sync.js?v=2026-06-20b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
