@@ -1441,14 +1441,41 @@
     for (const lid in idMap.addresses) if (idMap.addresses[lid] === uuid) return Number(lid);
     return null;
   }
+  const REPORT_BUCKET = 'dm-reports';
   window.CloudReports = {
-    add: async ({ name, addressLegacyId, defectCount, reportType }) => {
+    add: async ({ name, addressLegacyId, defectCount, reportType, file }) => {
       const job_id = (addressLegacyId != null) ? (idMap.addresses[addressLegacyId] || null) : null;
+      // Stash the source PDF so it can be auto-attached to the supplier email.
+      let storage_path = null;
+      if (file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || ''))) {
+        try {
+          const safe = (name || 'report').replace(/[^a-z0-9._-]+/gi, '_').slice(0, 80);
+          const path = `${job_id || 'unfiled'}/${Date.now()}_${safe}`;
+          const up = await sb.storage.from(REPORT_BUCKET).upload(path, file, { contentType: 'application/pdf', upsert: false });
+          if (!up.error) storage_path = path;
+          else console.error('[CloudReports] upload', up.error);
+        } catch (e) { console.error('[CloudReports] upload', e); }
+      }
       const { data, error } = await sb.from('dm_reports')
-        .insert({ name: name || 'Report', job_id, defect_count: defectCount || 0, report_type: reportType || null })
-        .select('id, name, defect_count, created_at, job_id, report_type').single();
+        .insert({ name: name || 'Report', job_id, defect_count: defectCount || 0, report_type: reportType || null, storage_path })
+        .select('id, name, defect_count, created_at, job_id, report_type, storage_path').single();
       if (error) { console.error('[CloudReports] add', error); return null; }
       return data;
+    },
+    // Most recent stored report PDF for an address, as a File for the share
+    // sheet (so emailSupplier can attach it). null if none / not logged in.
+    fileForAddress: async (addressLegacyId) => {
+      const job_id = (addressLegacyId != null) ? (idMap.addresses[addressLegacyId] || null) : null;
+      if (!job_id) return null;
+      const { data, error } = await sb.from('dm_reports')
+        .select('name, storage_path')
+        .eq('job_id', job_id).not('storage_path', 'is', null)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (error || !data || !data.storage_path) return null;
+      const dl = await sb.storage.from(REPORT_BUCKET).download(data.storage_path);
+      if (dl.error || !dl.data) return null;
+      const fname = (data.storage_path.split('/').pop() || data.name || 'report.pdf').replace(/^\d+_/, '');
+      return new File([dl.data], /\.pdf$/i.test(fname) ? fname : fname + '.pdf', { type: 'application/pdf' });
     },
     list: async () => {
       const { data, error } = await sb.from('dm_reports')

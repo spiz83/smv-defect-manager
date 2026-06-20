@@ -4789,6 +4789,15 @@
             }
             if (booking) body += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
 
+            // Attach the inspection report PDF (if one was imported for this
+            // property) so the supplier gets the source report alongside their items.
+            if (window.CloudReports && window.CloudReports.fileForAddress) {
+                try {
+                    const rep = await window.CloudReports.fileForAddress(addressId);
+                    if (rep) { files.push(rep); body += '\nInspection report attached.\n'; }
+                } catch (e) {}
+            }
+
             // Prefer the share sheet so the actual photos ATTACH to the email
             // (clean), instead of pasting long, messy links. Falls back to a
             // plain mailto where attaching files isn't supported (e.g. desktop).
@@ -6901,11 +6910,11 @@
                         const paged = await extractReportTextPaged(f);
                         const items = parseBpiDefects(paged);
                         if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
-                        startReportReview(items, f.name, reportType, matchAddressFromText(paged, f.name));
+                        startReportReview(items, f.name, reportType, matchAddressFromText(paged, f.name), f);
                         return;
                     }
                     const text = await extractReportText(f);
-                    await extractAndReview(text, f.name, reportType, useAI);
+                    await extractAndReview(text, f.name, reportType, useAI, f);
                 } catch (err) {
                     console.error(err);
                     impOverlayMessage('Could not read that file: ' + (err.message || err));
@@ -6927,7 +6936,7 @@
         }
 
         // Decide between AI extraction and the built-in parser, then review.
-        async function extractAndReview(rawText, sourceName, reportType, useAI) {
+        async function extractAndReview(rawText, sourceName, reportType, useAI, reportFile) {
             let items = [];
             if (useAI) {
                 impSetBusy('🤖 Reading the report with AI…');
@@ -6945,7 +6954,7 @@
             // Match the property from the report header even on the AI path, so the
             // address is pre-selected regardless of which extractor ran. The source
             // file name doubles as a match input (BPI names embed lot + street).
-            startReportReview(items, sourceName, reportType, matchAddressFromText(rawText, sourceName));
+            startReportReview(items, sourceName, reportType, matchAddressFromText(rawText, sourceName), reportFile);
         }
 
         function impSetBusy(msg) {
@@ -7417,8 +7426,8 @@
 
         // ---- Step 2: review & assign each item ----
         let _review = null;
-        function startReportReview(items, reportName, reportType, matchedAddressId) {
-            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: matchedAddressId || null };
+        function startReportReview(items, reportName, reportType, matchedAddressId, reportFile) {
+            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: matchedAddressId || null, reportFile: reportFile || null };
             buildBpiLearning();   // learn from assignment history before suggesting
             renderReviewItem();
         }
@@ -7593,7 +7602,7 @@
             const r = _review || { saved: 0, reportName: 'Report', lastAddressId: null };
             impClose();
             if (r.saved > 0 && window.CloudReports) {
-                try { await window.CloudReports.add({ name: r.reportName, addressLegacyId: r.lastAddressId, defectCount: r.saved, reportType: r.reportType }); } catch (e) {}
+                try { await window.CloudReports.add({ name: r.reportName, addressLegacyId: r.lastAddressId, defectCount: r.saved, reportType: r.reportType, file: r.reportFile }); } catch (e) {}
             }
             showToast(r.saved > 0 ? `Imported ${r.saved} defect(s) from the report` : 'No defects saved');
             render();
@@ -8050,7 +8059,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-20f"></script>
+    <script src="cloud-sync.js?v=2026-06-20g"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
