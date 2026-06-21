@@ -7551,7 +7551,7 @@
                 : learned
                 ? '🧠 Suggested: ' + ((db.getContractor(learned.contractorId) || {}).name || '') + (learned.support ? ' (learned from ' + learned.support + ' past defect' + (learned.support === 1 ? '' : 's') + ')' : '')
                 : '';
-            const refLbl = item.itemNo != null ? ('Tag ' + item.itemNo + (item.page ? ', p.' + item.page : '')) : (item.page ? 'Page ' + item.page : '');
+            const refLbl = item.itemNo != null ? ('BPI #' + item.itemNo + (item.page ? ', p.' + item.page : '')) : (item.page ? 'Page ' + item.page : '');
             const meta = [refLbl, effTrade ? 'Trade: ' + effTrade + tradeTag : '', suggestNote, _amftDbg ? '🐞 ' + _amftDbg : ''].filter(Boolean).join(' · ');
             impOverlay(`
                 <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
@@ -7614,7 +7614,7 @@
                 // items have no itemNo and get no prefix.
                 const cur = r.items[r.index];
                 const ref = (cur && typeof cur === 'object' && cur.itemNo != null)
-                    ? `Tag ${cur.itemNo}${cur.page ? ' (p.' + cur.page + ')' : ''} — ` : '';
+                    ? `BPI #${cur.itemNo}${cur.page ? ' (p.' + cur.page + ')' : ''} — ` : '';
                 db.addDefect({ addressId, contractorId: contractorId || null, description: ref + desc, location, status: 'open', unassigned: !contractorId });
                 if (contractorId) {
                     learnFromAssignment((location || '') + ' ' + desc, contractorId);            // local: phrase → contractor
@@ -8087,7 +8087,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21b"></script>
+    <script src="cloud-sync.js?v=2026-06-21c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
