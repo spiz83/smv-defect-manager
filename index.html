@@ -2223,7 +2223,7 @@
                         </div>
                     ` : defectGroups.map(group => `
                         <div class="contractor-section">
-                            <div class="contractor-name">${formatAddress(group.address)}</div>
+                            <div class="contractor-name" ${group.address && group.address.id != null ? `onclick="viewDefectsForAddress(${group.address.id})" style="cursor:pointer" title="View this address's defects"` : ''}>${formatAddress(group.address)}${group.address && group.address.id != null ? ' ›' : ''}</div>
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
@@ -2356,7 +2356,7 @@
                     ` : Object.values(byContractor).map(group => `
                         <div class="contractor-section">
                             <div class="contractor-name contractor-hdr">
-                                <span>${group.contractor.name || 'Unassigned'}</span>
+                                <span ${group.contractor.id != null ? `onclick="viewDefectsForContractor(${group.contractor.id})" style="cursor:pointer" title="View all of this contractor's defects"` : ''}>${group.contractor.name || 'Unassigned'}${group.contractor.id != null ? ' ›' : ''}</span>
                                 <span class="supplier-actions">
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
                                     <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier their items + photos">✉️</button>` : ''}
@@ -3054,6 +3054,15 @@
         function viewDefectsForAddress(addressId) {
             state.currentView = 'view-defects-address';
             state.filters = { addressId: parseInt(addressId) };
+            render();
+        }
+
+        // Jump straight to a contractor's View Defects screen (all their
+        // addresses). Used by the clickable contractor headers on the
+        // by-address screen so you can pivot between the two views.
+        function viewDefectsForContractor(contractorId) {
+            state.currentView = 'view-defects-contractor';
+            state.filters = { contractorId: parseInt(contractorId) };
             render();
         }
 
@@ -4766,6 +4775,17 @@
         }
 
         // Email ONE supplier their open items (with photo links) for this address
+        // One defect → an email line ordered "BPI #N (p.P) — Location — item".
+        // The saved description already starts with the "BPI #N (p.P) — " ref,
+        // so we peel that off, slot the location in after it, then the item text.
+        // Defects with no BPI ref fall back to "Location — item".
+        function formatDefectEmailLine(d) {
+            const desc = (d.description || '').trim();
+            const loc = (d.location || '').trim();
+            const m = desc.match(/^(BPI\s*#\d+(?:\s*\(p\.\d+\))?)\s*—\s*([\s\S]*)$/);
+            if (m) return [m[1], loc, m[2].trim()].filter(Boolean).join(' — ');
+            return [loc, desc].filter(Boolean).join(' — ');
+        }
         async function emailSupplier(contractorId, addressId) {
             const c = db.getContractor(contractorId);
             const addr = formatAddress(db.getAddress(addressId));
@@ -4785,24 +4805,33 @@
             showToast('Preparing email…');
             const booking = db.getContractorBooking(contractorId, addressId);
             const subject = 'Defects - ' + addr;
-            let body = addr + '\n\n' + c.name + '\n';
+
+            // Gather photos for the share sheet, and the inspection report PDF
+            // first, so the intro line can accurately say it's attached.
             const files = [];
             for (const d of defects) {
-                body += '• ' + (d.location ? d.location + ' - ' : '') + d.description + '\n';
                 if (window.CloudPhotos && window.CloudPhotos.getFiles) {
                     try { (await window.CloudPhotos.getFiles(d.id)).forEach(f => files.push(f)); } catch (e) {}
                 }
             }
-            if (booking) body += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
-
-            // Attach the inspection report PDF (if one was imported for this
-            // property) so the supplier gets the source report alongside their items.
+            let reportAttached = false;
             if (window.CloudReports && window.CloudReports.fileForAddress) {
                 try {
                     const rep = await window.CloudReports.fileForAddress(addressId);
-                    if (rep) { files.push(rep); body += '\nInspection report attached.\n'; }
+                    if (rep) { files.push(rep); reportAttached = true; }
                 } catch (e) {}
             }
+
+            // Time-of-day greeting → standard line → the items, each formatted
+            // "BPI # — location — item" with NO bullet points.
+            const hr = new Date().getHours();
+            const greeting = hr < 12 ? 'Good morning All,' : hr < 17 ? 'Good afternoon All,' : 'Good evening All,';
+            const intro = reportAttached
+                ? 'Please see attached BPI report along with the outstanding defect items below:'
+                : 'Please see the outstanding defect items below:';
+            let body = greeting + '\n\n' + intro + '\n\n';
+            for (const d of defects) body += formatDefectEmailLine(d) + '\n';
+            if (booking) body += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
 
             // Prefer the share sheet so the actual photos ATTACH to the email
             // (clean), instead of pasting long, messy links. Falls back to a
