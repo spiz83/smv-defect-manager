@@ -1576,6 +1576,12 @@
     const d = (db.data.defects || []).find((x) => String(x.id) === String(legacyId));
     if (!d) { outboxRemove(legacyId); return; }   // deleted locally — nothing to write
     if (!idMap.addresses[d.addressId]) { outboxAdd(legacyId); return; }   // job not mapped yet (RLS) — retry later
+    // DATA-LOSS GUARD: a defect IS assigned locally but the contractor map isn't
+    // built yet (cold boot / pre-pull reconcile). Writing now would resolve the
+    // contractor to NULL and WIPE the assignment. Defer instead — the outbox
+    // replays after the pull has populated idMap.contractors. (This is the bug
+    // that nulled every contractor on 2026-06-21.)
+    if (d.contractorId != null && !idMap.contractors[d.contractorId]) { outboxAdd(legacyId); return; }
     try {
       // The cloud row we already pulled for this local defect, if any. CRITICAL:
       // defects created in CH Tracker have legacy_id = NULL in the DB, so an
@@ -1633,6 +1639,14 @@
         const { data: jobs } = await sb.from('jobs').select('id, active');
         (jobs || []).forEach((j) => { if (showInactiveJobs || j.active !== false) idMap.addresses[hashId(j.id)] = j.id; });
       } catch (e) { /* offline — try again next boot */ }
+    }
+    // Build the contractor map too BEFORE pushing — otherwise commitDefect can't
+    // resolve assigned contractors and the data-loss guard would defer them all.
+    if (!Object.keys(idMap.contractors).length) {
+      try {
+        const { data: cons } = await sb.from('dm_contractors').select('id, legacy_id');
+        (cons || []).forEach((c) => { idMap.contractors[c.legacy_id != null ? c.legacy_id : hashId(c.id)] = c.id; });
+      } catch (e) { /* offline — guard will defer assigned defects to the outbox */ }
     }
     setBanner('⬆️ Uploading ' + locals.length + ' change(s) saved on this phone…', 'syncing');
     let ok = 0;
