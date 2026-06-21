@@ -3057,11 +3057,72 @@
             openModal('all-trades-list-modal');
         }
 
+        // ── Handover-complete jobs ──────────────────────────────────────────
+        // Jobs marked Handover Complete in CH Tracker (jobStatus === 'completed')
+        // still sync to the app. When a supervisor opens one, warn them — they may
+        // continue (there can be outstanding defects) or dismiss it from their
+        // list. Dismissed jobs are hidden locally on this device.
+        function getDismissedJobs() {
+            try { return new Set((JSON.parse(localStorage.getItem('dm_dismissed_jobs') || '[]') || []).map(Number)); } catch (e) { return new Set(); }
+        }
+        function saveDismissedJobs(set) { try { localStorage.setItem('dm_dismissed_jobs', JSON.stringify([...set])); } catch (e) {} }
+        const _completedAck = new Set();   // acknowledged-this-session via Continue
+        let _completedProceed = null;
+        function openAddressGuarded(addressId, proceed) {
+            addressId = parseInt(addressId);
+            const a = db.getAddress(addressId);
+            if (a && a.jobStatus === 'completed' && !_completedAck.has(addressId) && !getDismissedJobs().has(addressId)) {
+                showCompletedJobPrompt(a, addressId, proceed);
+                return;
+            }
+            proceed();
+        }
+        function showCompletedJobPrompt(address, addressId, proceed) {
+            _completedProceed = proceed;
+            closeCompletedPrompt();
+            const addr = formatAddress(address);
+            const wrap = document.createElement('div');
+            wrap.id = 'completed-job-prompt';
+            wrap.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px';
+            wrap.innerHTML = `
+                <div style="background:var(--card-bg,#fff);border-radius:14px;max-width:380px;width:100%;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.4)">
+                    <div style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:8px">✅ Handover Complete</div>
+                    <div style="font-size:14px;color:var(--text-secondary);line-height:1.5;margin-bottom:18px">
+                        <strong style="color:var(--text-primary)">${addr.replace(/</g,'&lt;')}</strong> has been marked <strong>Handover Complete</strong> in CH Tracker.<br><br>
+                        Do you wish to continue, or mark it complete here? If you mark it complete you'll no longer see this job in your list.
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        <button onclick="completedPromptContinue(${addressId})" style="padding:12px;border:none;border-radius:10px;background:var(--blue,#2563eb);color:#fff;font-weight:600;font-size:15px;cursor:pointer">Continue</button>
+                        <button onclick="completedPromptDismiss(${addressId})" style="padding:12px;border:1px solid var(--border-color,#ccc);border-radius:10px;background:transparent;color:var(--text-primary);font-weight:600;font-size:15px;cursor:pointer">Mark handover complete</button>
+                        <button onclick="closeCompletedPrompt()" style="padding:10px;border:none;background:transparent;color:var(--text-secondary);font-size:14px;cursor:pointer">Cancel</button>
+                    </div>
+                </div>`;
+            wrap.addEventListener('click', (e) => { if (e.target === wrap) closeCompletedPrompt(); });
+            document.body.appendChild(wrap);
+        }
+        function closeCompletedPrompt() { const el = document.getElementById('completed-job-prompt'); if (el) el.remove(); }
+        function completedPromptContinue(addressId) {
+            _completedAck.add(parseInt(addressId));
+            const p = _completedProceed; _completedProceed = null;
+            closeCompletedPrompt();
+            if (p) p();
+        }
+        function completedPromptDismiss(addressId) {
+            addressId = parseInt(addressId);
+            const set = getDismissedJobs(); set.add(addressId); saveDismissedJobs(set);
+            _completedProceed = null;
+            closeCompletedPrompt();
+            showToast('Job hidden — marked handover complete');
+            showHomeView();
+        }
+
         function selectAddressFromList(addressId) {
-            state.currentView = 'view-defects-address';
-            state.filters = { addressId: parseInt(addressId) };
             closeModal('all-addresses-list-modal');
-            render();
+            openAddressGuarded(addressId, () => {
+                state.currentView = 'view-defects-address';
+                state.filters = { addressId: parseInt(addressId) };
+                render();
+            });
         }
 
         // Jump straight to View Defects for an address (used by the Add Defects
@@ -3199,9 +3260,15 @@
                     return [...streetWords, ...suburbWords, ...propWords];
                 };
                 
-                items = db.getAddresses().filter(a => {
+                const _dismissed = getDismissedJobs();
+                // Hide dismissed jobs and not-yet-started ones (admin / pre-planner
+                // have no construction = no defects) from the defect search. Jobs
+                // with unknown status are kept so nothing legit disappears.
+                items = db.getAddresses()
+                    .filter(a => !_dismissed.has(a.id) && a.jobStatus !== 'admin' && a.jobStatus !== 'pre_planner')
+                    .filter(a => {
                     const allWords = getAllWords(a);
-                    
+
                     // If searching for a number, match any number that starts with search
                     if (isNumeric) {
                         return allWords.some(word => {
@@ -3373,9 +3440,11 @@
             // If this is a "view" field (search-address, search-contractor, search-trade), navigate to view page
             if (isViewField) {
                 if (itemType === 'address') {
-                    state.currentView = 'view-defects-address';
-                    state.filters = { addressId: itemId };
-                    render();
+                    openAddressGuarded(itemId, () => {
+                        state.currentView = 'view-defects-address';
+                        state.filters = { addressId: itemId };
+                        render();
+                    });
                 } else if (itemType === 'contractor') {
                     state.currentView = 'view-defects-contractor';
                     state.filters = { contractorId: itemId };
@@ -5390,7 +5459,7 @@
                             <button onclick="closeModal('all-addresses-list-modal')" style="background: none; border: none; font-size: 28px; color: #8e8e93; cursor: pointer; padding: 0; line-height: 1;">×</button>
                         </div>
                         <div style="max-height: 400px; overflow-y: auto;">
-                            ${db.getAddresses().map(a => `
+                            ${db.getAddresses().filter(a => !getDismissedJobs().has(a.id)).map(a => `
                                 <div class="defect-item" style="background: var(--bg-primary); margin-bottom: 3px; padding: 10px 15px; border: 1px solid var(--border-color); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1; cursor: pointer;" onclick="selectAddressFromList(${a.id})">
                                         <div style="font-weight: 600; font-size: 16px;">${a.street}</div>
@@ -8182,7 +8251,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21j"></script>
+    <script src="cloud-sync.js?v=2026-06-21k"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
