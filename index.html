@@ -2790,6 +2790,21 @@
                                             style="padding: 10px 16px; font-size: 14px;" onclick="setShowInactiveJobs(true)">Show all</button>
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- Assignable trades (manager only): tick which trade options appear in the
+                             "Trade" mode of the assign picker, for when the specific sub isn't known. -->
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                            <div style="font-size: 17px; font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">🧰 Assignable Trades</div>
+                            <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Tick the trades a supervisor can assign a defect to when they can't find the exact contractor. These show in the picker's <strong>Trade</strong> mode.</div>
+                            ${db.getContractors().filter(c => c.isTradePlaceholder).sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(c => `
+                                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-color)">
+                                    <span style="color:var(--text-primary);font-size:15px">${c.name}</span>
+                                    <button onclick="toggleTradeActive(${c.id}, ${c.isActive === false})"
+                                        style="min-width:64px;padding:6px 12px;border-radius:14px;border:1px solid ${c.isActive !== false ? 'var(--green,#10b981)' : 'var(--border-color)'};background:${c.isActive !== false ? 'var(--green,#10b981)' : 'transparent'};color:${c.isActive !== false ? '#fff' : 'var(--text-secondary)'};font-weight:600;font-size:13px;cursor:pointer">
+                                        ${c.isActive !== false ? 'On' : 'Off'}
+                                    </button>
+                                </div>`).join('')}
                         </div>` : ''}
 
                         <!-- App Design -->
@@ -7507,14 +7522,42 @@
         }
         // Searchable combobox for the review screen's Address / Contractor pickers.
         // Writes the chosen id into the hidden #rv-<kind> input that save reads.
+        // Manager toggles a trade option on/off (Manage → Assignable Trades).
+        async function toggleTradeActive(legacyId, active) {
+            if (!window.CloudContractors) { showToast('Log in to change this', true); return; }
+            const ok = await window.CloudContractors.setTradeActive(legacyId, active);
+            if (ok) { render(); showToast(active ? 'Trade enabled' : 'Trade disabled'); }
+            else showToast('Could not update — try again', true);
+        }
+        // Flip the BPI-review contractor picker between real contractors and the
+        // trade placeholders, preserving any in-progress description/location edit.
+        function setAssignMode(trade) {
+            state.assignByTrade = !!trade;
+            if (_review) {
+                const cur = _review.items[_review.index];
+                if (cur && typeof cur === 'object') {
+                    const dEl = document.getElementById('rv-desc'), lEl = document.getElementById('rv-location');
+                    if (dEl) cur.description = dEl.value;
+                    if (lEl) cur.location = lEl.value;
+                }
+                renderReviewItem();
+            }
+        }
         function rvCombo(kind) {
             const input = document.getElementById('rv-' + kind + '-input');
             const hidden = document.getElementById('rv-' + kind);
             const list = document.getElementById('rv-' + kind + '-list');
             if (!input || !hidden || !list) return;
+            // Contractor list respects the Contractor/Trade toggle: Trade mode
+            // shows only the active trade placeholders (Bricklayer, Painter, …)
+            // so the supervisor can assign by trade when the specific sub isn't
+            // known; Contractor mode shows the real subs.
+            const contractorList = () => db.getContractors().filter(c => state.assignByTrade
+                ? (c.isTradePlaceholder && c.isActive !== false)
+                : !c.isTradePlaceholder);
             const options = kind === 'address'
                 ? db.getAddresses().slice().sort((a, b) => formatAddress(a).localeCompare(formatAddress(b))).map(a => ({ id: a.id, label: formatAddress(a) }))
-                : db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ id: c.id, label: c.name + (c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : '') }));
+                : contractorList().slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ id: c.id, label: c.name + (!state.assignByTrade && c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : '') }));
             const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
             const currentLabel = () => { const o = options.find(x => String(x.id) === String(hidden.value)); return o ? o.label : ''; };
             const draw = (q) => {
@@ -7620,9 +7663,15 @@
                         </div>
                     </div>
                     <div class="imp-field">
-                        <label>Assign to contractor / trade${callup ? ' (from call-up)' : suggestedContractor ? ' (suggested)' : ''}</label>
+                        <label style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                            <span>Assign to ${state.assignByTrade ? 'trade' : 'contractor'}${!state.assignByTrade && (callup ? ' (from call-up)' : suggestedContractor ? ' (suggested)' : '') || ''}</span>
+                            <span class="rv-assign-toggle" style="display:inline-flex;border:1px solid var(--border-color,#ccc);border-radius:8px;overflow:hidden;font-size:12px">
+                                <button type="button" onclick="setAssignMode(false)" style="border:none;padding:5px 10px;cursor:pointer;background:${state.assignByTrade ? 'transparent' : 'var(--blue,#2563eb)'};color:${state.assignByTrade ? 'var(--text-secondary,#888)' : '#fff'};font-weight:600">Contractor</button>
+                                <button type="button" onclick="setAssignMode(true)" style="border:none;padding:5px 10px;cursor:pointer;background:${state.assignByTrade ? 'var(--blue,#2563eb)' : 'transparent'};color:${state.assignByTrade ? '#fff' : 'var(--text-secondary,#888)'};font-weight:600">Trade</button>
+                            </span>
+                        </label>
                         <div class="rv-combo">
-                            <input type="text" id="rv-contractor-input" class="rv-combo-input" placeholder="Type to search, or leave blank…" autocomplete="off" value="${contractorLabel}">
+                            <input type="text" id="rv-contractor-input" class="rv-combo-input" placeholder="${state.assignByTrade ? 'Pick a trade…' : 'Type to search, or leave blank…'}" autocomplete="off" value="${contractorLabel}">
                             <input type="hidden" id="rv-contractor" value="${chosenContractorId != null ? chosenContractorId : ''}">
                             <div class="rv-combo-list" id="rv-contractor-list"></div>
                         </div>
@@ -8133,7 +8182,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21i"></script>
+    <script src="cloud-sync.js?v=2026-06-21j"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

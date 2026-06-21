@@ -446,7 +446,9 @@
         id: lid, name: c.name, email: c.email || '', phone: c.phone || '',
         tradeIds, trades: tradeNames || 'No Trade Assigned',
         isShared: c.is_shared !== false,        // false = private to its adder
-        addedBy: c.added_by || null             // supervisor who added it (if private)
+        addedBy: c.added_by || null,            // supervisor who added it (if private)
+        isTradePlaceholder: !!c.is_trade_placeholder,  // it's a "Trade" option, not a real sub
+        isActive: c.is_active !== false                // manager has it switched on
       });
     });
 
@@ -1445,6 +1447,19 @@
     for (const lid in idMap.addresses) if (idMap.addresses[lid] === uuid) return Number(lid);
     return null;
   }
+  // ----- Trade placeholders: manager switches a trade option on/off -----
+  window.CloudContractors = {
+    setTradeActive: async (legacyId, active) => {
+      const uuid = idMap.contractors[legacyId];
+      if (!uuid) return false;
+      const { error } = await sb.from('dm_contractors').update({ is_active: !!active }).eq('id', uuid);
+      if (error) { console.warn('[CloudContractors] setTradeActive', error.message); return false; }
+      const c = (db.data.contractors || []).find((x) => x.id === legacyId);
+      if (c) c.isActive = !!active;
+      return true;
+    }
+  };
+
   const REPORT_BUCKET = 'dm-reports';
   window.CloudReports = {
     add: async ({ name, addressLegacyId, defectCount, reportType, file }) => {
