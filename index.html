@@ -2749,31 +2749,6 @@
                     
                     <div class="manage-container">
                         ${renderPendingContractors()}
-                        <!-- Dark Mode Toggle -->
-                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <div>
-                                    <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">
-                                        ${isDarkMode ? '🌙' : '☀️'} ${isDarkMode ? 'Dark' : 'Light'} Mode
-                                    </div>
-                                    <div style="font-size: 14px; color: var(--text-secondary);">
-                                        Switch between light and dark themes
-                                    </div>
-                                </div>
-                                <div style="display: flex; gap: 10px;">
-                                    <button class="btn ${!isDarkMode ? 'btn-primary' : 'btn-secondary'}" 
-                                            style="padding: 10px 20px; font-size: 14px;" 
-                                            onclick="setTheme('light')">
-                                        ☀️ Light
-                                    </button>
-                                    <button class="btn ${isDarkMode ? 'btn-primary' : 'btn-secondary'}" 
-                                            style="padding: 10px 20px; font-size: 14px;" 
-                                            onclick="setTheme('dark')">
-                                        🌙 Dark
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
 
                         ${(window.CloudJobs && window.CloudJobs.isManager()) ? `
                         <!-- Assignable trades (manager only): tap to expand the full list and
@@ -2803,29 +2778,13 @@
                             <button onclick="clearAllDefects()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--red, #b3261e); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">Clear all defects</button>
                         </div>` : ''}
 
-                        <!-- App Design -->
+                        <!-- Themes -->
                         <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
-                            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
-                                <div>
-                                    <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">✨ App Design</div>
-                                    <div style="font-size: 14px; color: var(--text-secondary);">Classic, Modern, or F1 Telemetry (CH Tracker style)</div>
-                                </div>
-                                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                    <button class="btn ${currentDesign() === 'classic' ? 'btn-primary' : 'btn-secondary'}"
-                                            style="padding: 10px 16px; font-size: 14px;" onclick="setDesign('classic')">Classic</button>
-                                    <button class="btn ${currentDesign() === 'modern' ? 'btn-primary' : 'btn-secondary'}"
-                                            style="padding: 10px 16px; font-size: 14px;" onclick="setDesign('modern')">Modern</button>
-                                    <button class="btn ${currentDesign() === 'f1' ? 'btn-primary' : 'btn-secondary'}"
-                                            style="padding: 10px 16px; font-size: 14px;" onclick="setDesign('f1')">🏎️ F1</button>
-                                </div>
-                            </div>
-                            ${currentDesign() === 'f1' ? `
-                            <div style="margin-top: 16px;">
-                                <label style="display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary);">🏁 F1 Telemetry theme</label>
-                                <select onchange="setF1Theme(this.value)" style="width:100%; padding:11px 12px; font-size:15px;">
-                                    ${F1_THEMES.map(t => `<option value="${t.id}" ${currentF1Theme() === t.id ? 'selected' : ''}>${t.name} — ${t.sub}</option>`).join('')}
-                                </select>
-                            </div>` : ''}
+                            <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">🎨 Themes</div>
+                            <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Pick the app's colour theme.</div>
+                            <select onchange="setF1Theme(this.value)" style="width:100%; padding:11px 12px; font-size:15px;">
+                                ${F1_THEMES.map(t => `<option value="${t.id}" ${currentF1Theme() === t.id ? 'selected' : ''}>${t.name} — ${t.sub}</option>`).join('')}
+                            </select>
                         </div>
 
                         <!-- Home sections: Multiple Contractors / Trades (hidden by default) -->
@@ -6441,10 +6400,10 @@
         }
 
         function loadTheme() {
-            const savedTheme = localStorage.getItem('theme');
-            if (savedTheme === 'dark') {
-                document.body.classList.add('dark-mode');
-            }
+            // Light/dark removed (Spiro 2026-06): the selected Theme controls all
+            // colours, so force the neutral base off and drop any saved dark pref.
+            document.body.classList.remove('dark-mode');
+            try { localStorage.removeItem('theme'); } catch (e) {}
         }
 
         // ---- Colour themes (incl. Premier League clubs) ----
@@ -6492,9 +6451,8 @@
 
         // ---- App design: Classic vs Modern (toggle in Manage) ----
         function currentDesign() {
-            // Default to F1 style (with the Blueprint theme, which is the
-            // f1Theme default) for fresh installs. Saved preference wins.
-            return localStorage.getItem('appDesign') || 'f1';
+            // Themes are the only design now (Classic/Modern removed) — always F1.
+            return 'f1';
         }
         function applyDesign(d) {
             document.body.classList.toggle('design-modern', d === 'modern');
@@ -6885,6 +6843,8 @@
             const t = F1_THEMES.find(x => x.id === id) || F1_THEMES[0];
             const b = document.body.style;
             Object.entries(t.vars).forEach(([k, v]) => b.setProperty(k, v));
+            // Page background follows the theme too (no separate light/dark layer).
+            if (t.vars['--bg']) b.setProperty('--page-bg', t.vars['--bg']);
             const acc = t.vars['--acc'] || '#00A19A';
             const h = acc.replace('#', '');
             const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), bl = parseInt(h.slice(4, 6), 16);
@@ -8214,7 +8174,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21p"></script>
+    <script src="cloud-sync.js?v=2026-06-22a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
