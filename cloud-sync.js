@@ -1145,7 +1145,8 @@
     }
   }
 
-  // 50-day auto-expiry: sweep on login.
+  // Photo auto-expiry (30 business days / 42 calendar days, set by the
+  // dm_defect_photos.expires_at default): sweep expired rows on login.
   async function sweepExpiredPhotos() {
     try {
       const nowIso = new Date().toISOString();
