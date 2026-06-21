@@ -1577,10 +1577,28 @@
     if (!d) { outboxRemove(legacyId); return; }   // deleted locally — nothing to write
     if (!idMap.addresses[d.addressId]) { outboxAdd(legacyId); return; }   // job not mapped yet (RLS) — retry later
     try {
-      const { data, error } = await sb.from('dm_defects')
-        .upsert(defectRow(d), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
+      // The cloud row we already pulled for this local defect, if any. CRITICAL:
+      // defects created in CH Tracker have legacy_id = NULL in the DB, so an
+      // upsert-by-legacy_id can't match them and would INSERT A DUPLICATE (the
+      // long-running "completed item pops back / two copies" bug). When we know
+      // the uuid, UPDATE that exact row by id instead — robust no matter what
+      // its legacy_id is. We don't touch legacy_id on update (avoids a unique
+      // collision and keeps CH-origin rows matchable by uuid on every pull).
+      const knownUuid = idMap.defects[d.id];
+      let data, error;
+      if (knownUuid) {
+        const patch = defectRow(d); delete patch.legacy_id;
+        const res = await sb.from('dm_defects').update(patch).eq('id', knownUuid).select('id, legacy_id').maybeSingle();
+        data = res.data; error = res.error;
+      }
+      // Brand-new local defect (no known cloud row), or the known row has since
+      // been deleted in the cloud → (re)create it, upserting by legacy_id.
+      if (!error && !data) {
+        const res = await sb.from('dm_defects').upsert(defectRow(d), { onConflict: 'legacy_id' }).select('id, legacy_id').maybeSingle();
+        data = res.data; error = res.error;
+      }
       if (error) throw error;
-      if (data) { idMap.defects[data.legacy_id] = data.id; defectUuidToLegacy[data.id] = d.id; }
+      if (data) { idMap.defects[d.id] = data.id; defectUuidToLegacy[data.id] = d.id; }
       if (snapshot.defects) snapshot.defects[d.id] = { ...d };   // baseline now matches the cloud
       outboxRemove(legacyId);
       persistSyncState();
