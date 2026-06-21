@@ -2969,9 +2969,11 @@
                 a.street.toLowerCase().includes(input.toLowerCase())
             );
             if (address) {
-                state.currentView = 'view-defects-address';
-                state.filters = { addressId: address.id };
-                render();
+                openAddressGuarded(address.id, () => {
+                    state.currentView = 'view-defects-address';
+                    state.filters = { addressId: address.id };
+                    render();
+                });
             } else {
                 showToast('Address not found', true);
             }
@@ -6867,9 +6869,11 @@
         function viewDefectsForJob(addressId) {
             const address = db.getAddress(addressId);
             if (!address) { showToast('Job not found'); return; }
-            state.currentView = 'view-defects-address';
-            state.filters = { addressId: address.id };
-            render();
+            openAddressGuarded(address.id, () => {
+                state.currentView = 'view-defects-address';
+                state.filters = { addressId: address.id };
+                render();
+            });
         }
 
         // ---- Unified top search: one box, pick Address / Contractor / Trade ----
@@ -8251,7 +8255,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21k"></script>
+    <script src="cloud-sync.js?v=2026-06-21l"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
