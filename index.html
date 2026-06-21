@@ -4827,7 +4827,7 @@
             // SYDNEY time (AEST/AEDT), not the device's timezone, so it's right
             // even if a phone is set elsewhere.
             const hr = parseInt(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Australia/Sydney' }).format(new Date()), 10) % 24;
-            const greeting = hr < 12 ? 'Good morning All,' : hr < 17 ? 'Good afternoon All,' : 'Good evening All,';
+            const greeting = hr < 12 ? 'Good morning,' : hr < 17 ? 'Good afternoon,' : 'Good evening,';
             const intro = reportAttached
                 ? 'Please see attached BPI report along with the outstanding defect items below:'
                 : 'Please see the outstanding defect items below:';
@@ -4837,7 +4837,16 @@
             // One blank line between each item so the list scans easily on a phone.
             body += defects.map(d => formatDefectEmailLine(d)).join('\n\n') + '\n';
             if (booking) body += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
-            body += '\nKind regards,\nCreation Homes\n';
+            // No sign-off — the user's own email signature provides it.
+
+            // Once the email is sent, move every item we just emailed from
+            // 'open' (red) to 'pending' (amber) — they're now ordered/booked
+            // with the trade. Only flips items still open; leaves pending ones.
+            const markEmailedPending = () => {
+                let changed = 0;
+                for (const d of defects) if (defectStatusOf(d) === 'open') { db.setDefectStatus(d.id, 'pending'); changed++; }
+                if (changed) { render(); flushStatus(); showToast(changed + ' item' + (changed === 1 ? '' : 's') + ' marked pending'); }
+            };
 
             // Prefer the share sheet so the actual photos ATTACH to the email
             // (clean), instead of pasting long, messy links. Falls back to a
@@ -4845,14 +4854,16 @@
             if (files.length && navigator.canShare && navigator.canShare({ files })) {
                 try {
                     await navigator.share({ title: subject, text: body, files });
+                    markEmailedPending();   // share completed → items are now ordered
                     return;
                 } catch (e) {
-                    if (e && e.name === 'AbortError') return;   // user closed the sheet
+                    if (e && e.name === 'AbortError') return;   // user closed the sheet → leave statuses
                     /* otherwise fall through to mailto */
                 }
             }
             window.location.href = 'mailto:' + encodeURIComponent(c.email) +
                 '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+            markEmailedPending();   // mail client opened → items are now ordered
         }
 
         function emailDefectList() {
@@ -8122,7 +8133,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21g"></script>
+    <script src="cloud-sync.js?v=2026-06-21h"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
