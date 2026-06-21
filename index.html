@@ -2805,6 +2805,13 @@
                                         ${c.isActive !== false ? 'On' : 'Off'}
                                     </button>
                                 </div>`).join('')}
+                        </div>
+
+                        <!-- Clear all defects (manager only): purge cloud + this phone -->
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--red, #b3261e); border-radius: 10px;">
+                            <div style="font-size: 17px; font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">🧹 Clear all defects</div>
+                            <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Permanently remove every defect from every job (cloud + this phone). For clearing test data — a recoverable copy is archived.</div>
+                            <button onclick="clearAllDefects()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--red, #b3261e); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">Clear all defects</button>
                         </div>` : ''}
 
                         <!-- App Design -->
@@ -7595,6 +7602,18 @@
         }
         // Searchable combobox for the review screen's Address / Contractor pickers.
         // Writes the chosen id into the hidden #rv-<kind> input that save reads.
+        // Manager: purge ALL defects (cloud + this phone) — for clearing test
+        // data. Local-first means a cloud-only delete is undone by this phone
+        // re-uploading; CloudDefects.purgeAll wipes both so it sticks.
+        async function clearAllDefects() {
+            if (!window.CloudDefects) { showToast('Log in first', true); return; }
+            if (!confirm('⚠️ Delete ALL defects from EVERY job — both the cloud and this phone?\n\nThis is for clearing test data. A recoverable copy is archived.')) return;
+            if (!confirm('This removes every defect everywhere. Continue?')) return;
+            showToast('Clearing all defects…');
+            const r = await window.CloudDefects.purgeAll();
+            if (r && r.ok) { showToast('All defects cleared'); render(); }
+            else showToast('Clear failed: ' + ((r && r.error) || 'unknown'), true);
+        }
         // Manager toggles a trade option on/off (Manage → Assignable Trades).
         async function toggleTradeActive(legacyId, active) {
             if (!window.CloudContractors) { showToast('Log in to change this', true); return; }
@@ -8255,7 +8274,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21m"></script>
+    <script src="cloud-sync.js?v=2026-06-21n"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

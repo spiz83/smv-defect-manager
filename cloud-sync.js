@@ -1448,6 +1448,35 @@
     for (const lid in idMap.addresses) if (idMap.addresses[lid] === uuid) return Number(lid);
     return null;
   }
+  // ----- Manager: purge ALL defects (cloud + this device) -----
+  // The app is local-first: deleting defects only in the cloud doesn't stick,
+  // because this phone re-uploads its local copy on the next sync. This wipes
+  // BOTH the cloud rows AND this device's local copy + sync state (outbox,
+  // id-map, snapshot, queued photos) in one go, so nothing re-uploads. For
+  // clearing test data. The DB delete-archive keeps a recoverable copy.
+  window.CloudDefects = {
+    purgeAll: async () => {
+      suppressPush = true;
+      try {
+        const { error } = await sb.from('dm_defects').delete().not('id', 'is', null);
+        if (error) { suppressPush = false; return { ok: false, error: error.message }; }
+        if (db && db.data) db.data.defects = [];
+        idMap.defects = {};
+        for (const k in defectUuidToLegacy) delete defectUuidToLegacy[k];
+        if (snapshot && snapshot.defects) snapshot.defects = {};
+        defectOutbox = []; saveDefectOutbox();
+        try {
+          const idb = await idbOpen();
+          await new Promise((res) => { const tx = idb.transaction('q', 'readwrite'); tx.objectStore('q').clear(); tx.oncomplete = res; tx.onerror = res; });
+        } catch (e) { /* no queued photos */ }
+        if (db && db.save) db.save();
+        persistSyncState();
+        suppressPush = false;
+        return { ok: true };
+      } catch (e) { suppressPush = false; return { ok: false, error: String(e) }; }
+    }
+  };
+
   // ----- Trade placeholders: manager switches a trade option on/off -----
   window.CloudContractors = {
     setTradeActive: async (legacyId, active) => {
