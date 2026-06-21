@@ -2306,16 +2306,22 @@
             const address = db.getAddress(addressId);
             const defects = db.getDefects({ addressId });
             
-            // Group by contractor
+            // Group by contractor. A defect with no contractor (unassigned) or
+            // one whose contractor isn't in the synced list must NOT crash the
+            // whole view on `group.contractor.name` — bucket those under a safe
+            // "Unassigned" group instead. (This was the Lahar Rd "click does
+            // nothing" bug: one null-contractor defect threw during render.)
             const byContractor = {};
             defects.forEach(d => {
-                if (!byContractor[d.contractorId]) {
-                    byContractor[d.contractorId] = {
-                        contractor: d.contractor,
+                const c = d.contractor || (d.contractorId != null ? db.getContractor(d.contractorId) : null);
+                const key = c ? c.id : '__unassigned__';
+                if (!byContractor[key]) {
+                    byContractor[key] = {
+                        contractor: c || { id: null, name: 'Unassigned', _unassigned: true },
                         defects: []
                     };
                 }
-                byContractor[d.contractorId].defects.push(d);
+                byContractor[key].defects.push(d);
             });
 
             // Completed defects for this address — revealed by the expand button.
@@ -2350,10 +2356,10 @@
                     ` : Object.values(byContractor).map(group => `
                         <div class="contractor-section">
                             <div class="contractor-name contractor-hdr">
-                                <span>${group.contractor.name}</span>
+                                <span>${group.contractor.name || 'Unassigned'}</span>
                                 <span class="supplier-actions">
-                                    ${supplierBookingBtn(group.contractor.id, addressId)}
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier their items + photos">✉️</button>
+                                    ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier their items + photos">✉️</button>` : ''}
                                 </span>
                             </div>
                             ${group.defects.map(defect => `
@@ -2559,7 +2565,7 @@
         }
 
         function renderMultipleContractorsView(contractorIds) {
-            const contractors = contractorIds.map(id => db.getContractor(id));
+            const contractors = contractorIds.map(id => db.getContractor(id)).filter(Boolean);
             const contractorNames = contractors.map(c => c.name).join(', ');
             const defectGroups = db.getDefectsByAddress({ contractorIds });
             
@@ -2574,7 +2580,7 @@
                     };
                 }
                 group.defects.forEach(defect => {
-                    const cName = defect.contractor.name;
+                    const cName = (defect.contractor && defect.contractor.name) || 'Unassigned';
                     if (!byAddressThenContractor[addressKey].contractors[cName]) {
                         byAddressThenContractor[addressKey].contractors[cName] = [];
                     }
@@ -6126,36 +6132,58 @@
         // Main render function
         function render() {
             const app = document.getElementById('app');
-            
+
             let content = '';
-            switch(state.currentView) {
-                case 'home':
-                    content = renderHomeView();
-                    break;
-                case 'view-defects-address':
-                    content = renderViewDefectsAddress(state.filters.addressId);
-                    break;
-                case 'view-defects-contractor':
-                    content = renderViewDefectsContractor(state.filters.contractorId);
-                    break;
-                case 'view-defects-trade':
-                    content = renderViewDefectsTrade(state.filters);
-                    break;
-                case 'add-defects-address':
-                    content = renderAddDefectsAddress(state.filters.addressId);
-                    break;
-                case 'add-defects-contractor':
-                    content = renderAddDefectsContractor(state.filters.contractorId);
-                    break;
-                case 'view-multiple-contractors':
-                    content = renderMultipleContractorsView(state.filters.contractorIds);
-                    break;
-                case 'view-all-defects':
-                    content = renderAllDefectsView();
-                    break;
-                case 'manage':
-                    content = renderManageScreen();
-                    break;
+            // Safety net: a single malformed record must never blank the whole
+            // app (which reads as "tapping does nothing"). If a view throws while
+            // building its HTML, fall back to a recoverable error card instead of
+            // leaving the screen frozen on the previous render.
+            try {
+                switch(state.currentView) {
+                    case 'home':
+                        content = renderHomeView();
+                        break;
+                    case 'view-defects-address':
+                        content = renderViewDefectsAddress(state.filters.addressId);
+                        break;
+                    case 'view-defects-contractor':
+                        content = renderViewDefectsContractor(state.filters.contractorId);
+                        break;
+                    case 'view-defects-trade':
+                        content = renderViewDefectsTrade(state.filters);
+                        break;
+                    case 'add-defects-address':
+                        content = renderAddDefectsAddress(state.filters.addressId);
+                        break;
+                    case 'add-defects-contractor':
+                        content = renderAddDefectsContractor(state.filters.contractorId);
+                        break;
+                    case 'view-multiple-contractors':
+                        content = renderMultipleContractorsView(state.filters.contractorIds);
+                        break;
+                    case 'view-all-defects':
+                        content = renderAllDefectsView();
+                        break;
+                    case 'manage':
+                        content = renderManageScreen();
+                        break;
+                }
+            } catch (err) {
+                console.error('[render] view "' + state.currentView + '" failed:', err);
+                content = `
+                    <div class="defects-container">
+                        <div class="app-header">
+                            <a href="#" class="back-link" onclick="event.preventDefault(); showHomeView()">Back</a>
+                            <div class="header-title">Something went wrong</div>
+                            <div style="width:60px;"></div>
+                        </div>
+                        <div class="empty-state">
+                            <div class="empty-state-icon">⚠️</div>
+                            <p>This screen couldn't be displayed.</p>
+                            <p style="font-size:12px;color:var(--text-secondary,#888);max-width:300px;margin:6px auto 0;">It's been logged. Your data is safe — tap Back to return home, or pull to refresh.</p>
+                            <button onclick="showHomeView()" style="margin-top:14px;padding:10px 18px;border:1px solid var(--border-color,#ccc);border-radius:10px;background:var(--bg-secondary);color:var(--text-primary);font-weight:600;cursor:pointer;">Back to home</button>
+                        </div>
+                    </div>`;
             }
 
             app.innerHTML = `
@@ -8059,7 +8087,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21a"></script>
+    <script src="cloud-sync.js?v=2026-06-21b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
