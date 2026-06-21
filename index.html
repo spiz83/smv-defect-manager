@@ -4829,9 +4829,13 @@
             const intro = reportAttached
                 ? 'Please see attached BPI report along with the outstanding defect items below:'
                 : 'Please see the outstanding defect items below:';
-            let body = greeting + '\n\n' + intro + '\n\n';
-            for (const d of defects) body += formatDefectEmailLine(d) + '\n';
+            let body = greeting + '\n\n'
+                + 'Property: ' + addr + '\n\n'
+                + intro + '\n\n';
+            // One blank line between each item so the list scans easily on a phone.
+            body += defects.map(d => formatDefectEmailLine(d)).join('\n\n') + '\n';
             if (booking) body += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
+            body += '\nKind regards,\nCreation Homes\n';
 
             // Prefer the share sheet so the actual photos ATTACH to the email
             // (clean), instead of pasting long, messy links. Falls back to a
@@ -8116,7 +8120,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21e"></script>
+    <script src="cloud-sync.js?v=2026-06-21f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
