@@ -4823,8 +4823,10 @@
             }
 
             // Time-of-day greeting → standard line → the items, each formatted
-            // "BPI # — location — item" with NO bullet points.
-            const hr = new Date().getHours();
+            // "BPI # — location — item" with NO bullet points. The greeting is by
+            // SYDNEY time (AEST/AEDT), not the device's timezone, so it's right
+            // even if a phone is set elsewhere.
+            const hr = parseInt(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Australia/Sydney' }).format(new Date()), 10) % 24;
             const greeting = hr < 12 ? 'Good morning All,' : hr < 17 ? 'Good afternoon All,' : 'Good evening All,';
             const intro = reportAttached
                 ? 'Please see attached BPI report along with the outstanding defect items below:'
@@ -8120,7 +8122,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-21f"></script>
+    <script src="cloud-sync.js?v=2026-06-21g"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
