@@ -61,7 +61,8 @@
 
   // Photos (#4)
   const PHOTO_BUCKET = 'defect-photos';
-  let photoCounts = {};               // legacyDefectId -> number of photos
+  let photoCounts = {};               // legacyDefectId -> # photos CONFIRMED in the cloud
+  let pendingCounts = {};             // legacyDefectId -> # photos saved on THIS phone, not yet uploaded
   let refreshCountsTimer = null;      // debounce for CloudPhotos.refreshCounts()
   const defectUuidToLegacy = {};      // cloud uuid -> legacy defect id
 
@@ -1075,39 +1076,63 @@
 
   // Returns true on success, false on any bail/failure (so the pending-photo
   // outbox knows whether to keep retrying).
-  async function uploadDefectPhoto(legacyId, file) {
+  // Abort a network step that hangs in poor reception, so the single-flight
+  // drain can move on and retry later instead of wedging forever on one photo.
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, rej) => setTimeout(() => rej(new Error((label || 'request') + ' timed out')), ms)),
+    ]);
+  }
+
+  // Upload ONE photo to the cloud. Returns true on success, false on any
+  // bail/failure (so the durable outbox knows whether to keep the blob queued).
+  // `idKey` (the outbox key) makes the storage path DETERMINISTIC so a retry
+  // overwrites the same object instead of orphaning a duplicate, and lets us
+  // skip a duplicate DB row if a previous attempt already recorded it. The blob
+  // is NEVER discarded here — only the caller deletes it from the outbox, and
+  // only after this returns true.
+  async function uploadDefectPhoto(legacyId, file, idKey) {
     const uuid = await resolveDefectUuid(legacyId);
-    if (!uuid) { showToastSafe('Save the defect before adding photos'); return false; }
+    if (!uuid) { return false; }   // defect not in cloud yet — keep the photo queued, retry later
     // First path folder is the job uuid when we can resolve it (keeps photos
     // grouped per job), otherwise the defect uuid — we no longer BLOCK on a
     // missing job mapping (the bucket RLS no longer requires it).
     const jobUuid = jobUuidForDefect(legacyId);
     const folder1 = jobUuid || uuid;
     photoProgStart();
-    let blob;
-    try { blob = await compressImage(file); } catch (e) { photoProgError('Couldn’t read that image'); return false; }
-    if (!blob) { photoProgError('Couldn’t process that image'); return false; }
-    const path = `${folder1}/${uuid}/${randName()}`;
-    const up = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-    if (up.error) {
-      console.error('[CloudSync] upload', up.error);
-      photoProgError('Upload failed: ' + (up.error.message || 'storage error'));
+    // Compress, but NEVER lose the photo over a compression hiccup — fall back
+    // to the original file so it still uploads.
+    let blob = null;
+    try { blob = await compressImage(file); } catch (e) { blob = null; }
+    if (!blob) blob = file;
+    const name = idKey ? (String(idKey).replace(/[^a-z0-9]+/gi, '_').slice(0, 60) + '.jpg') : randName();
+    const path = `${folder1}/${uuid}/${name}`;
+    try {
+      const up = await withTimeout(
+        sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: !!idKey }),
+        60000, 'photo upload');
+      if (up.error) { console.error('[CloudSync] upload', up.error); photoProgError('No connection — photo saved on your phone, will upload automatically'); return false; }
+      // Idempotent record: if a prior attempt already inserted this path, don't
+      // double-insert (deterministic path + upsert means the object is the same).
+      let already = false;
+      try {
+        const { data: ex } = await withTimeout(sb.from('dm_defect_photos').select('id').eq('storage_path', path).limit(1), 30000, 'photo check');
+        already = !!(ex && ex.length);
+      } catch (e) { /* treat as not-yet-recorded; insert below */ }
+      if (!already) {
+        const ins = await withTimeout(sb.from('dm_defect_photos').insert({ defect_id: uuid, storage_path: path, bytes: blob.size }), 30000, 'photo record');
+        if (ins.error) { console.error(ins.error); photoProgError('No connection — photo saved on your phone, will upload automatically'); return false; }
+      }
+    } catch (e) {
+      // Timeout / network drop — the blob stays in the outbox and retries.
+      console.warn('[CloudSync] photo upload retrying later:', e && e.message);
+      photoProgError('No connection — photo saved on your phone, will upload automatically');
       return false;
     }
-    const ins = await sb.from('dm_defect_photos').insert({
-      defect_id: uuid, storage_path: path, bytes: blob.size
-    });
-    if (ins.error) {
-      console.error(ins.error);
-      photoProgError('Photo saved but the record failed');
-      return false;
-    }
-    photoCounts[legacyId] = (photoCounts[legacyId] || 0) + 1;   // optimistic badge
     photoProgDone();
     if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
-    // Re-query authoritatively: a realtime/visibility pull fired by the new
-    // defect can run refreshPhotoCounts() between insert and now and wipe the
-    // optimistic count — this restores it from the DB (the photo row now exists).
+    // Re-query authoritatively so the badge reflects the now-confirmed cloud row.
     refreshPhotoCounts();
     return true;
   }
@@ -1203,46 +1228,84 @@
           img = await openPhotoEditor(file);
           if (!img) return;   // cancelled
         }
-        // uploadDefectPhoto self-resolves the uuid (map or DB lookup); only fall
-        // back to the wait-for-sync path if the defect truly isn't in the cloud yet.
-        const ok = await uploadDefectPhoto(legacyId, img);
-        if (!ok) await window.CloudPhotos.uploadWhenReady(legacyId, img);
+        // Durable save: store the photo on this phone FIRST, then upload in the
+        // background. In a poor-reception spot the photo is kept safe and uploads
+        // itself when signal returns — it can never be lost on a failed upload.
+        await savePhotoDurable(legacyId, img);
       }
       await renderGalleryBody(legacyId);
     };
     await renderGalleryBody(legacyId);
   }
 
+  let _galleryUrls = [];   // object URLs to revoke on the next gallery render
   async function renderGalleryBody(legacyId) {
-    const uuid = idMap.defects[legacyId];
     const body = document.getElementById('cs-gallery-body');
     if (!body) return;
-    const { data: rows, error } = await sb.from('dm_defect_photos')
-      .select('id, storage_path, created_at, expires_at, dm_defects!inner(legacy_id)')
-      .eq('dm_defects.legacy_id', legacyId).order('created_at', { ascending: false });
-    if (error) { body.innerHTML = '<div style="padding:20px;color:#b00">Could not load photos.</div>'; return; }
-    photoCounts[legacyId] = (rows || []).length;
-    if (!rows || !rows.length) {
-      body.innerHTML = '<div style="padding:24px;text-align:center;color:#888">No photos yet.<br>Use the button below to add one.</div>';
-      if (typeof render === 'function') render();
-      return;
-    }
-    const paths = rows.map(r => r.storage_path);
-    const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(paths, 3600);
-    const urlByPath = {}; (signed || []).forEach(s => { urlByPath[s.path] = s.signedUrl; });
-    body.innerHTML = '<div id="cs-gallery-grid">' + rows.map(r => {
-      const exp = new Date(r.expires_at);
-      const days = Math.max(0, Math.ceil((exp - new Date()) / 86400000));
-      const url = urlByPath[r.storage_path] || '';
+    // Revoke any object URLs from the previous render to avoid leaks.
+    _galleryUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
+    _galleryUrls = [];
+
+    // 1) Photos still on THIS phone (not yet uploaded). Shown first, ALWAYS —
+    //    even with no reception or if the cloud query below fails. This is what
+    //    guarantees a just-taken photo is never "missing".
+    let pend = [];
+    try { pend = await pendingForLegacy(legacyId); } catch (e) { pend = []; }
+    const pendHtml = pend.map((it, i) => {
+      let url = '';
+      try { url = URL.createObjectURL(it.blob); _galleryUrls.push(url); } catch (e) {}
       return `<div class="cs-photo">
         <a href="${url}" target="_blank" rel="noopener"><img src="${url}" loading="lazy"></a>
         <div class="cs-photo-meta">
-          <span>${days}d left</span>
-          <button data-path="${r.storage_path}" class="cs-photo-del">🗑️</button>
+          <span style="color:#f59e0b">⬆️ uploading…</span>
+          <button data-pkey="${_escAttr(it.key)}" class="cs-photo-del" title="Discard this photo">🗑️</button>
         </div>
       </div>`;
-    }).join('') + '</div>';
-    body.querySelectorAll('.cs-photo-del').forEach(btn => {
+    }).join('');
+
+    // 2) Photos confirmed in the cloud.
+    let rows = null, cloudErr = null;
+    try {
+      const res = await sb.from('dm_defect_photos')
+        .select('id, storage_path, created_at, expires_at, dm_defects!inner(legacy_id)')
+        .eq('dm_defects.legacy_id', legacyId).order('created_at', { ascending: false });
+      rows = res.data; cloudErr = res.error;
+    } catch (e) { cloudErr = e; }
+    if (!cloudErr) photoCounts[legacyId] = (rows || []).length;
+
+    let cloudHtml = '';
+    if (rows && rows.length) {
+      const paths = rows.map(r => r.storage_path);
+      let urlByPath = {};
+      try {
+        const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(paths, 3600);
+        (signed || []).forEach(s => { urlByPath[s.path] = s.signedUrl; });
+      } catch (e) { /* offline — cloud thumbs just won't show this open */ }
+      cloudHtml = rows.map(r => {
+        const exp = new Date(r.expires_at);
+        const days = Math.max(0, Math.ceil((exp - new Date()) / 86400000));
+        const url = urlByPath[r.storage_path] || '';
+        return `<div class="cs-photo">
+          <a href="${url}" target="_blank" rel="noopener"><img src="${url}" loading="lazy"></a>
+          <div class="cs-photo-meta">
+            <span>${days}d left</span>
+            <button data-path="${_escAttr(r.storage_path)}" class="cs-photo-del">🗑️</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    if (!pendHtml && !cloudHtml) {
+      body.innerHTML = cloudErr
+        ? '<div style="padding:24px;text-align:center;color:#888">No reception — any photos on this phone are safe and will show once you reconnect.</div>'
+        : '<div style="padding:24px;text-align:center;color:#888">No photos yet.<br>Use the button below to add one.</div>';
+      if (typeof render === 'function') render();
+      return;
+    }
+    body.innerHTML = '<div id="cs-gallery-grid">' + pendHtml + cloudHtml + '</div>';
+
+    // Delete a confirmed cloud photo.
+    body.querySelectorAll('.cs-photo-del[data-path]').forEach(btn => {
       btn.onclick = async () => {
         if (!confirm('Delete this photo?')) return;
         await deleteOnePhoto(btn.getAttribute('data-path'));
@@ -1250,8 +1313,18 @@
         await renderGalleryBody(legacyId);
       };
     });
+    // Discard a still-on-phone (not yet uploaded) photo from the outbox.
+    body.querySelectorAll('.cs-photo-del[data-pkey]').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('Discard this photo? It hasn’t uploaded yet.')) return;
+        try { await pendingDelete(btn.getAttribute('data-pkey')); } catch (e) {}
+        await refreshPendingCounts();
+        await renderGalleryBody(legacyId);
+      };
+    });
     if (typeof render === 'function') render();
   }
+  function _escAttr(s) { return String(s == null ? '' : s).replace(/[&"<>]/g, m => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[m])); }
 
   // Fetch a defect's photos as data URLs (for embedding into a PDF report).
   async function photoDataUrlsForDefect(legacyId, limit = 3) {
@@ -1339,9 +1412,49 @@
     });
   }
 
+  // Recount photos sitting in the on-phone outbox (per defect) so the badge can
+  // show DB-confirmed + waiting-on-this-phone together, and the global "waiting"
+  // indicator is accurate. Single source of truth = the IndexedDB queue.
+  async function refreshPendingCounts() {
+    let items = [];
+    try { items = await pendingAll(); } catch (e) { items = []; }
+    const counts = {};
+    for (const it of items) counts[it.legacyId] = (counts[it.legacyId] || 0) + 1;
+    const changed = JSON.stringify(counts) !== JSON.stringify(pendingCounts);
+    pendingCounts = counts;
+    updatePendingBanner(items.length);
+    if (changed && typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
+    return items.length;
+  }
+  // Pending (not-yet-uploaded) blobs for one defect — shown in the gallery so a
+  // photo is ALWAYS visible the instant it's taken, even with no reception.
+  async function pendingForLegacy(legacyId) {
+    let items = [];
+    try { items = await pendingAll(); } catch (e) { return []; }
+    return items.filter(it => String(it.legacyId) === String(legacyId));
+  }
+
+  // A small always-honest indicator: "📸 N photo(s) saved on this phone, waiting
+  // to upload". Gives the user confidence nothing is lost in a bad-reception spot.
+  function updatePendingBanner(n) {
+    let el = document.getElementById('cs-photo-pending');
+    if (!n) { if (el) el.style.display = 'none'; return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'cs-photo-pending';
+      el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9998;background:#1f2937;color:#fff;font:600 12px/1.3 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:70vw;cursor:pointer';
+      el.title = 'These photos are safely stored on this phone and upload automatically when you have signal.';
+      el.onclick = () => { uploadPendingPhotos().catch(() => {}); };
+      document.body.appendChild(el);
+    }
+    el.style.display = 'block';
+    el.textContent = `📸 ${n} photo${n > 1 ? 's' : ''} saved on this phone · uploading when you have signal`;
+  }
+
   // Upload every persisted pending photo whose defect now has a cloud uuid.
-  // Called after a pull (id map rebuilt) and on boot. Leaves un-resolvable
-  // ones (defect not synced yet) for the next sweep.
+  // Called after a pull (id map rebuilt), on boot, on reconnect, on app focus,
+  // and on a periodic timer while anything is queued. Leaves un-resolvable ones
+  // (defect not synced yet, or no signal) for the next sweep — never drops them.
   let sweepingPhotos = false;
   async function uploadPendingPhotos() {
     if (sweepingPhotos) return;
@@ -1349,21 +1462,60 @@
     try {
       let items = [];
       try { items = await pendingAll(); } catch (e) { return; }
+      await refreshPendingCounts();
       for (const it of items) {
         try {
-          // uploadDefectPhoto self-resolves the defect uuid (local map or a DB
-          // lookup) and returns false if it genuinely can't yet — keep those
-          // queued for the next sweep.
-          const ok = await uploadDefectPhoto(it.legacyId, it.blob);
-          if (ok) await pendingDelete(it.key);
+          // Pass the outbox key so the storage path is deterministic (retry-safe).
+          const ok = await uploadDefectPhoto(it.legacyId, it.blob, it.key);
+          if (ok) { await pendingDelete(it.key); await refreshPendingCounts(); }
         } catch (e) { /* leave it queued; next sweep retries */ }
       }
-    } finally { sweepingPhotos = false; }
+    } finally {
+      sweepingPhotos = false;
+      try { await refreshPendingCounts(); } catch (e) {}
+      schedulePhotoRetry();
+    }
+  }
+
+  // Keep retrying on a gentle timer for as long as ANY photo is still on-phone —
+  // so a photo taken with no signal uploads itself the moment signal returns,
+  // without the user having to do anything (or even reopen the app).
+  let photoRetryTimer = null;
+  async function schedulePhotoRetry() {
+    clearTimeout(photoRetryTimer);
+    let n = 0;
+    try { n = (await pendingAll()).length; } catch (e) { n = 0; }
+    if (n > 0) photoRetryTimer = setTimeout(() => { uploadPendingPhotos().catch(() => {}); }, 20000);
+  }
+
+  // THE durable save path for every captured photo (new-defect rows AND photos
+  // added to an existing defect via the gallery). Persist the blob to the
+  // IndexedDB outbox FIRST so it physically cannot be lost if the upload fails,
+  // the app is closed, or there's no reception — THEN attempt the upload in the
+  // background. The photo shows immediately (optimistic badge + gallery) and the
+  // retry loop lands it whenever signal allows.
+  async function savePhotoDurable(legacyId, fileOrBlob) {
+    let persisted = false;
+    try { await pendingPut(legacyId, fileOrBlob); persisted = true; } catch (e) { /* IndexedDB unavailable */ }
+    if (persisted) {
+      await refreshPendingCounts();                       // badge + banner show it at once
+      try { await commitDefect(legacyId); } catch (e) {}  // ensure the defect row exists to attach to
+      uploadPendingPhotos().catch(() => {});              // try now; the loop retries if it fails
+      return true;
+    }
+    // No IndexedDB at all (very rare) — last resort, attempt a direct upload so
+    // we at least try rather than silently dropping it.
+    try { await window.CloudPhotos.uploadWhenReady(legacyId, fileOrBlob); return true; }
+    catch (e) { showToastSafe('Could not save photo on this device'); return false; }
   }
 
   // Public API used by the per-defect camera button in index.html
   window.CloudPhotos = {
-    count: (legacyId) => photoCounts[legacyId] || 0,
+    // Badge = photos confirmed in the cloud + photos still waiting on this phone,
+    // so a photo taken with no reception shows on the badge immediately and never
+    // looks "lost".
+    count: (legacyId) => (photoCounts[legacyId] || 0) + (pendingCounts[legacyId] || 0),
+    pendingCount: (legacyId) => pendingCounts[legacyId] || 0,
     // Re-pull the per-defect photo counts from the DB (badge numbers). Safe to
     // call on view navigation; debounced so rapid renders don't spam queries.
     refreshCounts: () => { clearTimeout(refreshCountsTimer); refreshCountsTimer = setTimeout(refreshPhotoCounts, 150); },
@@ -1421,26 +1573,16 @@
       }
       await uploadDefectPhoto(legacyId, file);
     },
-    // Durable path for photos attached to a freshly-added defect: persist the
-    // blob to the IndexedDB outbox FIRST (so it can't be lost if the app is
-    // closed mid-upload), then try to upload right away. uploadPendingPhotos()
-    // re-tries on every pull + on boot until it lands.
-    queueRowPhoto: async (legacyId, file) => {
-      let persisted = false;
-      try { await pendingPut(legacyId, file); persisted = true; } catch (e) { /* IDB unavailable */ }
-      if (persisted) {
-        // The progress strip is shown by uploadDefectPhoto when the upload runs.
-        // Make sure the defect ROW exists in the DB first (direct write), so the
-        // photo has something to attach to — the old flushPending no longer
-        // inserts defects (they're direct-write now), which is why photos on a
-        // brand-new defect from the quick-add modal weren't landing.
-        try { await commitDefect(legacyId); } catch (e) {}
-        uploadPendingPhotos().catch(() => {});
-      } else {
-        // No IndexedDB → fall back to the in-memory wait-and-upload path.
-        await window.CloudPhotos.uploadWhenReady(legacyId, file);
-      }
-    }
+    // THE durable save for any captured photo — persists to this phone FIRST,
+    // then uploads in the background and retries until it lands. Used by both the
+    // new-defect rows and the gallery "add photo to existing defect" button.
+    savePhoto: (legacyId, file) => savePhotoDurable(legacyId, file),
+    // Back-compat alias (new-defect row photos call this name).
+    queueRowPhoto: (legacyId, file) => savePhotoDurable(legacyId, file),
+    // Pending (not-yet-uploaded) blobs for a defect — gallery shows these so a
+    // photo is visible the instant it's taken, even offline.
+    pendingPhotos: (legacyId) => pendingForLegacy(legacyId),
+    refreshPending: () => refreshPendingCounts(),
   };
 
   // ----- Imported report history (for View Recent / Delete Report) -----
@@ -1743,7 +1885,7 @@
     // backgrounded tab before the debounce fires).
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) flushPending().catch(() => {});
-      else pullAll().catch(e => console.error('[CloudSync] focus pull', e));
+      else { pullAll().catch(e => console.error('[CloudSync] focus pull', e)); uploadPendingPhotos().catch(() => {}); }
     });
     window.addEventListener('focus', () => {
       pullAll().catch(e => console.error('[CloudSync] focus pull', e));
@@ -1757,6 +1899,7 @@
       setBanner('📴 Working offline — your changes are saved on this phone and will upload automatically when you reconnect.', 'offline');
     });
     window.addEventListener('online', () => {
+      uploadPendingPhotos().catch(() => {});   // land any photos taken in the dead zone
       if (dirty || defectOutbox.length) {
         setBanner('🔄 Back online — uploading your changes…', 'syncing');
         // Push immediately rather than waiting out the retry timer; runSync's
@@ -1811,7 +1954,12 @@
       const offline = dirty || !navigator.onLine;
       setStatus(offline ? 'Offline' : 'Synced', offline ? 'offline' : undefined);
       sweepExpiredPhotos();
-      uploadPendingPhotos().catch(() => {});   // resume any photo dropped by a previous app close
+      // Ask the browser to make our storage durable so the OS won't silently
+      // evict queued photos under storage pressure (best-effort; iOS honours it
+      // for installed PWAs).
+      try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+      refreshPendingCounts().catch(() => {});   // restore the "N waiting" indicator
+      uploadPendingPhotos().catch(() => {});    // resume any photo from a previous app close / dead zone
     } catch (err) {
       console.error('[CloudSync] init failed', err);
       // Stale/expired session (e.g. password changed): clear it and re-show login
