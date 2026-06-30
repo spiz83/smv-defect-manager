@@ -6555,9 +6555,7 @@
             // loading), show all rather than a false-empty list — but the moment
             // any status is present, filter strictly.
             let list = db.getAddresses();
-            // Exclude truly finished jobs (completed/handed-over) — keep active,
-            // pre_planner, admin and any unknown status so nothing in-flight is hidden.
-            if (list.some(a => a.jobStatus)) list = list.filter(a => a.jobStatus !== 'completed');
+            if (list.some(a => a.jobStatus)) list = list.filter(a => a.jobStatus === 'active');
             // Supervisors see only their own jobs (when we know who they are);
             // managers — or an unresolved session — see ALL of them. Only narrow
             // by supervisor once supervisor data has actually loaded, so a slow
