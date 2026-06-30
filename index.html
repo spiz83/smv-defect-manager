@@ -1926,6 +1926,23 @@
                     try { if (typeof showToast === 'function') showToast('Already on the list — duplicate skipped'); } catch (e) {}
                     return dup;
                 }
+                // No supplier picked → file it under the job's current supervisor
+                // (their contractor row) rather than leaving it "Unassigned".
+                // supervisorName arrives as "Last, First" from CH Tracker — try both
+                // that and the "First Last" form against the contractor list.
+                if (defect.contractorId == null) {
+                    const addr = this.getAddress(defect.addressId);
+                    const rawName = addr && addr.supervisorName;
+                    if (rawName) {
+                        const displayName = rawName.includes(',')
+                            ? rawName.split(',').reverse().map(s => s.trim()).join(' ')
+                            : rawName;
+                        const lc = (s) => (s || '').toLowerCase();
+                        const sup = this.getContractors().find(c =>
+                            lc(c.name) === lc(displayName) || lc(c.name) === lc(rawName));
+                        if (sup) { defect.contractorId = sup.id; defect.unassigned = false; }
+                    }
+                }
                 const id = Math.max(0, ...this.data.defects.map(d => d.id)) + 1;
                 const newDefect = { id, status: 'open', ...defect, completed: false };
                 this.data.defects.push(newDefect);
@@ -8209,7 +8226,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-30a"></script>
+    <script src="cloud-sync.js?v=2026-06-30b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
