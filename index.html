@@ -2634,16 +2634,29 @@
         }
 
         function renderAllDefectsView() {
-            // Get only ACTIVE defects (not completed)
-            const activeDefects = db.data.defects.filter(d => !d.completed);
-            const totalDefects = db.data.defects.length;
+            // Scope to the logged-in supervisor's jobs; managers see everything.
+            const cj = window.CloudJobs;
+            const isMgr = !!(cj && cj.isManager && cj.isManager());
+            const uid = cj && cj.currentUserId ? cj.currentUserId() : null;
+            const myAddressIds = isMgr ? null : new Set(
+                db.getAddresses()
+                    .filter(a => a.supervisorId === uid)
+                    .map(a => a.id)
+            );
+            // Get only ACTIVE defects (not completed), scoped to this user's jobs
+            const activeDefects = db.data.defects.filter(d =>
+                !d.completed && (isMgr || !myAddressIds || myAddressIds.has(d.addressId))
+            );
+            const totalDefects = isMgr
+                ? db.data.defects.length
+                : db.data.defects.filter(d => !myAddressIds || myAddressIds.has(d.addressId)).length;
             const completedCount = totalDefects - activeDefects.length;
             const pendingCount = activeDefects.filter(d => defectStatusOf(d) === 'pending').length;
             const openCount = activeDefects.length - pendingCount;
 
             // Which defects to show depends on the "Show completed" toggle
             const defectsToShow = state.showCompleted
-                ? db.data.defects.slice()
+                ? db.data.defects.filter(d => isMgr || !myAddressIds || myAddressIds.has(d.addressId))
                 : activeDefects;
 
             // Group by address, then by contractor
@@ -6542,7 +6555,9 @@
             // loading), show all rather than a false-empty list — but the moment
             // any status is present, filter strictly.
             let list = db.getAddresses();
-            if (list.some(a => a.jobStatus)) list = list.filter(a => a.jobStatus === 'active');
+            // Exclude truly finished jobs (completed/handed-over) — keep active,
+            // pre_planner, admin and any unknown status so nothing in-flight is hidden.
+            if (list.some(a => a.jobStatus)) list = list.filter(a => a.jobStatus !== 'completed');
             // Supervisors see only their own jobs (when we know who they are);
             // managers — or an unresolved session — see ALL of them. Only narrow
             // by supervisor once supervisor data has actually loaded, so a slow
@@ -8196,7 +8211,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-23a"></script>
+    <script src="cloud-sync.js?v=2026-06-30a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
