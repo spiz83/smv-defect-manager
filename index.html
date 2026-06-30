@@ -1773,9 +1773,26 @@
 
             // Contractor operations
             getContractors() {
-                return this.data.contractors.sort((a, b) => 
+                return this.data.contractors.sort((a, b) =>
                     a.name.localeCompare(b.name)
                 );
+            }
+
+            // The contractor row for a job's current supervisor, or null. Used so
+            // an unselected supplier files under the supervisor instead of
+            // "Unassigned". supervisorName arrives as "Last, First" from CH Tracker
+            // — try both that and the "First Last" form against the contractor list.
+            supervisorContractorIdFor(addressId) {
+                const addr = this.getAddress(addressId);
+                const rawName = addr && addr.supervisorName;
+                if (!rawName) return null;
+                const displayName = rawName.includes(',')
+                    ? rawName.split(',').reverse().map(s => s.trim()).join(' ')
+                    : rawName;
+                const lc = (s) => (s || '').toLowerCase();
+                const sup = this.getContractors().find(c =>
+                    lc(c.name) === lc(displayName) || lc(c.name) === lc(rawName));
+                return sup ? sup.id : null;
             }
 
             getContractor(id) {
@@ -1937,20 +1954,9 @@
                 }
                 // No supplier picked → file it under the job's current supervisor
                 // (their contractor row) rather than leaving it "Unassigned".
-                // supervisorName arrives as "Last, First" from CH Tracker — try both
-                // that and the "First Last" form against the contractor list.
                 if (defect.contractorId == null) {
-                    const addr = this.getAddress(defect.addressId);
-                    const rawName = addr && addr.supervisorName;
-                    if (rawName) {
-                        const displayName = rawName.includes(',')
-                            ? rawName.split(',').reverse().map(s => s.trim()).join(' ')
-                            : rawName;
-                        const lc = (s) => (s || '').toLowerCase();
-                        const sup = this.getContractors().find(c =>
-                            lc(c.name) === lc(displayName) || lc(c.name) === lc(rawName));
-                        if (sup) { defect.contractorId = sup.id; defect.unassigned = false; }
-                    }
+                    const supId = this.supervisorContractorIdFor(defect.addressId);
+                    if (supId != null) { defect.contractorId = supId; defect.unassigned = false; }
                 }
                 const id = Math.max(0, ...this.data.defects.map(d => d.id)) + 1;
                 const newDefect = { id, status: 'open', ...defect, completed: false };
@@ -4632,10 +4638,15 @@
                 const desc = (document.getElementById('de-desc').value || '').trim();
                 if (!desc) { showToast('Description can’t be empty', true); return; }
                 const cidRaw = document.getElementById('de-contractor').value;
-                const contractorId = cidRaw === '' ? null : parseInt(cidRaw, 10);
+                // Blank supplier → fall back to the job's supervisor (same as adding),
+                // so an edit can never leave a defect "Unassigned".
+                const contractorId = cidRaw === ''
+                    ? db.supervisorContractorIdFor(d.addressId)
+                    : parseInt(cidRaw, 10);
                 db.updateDefect(defectId, { description: desc, contractorId });
                 impClose(); render(); flushStatus();
-                showToast('Defect updated');
+                const sup = (contractorId != null && (db.getContractor(contractorId) || {}).name) || '';
+                showToast(cidRaw === '' && sup ? ('Supplier set to ' + sup) : 'Defect updated');
             };
         }
         // Self-contained predictive supplier dropdown for the edit modal (mirrors
@@ -8334,7 +8345,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-30c"></script>
+    <script src="cloud-sync.js?v=2026-06-30d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
