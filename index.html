@@ -5017,7 +5017,7 @@
             container.innerHTML = `
                 <div class="contractor-group" id="group-0">
                     <div class="autocomplete-container" style="margin-bottom: 15px;">
-                        <input type="text" class="contractor-input" placeholder="Select Contractor..." 
+                        <input type="text" class="contractor-input" placeholder="Select Contractor..."
                                style="width: 100%; padding: 12px 15px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;"
                                oninput="handleContractorAutocomplete(this, 0)"
                                onfocus="handleContractorAutocomplete(this, 0)">
@@ -5039,6 +5039,28 @@
                     </div>
                 </div>
             `;
+            // Pre-fill contractor with the job's current supervisor. supervisorName
+            // arrives as "Last, First" from CH Tracker — convert to "First Last" for
+            // matching against the contractor list, then try both formats.
+            const addressId = state.filters && state.filters.addressId;
+            if (addressId) {
+                const address = db.getAddress(addressId);
+                const rawName = address && address.supervisorName;
+                if (rawName) {
+                    const displayName = rawName.includes(',')
+                        ? rawName.split(',').reverse().map(s => s.trim()).join(' ')
+                        : rawName;
+                    const lc = (s) => (s || '').toLowerCase();
+                    const contractor = db.getContractors().find(c =>
+                        lc(c.name) === lc(displayName) || lc(c.name) === lc(rawName)
+                    );
+                    const input = container.querySelector('.contractor-input');
+                    if (input) {
+                        input.value = contractor ? contractor.name : displayName;
+                        if (contractor) input.setAttribute('data-contractor-id', contractor.id);
+                    }
+                }
+            }
         }
 
         function handleContractorAutocomplete(input, groupIndex) {
