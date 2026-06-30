@@ -1862,6 +1862,7 @@
     wrap('addDefect', (a, r) => (r && r.id != null ? [r.id] : []));
     wrap('setDefectStatus', (a) => [a[0]]);
     wrap('setDefectLocation', (a) => [a[0]]);
+    wrap('updateDefect', (a) => [a[0]]);
     wrap('setContractorBooking', (a) => (db.data.defects || [])
       .filter((x) => x.contractorId === a[0] && x.addressId === a[1]).map((x) => x.id));
   }

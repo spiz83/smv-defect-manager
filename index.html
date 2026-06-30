@@ -419,6 +419,15 @@
             line-height: 1;
         }
         .photo-btn.has-photos { background: #E3F2FD; }
+        .edit-btn {
+            border: none;
+            background: var(--bg-secondary);
+            border-radius: 999px;
+            padding: 5px 9px;
+            font-size: 14px;
+            cursor: pointer;
+            line-height: 1;
+        }
         .photo-count {
             margin-left: 3px;
             font-size: 11px;
@@ -1400,7 +1409,7 @@
         .defect-text { flex: 1 1 auto !important; min-width: 0; }
         .defect-actions { gap: 2px !important; align-items: center; flex-shrink: 0; }
         /* Bare, tiny icons — no box/background */
-        .loc-btn, .comms-btn, .photo-btn {
+        .loc-btn, .comms-btn, .photo-btn, .edit-btn {
             border: none !important; background: transparent !important;
             padding: 2px !important; font-size: 13px !important; line-height: 1; cursor: pointer;
         }
@@ -1964,6 +1973,22 @@
                 if (defect) { defect.location = location; this.save(); }
             }
 
+            // Edit an existing defect's description and/or supplier. contractorId
+            // null clears the assignment (back to Unassigned). The cloud layer wraps
+            // this name so the change direct-writes to dm_defects like status edits.
+            updateDefect(id, patch) {
+                const defect = this.data.defects.find(d => d.id === id);
+                if (!defect) return null;
+                if (patch.description != null) defect.description = patch.description;
+                if ('contractorId' in patch) {
+                    defect.contractorId = patch.contractorId;
+                    defect.unassigned = patch.contractorId == null;
+                }
+                defect.lastUpdateAt = new Date().toISOString();
+                this.save();
+                return defect;
+            }
+
             // One attendance/booking date per supplier at a property: stamp every
             // open item for that contractor+address so it syncs with the defects.
             setContractorBooking(contractorId, addressId, date) {
@@ -2244,7 +2269,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
+                                    <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2308,7 +2333,7 @@
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2382,7 +2407,7 @@
                             ${group.defects.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
+                                    <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2400,7 +2425,7 @@
                             ${completed.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
+                                    <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>` : ''}
@@ -2639,7 +2664,7 @@
                                     ${byAddressThenContractor[addressKey].contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2756,7 +2781,7 @@
                                     ${addressGroup.contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${locationControl(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -4570,6 +4595,89 @@
                 : `showToast('Log in to use photos')`;
             return `<button class="photo-btn ${count ? 'has-photos' : ''}" title="Photos"
                         onclick="event.stopPropagation(); ${onclick}">📷${count ? `<span class="photo-count">${count}</span>` : ''}</button>`;
+        }
+
+        // Pencil beside every defect — edit its description / supplier after entry.
+        function editControl(defect) {
+            return `<button class="edit-btn" title="Edit description / supplier"
+                        onclick="event.stopPropagation(); openDefectEdit(${defect.id})">✏️</button>`;
+        }
+        // Edit modal: change the wording and reassign the supplier via the same
+        // predictive dropdown used in BPI review. Leaving the supplier blank sets
+        // it back to Unassigned.
+        function openDefectEdit(defectId) {
+            const d = db.data.defects.find(x => x.id === defectId);
+            if (!d) return;
+            const esc = s => (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const cObj = d.contractorId != null ? db.getContractor(d.contractorId) : null;
+            impOverlay(`
+                <div id="imp-head"><strong>✏️ Edit defect</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <div class="imp-field" style="margin-bottom:14px">
+                        <label>Description</label>
+                        <textarea id="de-desc" style="width:100%;box-sizing:border-box;min-height:84px;padding:11px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;font-family:inherit;">${esc(d.description)}</textarea>
+                    </div>
+                    <div class="imp-field" style="margin-bottom:16px">
+                        <label>Supplier</label>
+                        <div class="rv-combo">
+                            <input type="text" id="de-contractor-input" class="rv-combo-input" placeholder="Type to search, or leave blank…" autocomplete="off" value="${esc(cObj ? cObj.name : '')}">
+                            <input type="hidden" id="de-contractor" value="${d.contractorId != null ? d.contractorId : ''}">
+                            <div class="rv-combo-list" id="de-contractor-list"></div>
+                        </div>
+                    </div>
+                    <button class="imp-btn" id="de-save">Save changes</button>
+                </div>`);
+            defectEditCombo();
+            document.getElementById('de-save').onclick = () => {
+                const desc = (document.getElementById('de-desc').value || '').trim();
+                if (!desc) { showToast('Description can’t be empty', true); return; }
+                const cidRaw = document.getElementById('de-contractor').value;
+                const contractorId = cidRaw === '' ? null : parseInt(cidRaw, 10);
+                db.updateDefect(defectId, { description: desc, contractorId });
+                impClose(); render(); flushStatus();
+                showToast('Defect updated');
+            };
+        }
+        // Self-contained predictive supplier dropdown for the edit modal (mirrors
+        // rvCombo but writes to #de-contractor and isn't tied to BPI review state).
+        function defectEditCombo() {
+            const input = document.getElementById('de-contractor-input');
+            const hidden = document.getElementById('de-contractor');
+            const list = document.getElementById('de-contractor-list');
+            if (!input || !hidden || !list) return;
+            const options = db.getContractors()
+                .filter(c => !c.isTradePlaceholder || c.isActive !== false)
+                .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => ({ id: c.id, label: c.name + (!c.isTradePlaceholder && c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : '') }));
+            const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+            const currentLabel = () => { const o = options.find(x => String(x.id) === String(hidden.value)); return o ? o.label : ''; };
+            const draw = (q) => {
+                q = (q || '').trim().toLowerCase();
+                const hits = (q ? options.filter(o => o.label.toLowerCase().includes(q)) : options).slice(0, 40);
+                list.innerHTML = hits.length
+                    ? hits.map(o => `<div class="rv-combo-item" data-id="${o.id}">${esc(o.label)}</div>`).join('')
+                    : '<div class="rv-combo-empty">No matches</div>';
+                list.classList.add('open');
+            };
+            input.addEventListener('focus', () => {
+                if (input.value && input.value === currentLabel()) input.value = '';
+                draw(input.value);
+                setTimeout(() => { try { input.setSelectionRange(0, input.value.length); } catch (e) {} }, 0);
+            });
+            input.addEventListener('input', () => { if (!input.value.trim()) hidden.value = ''; draw(input.value); });
+            input.addEventListener('blur', () => setTimeout(() => {
+                list.classList.remove('open');
+                if (!input.value.trim() && hidden.value) input.value = currentLabel();
+            }, 150));
+            list.addEventListener('mousedown', (e) => {
+                const it = e.target.closest('.rv-combo-item'); if (!it) return;
+                e.preventDefault();
+                const id = parseInt(it.getAttribute('data-id'));
+                const o = options.find(x => x.id === id);
+                input.value = o ? o.label : '';
+                hidden.value = id;
+                list.classList.remove('open');
+            });
         }
 
         // Friendly DD/MM/YYYY for display + reports
@@ -8226,7 +8334,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-30b"></script>
+    <script src="cloud-sync.js?v=2026-06-30c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
