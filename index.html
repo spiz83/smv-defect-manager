@@ -2927,7 +2927,7 @@
                 return;
             }
             
-            const address = db.getAddresses().find(a => 
+            const address = scopeAddressesToUser(db.getAddresses()).find(a =>
                 a.street.toLowerCase().includes(input.toLowerCase())
             );
             if (address) {
@@ -3191,6 +3191,20 @@
             render();
         }
 
+        // Restrict a list of jobs (addresses) to the logged-in supervisor's own —
+        // managers, or an unresolved session, see all. Every user-facing job
+        // search / picker runs through this so a supervisor can only ever reach
+        // their own jobs. Only narrows once supervisor data has loaded, so a slow
+        // sync never blanks the results.
+        function scopeAddressesToUser(addresses) {
+            const cj = window.CloudJobs;
+            const isMgr = !!(cj && cj.isManager && cj.isManager());
+            const uid = (cj && cj.currentUserId) ? cj.currentUserId() : null;
+            if (isMgr || !uid) return addresses;
+            if (!addresses.some(a => a.supervisorId)) return addresses;
+            return addresses.filter(a => a.supervisorId === uid);
+        }
+
         // Autocomplete functionality
         function handleAutocomplete(input, type, inputId) {
             const value = input.value.toLowerCase();
@@ -3228,7 +3242,7 @@
                 // Hide dismissed jobs and not-yet-started ones (admin / pre-planner
                 // have no construction = no defects) from the defect search. Jobs
                 // with unknown status are kept so nothing legit disappears.
-                items = db.getAddresses()
+                items = scopeAddressesToUser(db.getAddresses())
                     .filter(a => !_dismissed.has(a.id) && a.jobStatus !== 'admin' && a.jobStatus !== 'pre_planner')
                     .filter(a => {
                     const allWords = getAllWords(a);
@@ -3443,7 +3457,7 @@
             
             const isNumeric = /^\d/.test(value);
             
-            const addresses = db.getAddresses().filter(a => {
+            const addresses = scopeAddressesToUser(db.getAddresses()).filter(a => {
                 const streetWords = a.street.toLowerCase().split(' ');
                 const suburbWords = a.suburb.toLowerCase().split(' ');
                 const lotNumber = a.propertyNumber ? a.propertyNumber.toLowerCase() : '';
@@ -3567,7 +3581,7 @@
             
             const isNumeric = /^\d/.test(value);
             
-            const addresses = db.getAddresses().filter(a => {
+            const addresses = scopeAddressesToUser(db.getAddresses()).filter(a => {
                 const streetWords = a.street.toLowerCase().split(' ');
                 const suburbWords = a.suburb.toLowerCase().split(' ');
                 const lotNumber = a.propertyNumber ? a.propertyNumber.toLowerCase() : '';
@@ -4429,7 +4443,7 @@
 
         function addDefectsByAddress() {
             const input = document.getElementById('add-address').value;
-            const address = db.getAddresses().find(a => 
+            const address = scopeAddressesToUser(db.getAddresses()).find(a =>
                 a.street.toLowerCase().includes(input.toLowerCase())
             );
             if (address) {
@@ -5288,7 +5302,7 @@
             
             const isNumeric = /^\d/.test(value);
             
-            const addresses = db.getAddresses().filter(a => {
+            const addresses = scopeAddressesToUser(db.getAddresses()).filter(a => {
                 const streetWords = a.street.toLowerCase().split(' ');
                 const suburbWords = a.suburb.toLowerCase().split(' ');
                 const lotNumber = a.propertyNumber ? a.propertyNumber.toLowerCase() : '';
@@ -5533,7 +5547,7 @@
                             <button onclick="closeModal('all-addresses-list-modal')" style="background: none; border: none; font-size: 28px; color: #8e8e93; cursor: pointer; padding: 0; line-height: 1;">×</button>
                         </div>
                         <div style="max-height: 400px; overflow-y: auto;">
-                            ${db.getAddresses().filter(a => !getDismissedJobs().has(a.id)).map(a => `
+                            ${scopeAddressesToUser(db.getAddresses()).filter(a => !getDismissedJobs().has(a.id)).map(a => `
                                 <div class="defect-item" style="background: var(--bg-primary); margin-bottom: 3px; padding: 10px 15px; border: 1px solid var(--border-color); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
                                     <div style="flex: 1; cursor: pointer;" onclick="selectAddressFromList(${a.id})">
                                         <div style="font-weight: 600; font-size: 16px;">${a.street}</div>
@@ -5722,7 +5736,7 @@
                         </div>
                         <select id="delete-address-select" style="width: 100%; padding: 10px; margin-bottom: 20px;">
                             <option value="">Select address to delete...</option>
-                            ${db.getAddresses().map(a => 
+                            ${scopeAddressesToUser(db.getAddresses()).map(a =>
                                 `<option value="${a.id}">${a.street}</option>`
                             ).join('')}
                         </select>
@@ -7719,7 +7733,7 @@
                 ? (c.isTradePlaceholder && c.isActive !== false)
                 : !c.isTradePlaceholder);
             const options = kind === 'address'
-                ? db.getAddresses().slice().sort((a, b) => formatAddress(a).localeCompare(formatAddress(b))).map(a => ({ id: a.id, label: formatAddress(a) }))
+                ? scopeAddressesToUser(db.getAddresses()).slice().sort((a, b) => formatAddress(a).localeCompare(formatAddress(b))).map(a => ({ id: a.id, label: formatAddress(a) }))
                 : contractorList().slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => ({ id: c.id, label: c.name + (!state.assignByTrade && c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : '') }));
             const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
             const currentLabel = () => { const o = options.find(x => String(x.id) === String(hidden.value)); return o ? o.label : ''; };
@@ -7958,7 +7972,7 @@
         }
 
         function openReportBuilder() {
-            const addrRows = db.getAddresses().slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
+            const addrRows = scopeAddressesToUser(db.getAddresses()).slice().sort((a, b) => (a.street || '').localeCompare(b.street || ''))
                 .map(a => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="rb-addr" value="${a.id}" style="width:auto"> ${formatAddress(a)}</label>`).join('');
             const contrRows = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                 .map(c => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="rb-contr" value="${c.id}" style="width:auto"> ${c.name}</label>`).join('');
@@ -8345,7 +8359,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-06-30d"></script>
+    <script src="cloud-sync.js?v=2026-07-01a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
