@@ -3972,7 +3972,7 @@
 
         function _revokeBulkUrl() { const ov = document.getElementById('bulk-photo-ov'); if (ov && ov._url) { try { URL.revokeObjectURL(ov._url); } catch (e) {} } }
 
-        function renderBulkPhotoStep() {
+        async function renderBulkPhotoStep() {
             const st = bulkPhotoState;
             if (!st) return;
             if (st.idx >= st.files.length) {   // finished
@@ -3983,6 +3983,19 @@
                 showToast(`${n} photo defect(s) added`);
                 render();
                 return;
+            }
+            // Mark up / annotate THIS photo first (once), then fill in the details —
+            // mirrors the single-photo add, which opens the editor before the form.
+            // Cancel in the editor = skip this photo; Save/Use-as-is carries on.
+            st.edited = st.edited || [];
+            if (!st.edited[st.idx] && window.CloudPhotos && window.CloudPhotos.editPhoto) {
+                st.edited[st.idx] = true;   // set before awaiting so it can't re-open
+                _revokeBulkUrl();
+                const prevOv = document.getElementById('bulk-photo-ov'); if (prevOv) prevOv.remove();
+                const edited = await window.CloudPhotos.editPhoto(st.files[st.idx]);
+                if (!bulkPhotoState) return;                       // import closed mid-edit
+                if (edited === null) { skipBulkPhoto(); return; }  // cancelled → skip this photo
+                if (edited) st.files[st.idx] = edited;
             }
             const file = st.files[st.idx];
             const url = URL.createObjectURL(file);
@@ -8359,7 +8372,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-01a"></script>
+    <script src="cloud-sync.js?v=2026-07-05a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
