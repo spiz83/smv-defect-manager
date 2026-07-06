@@ -37,7 +37,10 @@
   // "Keep me signed in": when the user opted out, drop the session when the
   // page is closed. Default (flag absent or '1') keeps you signed in.
   if (localStorage.getItem('cs_keep') === '0') {
-    window.addEventListener('pagehide', () => { try { sb.auth.signOut(); } catch (e) {} });
+    window.addEventListener('pagehide', () => {
+      try { localStorage.removeItem('cs_identity'); } catch (e) {}
+      try { sb.auth.signOut(); } catch (e) {}
+    });
   }
 
   // ---- State ----------------------------------------------------------------
@@ -46,6 +49,17 @@
   let userRole = null;            // 'manager' | 'supervisor'
   let userId = null;
   let userEmail = null;
+  // Last-known identity, persisted across reloads. Without it, the first
+  // render after a refresh/app-update ran before the session re-resolved —
+  // identity unknown → the job filters fell open and EVERY supervisor's jobs
+  // flashed on screen. CloudJobs falls back to this until the live values
+  // load; cleared on any sign-out.
+  let cachedIdentity = {};
+  try { cachedIdentity = JSON.parse(localStorage.getItem('cs_identity') || '{}') || {}; } catch (e) { cachedIdentity = {}; }
+  function clearCachedIdentity() {
+    cachedIdentity = {};
+    try { localStorage.removeItem('cs_identity'); } catch (e) {}
+  }
   // Handed-over (active=false) jobs are hidden by default; a manager can reveal
   // them from Manage. Persisted so the choice survives reloads.
   let showInactiveJobs = localStorage.getItem('dm_show_inactive') === '1';
@@ -268,6 +282,7 @@
         <button id="cs-signout">Sign out</button>`;
       document.body.appendChild(bar);
       document.getElementById('cs-signout').onclick = async () => {
+        clearCachedIdentity();
         await sb.auth.signOut();
         location.reload();
       };
@@ -381,6 +396,9 @@
       if (navigator.onLine) throw e;
       userRole = userRole || 'supervisor';
     }
+    // Remember who this is so the next reload scopes jobs from the first frame.
+    cachedIdentity = { id: userId, role: userRole };
+    try { localStorage.setItem('cs_identity', JSON.stringify(cachedIdentity)); } catch (e) {}
   }
 
   // ===========================================================================
@@ -1690,9 +1708,11 @@
 
   // ----- Job visibility (manager-only: reveal handed-over / inactive jobs) -----
   window.CloudJobs = {
-    isManager: () => userRole === 'manager',
-    currentUserId: () => userId,          // = current_supervisor_id for my own jobs
-    role: () => userRole,
+    // Live session values when resolved; otherwise the persisted last-known
+    // identity — so a refresh/update never briefly un-scopes the job lists.
+    isManager: () => (userRole || cachedIdentity.role) === 'manager',
+    currentUserId: () => userId || cachedIdentity.id || null,   // = current_supervisor_id for my own jobs
+    role: () => userRole || cachedIdentity.role || null,
     showInactive: () => showInactiveJobs,
     // Toggle handed-over jobs on/off and re-pull so the address list updates.
     setShowInactive: async (v) => {
@@ -1965,6 +1985,7 @@
       console.error('[CloudSync] init failed', err);
       // Stale/expired session (e.g. password changed): clear it and re-show login
       if (String(err && err.message).indexOf('SESSION_EXPIRED') !== -1) {
+        clearCachedIdentity();
         try { await sb.auth.signOut(); } catch (e) {}
         showLogin();
         return;
@@ -1996,6 +2017,7 @@
     if (user || !navigator.onLine) {
       await onAuthed();
     } else {
+      clearCachedIdentity();
       try { await sb.auth.signOut(); } catch (e) {}
       showLogin();
     }

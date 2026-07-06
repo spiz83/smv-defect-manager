@@ -3200,7 +3200,11 @@
             const cj = window.CloudJobs;
             const isMgr = !!(cj && cj.isManager && cj.isManager());
             const uid = (cj && cj.currentUserId) ? cj.currentUserId() : null;
-            if (isMgr || !uid) return addresses;
+            if (isMgr) return addresses;
+            // Identity not known yet (first-ever boot / just signed out): show
+            // NOTHING rather than flash every supervisor's jobs. Normal reloads
+            // resolve instantly from the persisted identity (cs_identity).
+            if (!uid) return [];
             if (!addresses.some(a => a.supervisorId)) return addresses;
             return addresses.filter(a => a.supervisorId === uid);
         }
@@ -6719,12 +6723,17 @@
             // any status is present, filter strictly.
             let list = db.getAddresses();
             if (list.some(a => a.jobStatus)) list = list.filter(a => a.jobStatus === 'active');
-            // Supervisors see only their own jobs (when we know who they are);
-            // managers — or an unresolved session — see ALL of them. Only narrow
-            // by supervisor once supervisor data has actually loaded, so a slow
-            // sync doesn't momentarily blank the whole list.
+            // Supervisors see only their own jobs; managers see all. Identity
+            // resolves from the persisted cs_identity on reload, so the filter
+            // applies from the FIRST frame — no flash of other supervisors'
+            // jobs during an app update. If identity is genuinely unknown
+            // (first-ever boot / just signed out) show NOTHING rather than
+            // everyone's jobs; the loading message covers that state.
             const supDataLoaded = list.some(a => a.supervisorId);
-            if (!isMgr && uid && supDataLoaded) list = list.filter(a => a.supervisorId === uid);
+            if (!isMgr) {
+                if (!uid) list = [];
+                else if (supDataLoaded) list = list.filter(a => a.supervisorId === uid);
+            }
             // Sort alphabetically by street name, then by lot number. Prefer the
             // clean fields from the data layer; fall back to parsing the combined
             // "Lot N, [house] Street" for any not-yet-resynced cached rows.
@@ -6775,7 +6784,9 @@
             const title = isMgr ? 'All Active Jobs' : 'My Jobs';
             const emptyMsg = isMgr
                 ? 'Loading jobs… if this stays empty, tap ↻ (bottom-left) to refresh.'
-                : 'No jobs allocated to you yet. Use the search at the top, or tap ↻ (bottom-left) to refresh.';
+                : (!uid
+                    ? 'Loading your jobs…'
+                    : 'No jobs allocated to you yet. Use the search at the top, or tap ↻ (bottom-left) to refresh.');
             const body = list.length ? rows : `<div style="padding:16px;opacity:.7;font-size:13px;">${emptyMsg}</div>`;
             return `
                 <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
@@ -8372,7 +8383,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-05a"></script>
+    <script src="cloud-sync.js?v=2026-07-05b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
