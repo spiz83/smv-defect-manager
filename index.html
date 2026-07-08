@@ -2237,7 +2237,7 @@
                         <div class="lot-title">${contractor.name}</div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email Defect List">📧</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="emailListChooser()" title="Email Defect List">📧</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">➕</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
@@ -2319,7 +2319,7 @@
                         <div class="lot-title">${tradeName}</div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailListChooser()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2648,7 +2648,7 @@
                         <div class="lot-title">Search Multiple Contractors:<br><span style="font-size: 14px; font-weight: 400; color: var(--text-secondary);">${contractorNames}</span></div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailListChooser()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2764,7 +2764,7 @@
                             <button class="icon-btn" onclick="toggleShowCompleted()" title="${state.showCompleted ? 'Hide completed' : 'Show completed'}" style="${state.showCompleted ? 'background: var(--blue); color: #fff;' : ''}">${state.showCompleted ? '🙈' : '👁️'}</button>
                             <button class="icon-btn" onclick="openReportBuilder()" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailListChooser()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -5049,7 +5049,26 @@
             return db.getDefects();
         }
 
-        async function emailDefectList() {
+        // Small chooser so the user picks per-email how to send the list:
+        //  • Email + photos — share sheet, attaches photos + report (Apple Mail
+        //    can't set the Subject then, so the address leads the body).
+        //  • Email with subject — opens Mail with the real Subject filled, no
+        //    attachments (the only way Apple Mail shows a Subject).
+        function emailListChooser() {
+            impOverlay(`
+                <div id="imp-head"><strong>📧 Email defect list</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <p style="font-size:13.5px;color:var(--text-secondary,#888);margin:0 0 14px;line-height:1.4">Apple Mail can't fill the Subject when photos are attached — choose how to send:</p>
+                    <button class="imp-btn" id="em-photos" style="margin-bottom:12px;text-align:left;line-height:1.35">📎 Email + photos<br><span style="font-weight:400;font-size:12px;opacity:.85">Attaches photos + report · subject shown at the top of the email</span></button>
+                    <button class="imp-btn secondary" id="em-plain" style="text-align:left;line-height:1.35">✉️ Email with subject<br><span style="font-weight:400;font-size:12px;opacity:.85">Opens Mail with the Subject filled in · no photo attachments</span></button>
+                </div>`);
+            document.getElementById('em-photos').onclick = () => { impClose(); emailDefectList(true); };
+            document.getElementById('em-plain').onclick = () => { impClose(); emailDefectList(false); };
+        }
+
+        // withPhotos=true attaches photos + report via the share sheet; false opens
+        // Mail with the real Subject filled and no attachments. See emailListChooser.
+        async function emailDefectList(withPhotos = true) {
             const textContent = generateDefectText();
             let subject = 'Defect List';
             let recipient = '';
@@ -5086,17 +5105,21 @@
                 scoped = false;
             }
 
-            showToast('Preparing email…');
-            // Attach every listed defect's photos + (for a single address) the BPI
-            // report, so the trade gets the images — not just a text list (#2).
+            // Only gather attachments for the "+ photos" mode. Without photos we go
+            // straight to mailto so Apple Mail shows the real Subject.
             const files = [];
-            if (scoped && window.CloudPhotos && window.CloudPhotos.getFiles) {
-                for (const d of currentViewDefects()) {
-                    try { (await window.CloudPhotos.getFiles(d.id)).forEach(fl => files.push(fl)); } catch (e) {}
+            if (withPhotos) {
+                showToast('Preparing email…');
+                // Attach every listed defect's photos + (for a single address) the
+                // BPI report, so the trade gets the images — not just a text list.
+                if (scoped && window.CloudPhotos && window.CloudPhotos.getFiles) {
+                    for (const d of currentViewDefects()) {
+                        try { (await window.CloudPhotos.getFiles(d.id)).forEach(fl => files.push(fl)); } catch (e) {}
+                    }
                 }
-            }
-            if (singleAddressId != null && window.CloudReports && window.CloudReports.fileForAddress) {
-                try { const rep = await window.CloudReports.fileForAddress(singleAddressId); if (rep) files.push(rep); } catch (e) {}
+                if (singleAddressId != null && window.CloudReports && window.CloudReports.fileForAddress) {
+                    try { const rep = await window.CloudReports.fileForAddress(singleAddressId); if (rep) files.push(rep); } catch (e) {}
+                }
             }
 
             // Share path leads the body with the subject line (Outlook adopts it as
@@ -8554,7 +8577,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-09a"></script>
+    <script src="cloud-sync.js?v=2026-07-09b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
