@@ -4998,13 +4998,18 @@
             const intro = reportAttached
                 ? 'Please see attached BPI report along with the outstanding defect items below:'
                 : 'Please see the outstanding defect items below:';
-            let body = greeting + '\n\n'
+            let itemsBody = greeting + '\n\n'
                 + 'Property: ' + addr + '\n\n'
                 + intro + '\n\n';
             // One blank line between each item so the list scans easily on a phone.
-            body += defects.map(d => formatDefectEmailLine(d)).join('\n\n') + '\n';
-            if (booking) body += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
+            itemsBody += defects.map(d => formatDefectEmailLine(d)).join('\n\n') + '\n';
+            if (booking) itemsBody += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
             // No sign-off — the user's own email signature provides it.
+            // iOS Mail/Outlook drop the Web-Share "title", so the share path leads
+            // the body with the subject line: Outlook adopts it as the subject,
+            // Mail shows it as the first line. mailto (fallback) sets the real
+            // subject field, so it uses the plain item body.
+            const shareText = subject + '\n\n' + itemsBody;
 
             // Once the email is sent, move every item we just emailed from
             // 'open' (red) to 'pending' (amber) — they're now ordered/booked
@@ -5020,7 +5025,7 @@
             // plain mailto where attaching files isn't supported (e.g. desktop).
             if (files.length && navigator.canShare && navigator.canShare({ files })) {
                 try {
-                    await navigator.share({ title: subject, text: body, files });
+                    await navigator.share({ title: subject, text: shareText, files });
                     markEmailedPending();   // share completed → items are now ordered
                     return;
                 } catch (e) {
@@ -5029,53 +5034,82 @@
                 }
             }
             window.location.href = 'mailto:' + encodeURIComponent(c.email) +
-                '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+                '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(itemsBody);
             markEmailedPending();   // mail client opened → items are now ordered
         }
 
-        function emailDefectList() {
+        // Defects currently in view — matches what generateDefectText() lists, so
+        // we attach exactly those defects' photos to the emailed list.
+        function currentViewDefects() {
+            const v = state.currentView, f = state.filters || {};
+            if (v === 'view-defects-contractor' && f.contractorId) return db.getDefects({ contractorId: f.contractorId });
+            if (v === 'view-defects-address' && f.addressId) return db.getDefects({ addressId: f.addressId });
+            if ((v === 'view-defects-trade' || v === 'view-multiple-contractors') && f.contractorIds)
+                return db.getDefects().filter(d => f.contractorIds.includes(d.contractorId));
+            return db.getDefects();
+        }
+
+        async function emailDefectList() {
             const textContent = generateDefectText();
             let subject = 'Defect List';
             let recipient = '';
-            
+            let singleAddressId = null;
+            let scoped = true;   // only gather photos for a scoped view, never "all defects"
+
             // Set subject and recipient based on current view
             if (state.currentView === 'view-defects-contractor' && state.filters.contractorId) {
                 const contractor = db.getContractor(state.filters.contractorId);
-                subject = `Defect List - ${contractor.name}`;
-                if (contractor.email) {
-                    recipient = contractor.email;
-                }
+                subject = `Defects - ${contractor ? contractor.name : 'Contractor'}`;
+                if (contractor && contractor.email) recipient = contractor.email;
             } else if (state.currentView === 'view-defects-address' && state.filters.addressId) {
                 const address = db.getAddress(state.filters.addressId);
-                subject = `Defect List - ${address.street}, ${address.suburb}${address.propertyNumber ? ' - ' + address.propertyNumber : ''}`;
-                
+                subject = `Defects - ${formatAddress(address)}`;
+                singleAddressId = state.filters.addressId;
                 // Collect all contractor emails for this address
                 const defects = db.getDefects({ addressId: state.filters.addressId });
-                const contractorEmails = [];
                 const seenContractors = new Set();
+                const contractorEmails = [];
                 defects.forEach(d => {
                     if (!seenContractors.has(d.contractorId)) {
                         seenContractors.add(d.contractorId);
                         const contractor = db.getContractor(d.contractorId);
-                        if (contractor && contractor.email && contractor.email.trim()) {
-                            contractorEmails.push(contractor.email.trim());
-                        }
+                        if (contractor && contractor.email && contractor.email.trim()) contractorEmails.push(contractor.email.trim());
                     }
                 });
-                recipient = contractorEmails.join('; ');
+                recipient = contractorEmails.join(',');
             } else if (state.currentView === 'view-defects-trade' && state.filters) {
-                subject = `Defect List - ${state.filters.tradeName}`;
+                subject = `Defects - ${state.filters.tradeName}`;
             } else if (state.currentView === 'view-multiple-contractors' && state.filters.contractorIds) {
-                subject = 'Defect List - Multiple Contractors';
+                subject = 'Defects - Multiple Contractors';
             } else {
-                subject = 'Defect List - All Defects';
+                subject = 'Defects - All';
+                scoped = false;
             }
-            
-            // Create mailto link
-            const mailtoLink = recipient 
+
+            showToast('Preparing email…');
+            // Attach every listed defect's photos + (for a single address) the BPI
+            // report, so the trade gets the images — not just a text list (#2).
+            const files = [];
+            if (scoped && window.CloudPhotos && window.CloudPhotos.getFiles) {
+                for (const d of currentViewDefects()) {
+                    try { (await window.CloudPhotos.getFiles(d.id)).forEach(fl => files.push(fl)); } catch (e) {}
+                }
+            }
+            if (singleAddressId != null && window.CloudReports && window.CloudReports.fileForAddress) {
+                try { const rep = await window.CloudReports.fileForAddress(singleAddressId); if (rep) files.push(rep); } catch (e) {}
+            }
+
+            // Share path leads the body with the subject line (Outlook adopts it as
+            // the subject; Mail shows it first). mailto fallback sets the real
+            // subject field, so it uses the plain text body.
+            const shareText = subject + '\n\n' + textContent;
+            if (files.length && navigator.canShare && navigator.canShare({ files })) {
+                try { await navigator.share({ title: subject, text: shareText, files }); showToast('📧 Sharing…'); return; }
+                catch (e) { if (e && e.name === 'AbortError') return; /* else fall through to mailto */ }
+            }
+            const mailtoLink = recipient
                 ? `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textContent)}`
                 : `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textContent)}`;
-            
             window.location.href = mailtoLink;
             showToast('📧 Opening email client...');
         }
@@ -7802,6 +7836,32 @@
                 }
             });
         }
+        // Authoritative contractor pick for the BPI review: read the VISIBLE combo
+        // text and map it to a contractor id. Matching mirrors the labels rvCombo
+        // renders ("Name" or "Name — Trade"), respecting the Contractor/Trade
+        // toggle. Empty field = deliberately unassigned. Only if the text can't be
+        // resolved do we fall back to the hidden field's last explicit selection —
+        // so a stray keystroke can never silently save the old suggestion.
+        function resolveReviewContractorId() {
+            const input = document.getElementById('rv-contractor-input');
+            const hidden = document.getElementById('rv-contractor');
+            const typed = (input && input.value || '').trim();
+            if (!typed) return null;
+            const norm = s => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+            const list = db.getContractors().filter(c => state.assignByTrade
+                ? (c.isTradePlaceholder && c.isActive !== false)
+                : !c.isTradePlaceholder);
+            const labelOf = c => c.name + (!state.assignByTrade && c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : '');
+            const t = norm(typed);
+            // exact match on the full label or the bare name
+            let hit = list.find(c => norm(labelOf(c)) === t || norm(c.name) === t);
+            if (hit) return hit.id;
+            // a partial that uniquely identifies one contractor (typed-and-not-tapped)
+            const pre = list.filter(c => norm(c.name).startsWith(t) || norm(labelOf(c)).startsWith(t));
+            if (pre.length === 1) return pre[0].id;
+            // unresolved text → keep whatever was last explicitly chosen
+            return parseInt(hidden && hidden.value) || null;
+        }
         function renderReviewItem() {
             const r = _review;
             if (r.index >= r.items.length) return finishReview();
@@ -7897,7 +7957,13 @@
             document.getElementById('rv-save').onclick = () => {
                 const desc = document.getElementById('rv-desc').value.trim();
                 const addressId = parseInt(document.getElementById('rv-address').value) || null;
-                const contractorId = parseInt(document.getElementById('rv-contractor').value) || null;
+                // WHAT-YOU-SEE-IS-WHAT-YOU-SAVE: resolve the contractor from the
+                // VISIBLE combo text, not just the hidden field. The hidden field
+                // is only written when a dropdown item is TAPPED — so typing a name
+                // (or a tap that didn't register on mobile) used to silently save
+                // the pre-filled SUGGESTION instead, which is why corrections
+                // "reverted to the original suggestion". Now the shown name wins.
+                const contractorId = resolveReviewContractorId();
                 const location = document.getElementById('rv-location').value || null;
                 if (!desc) { showToast('Enter a description', true); return; }
                 if (!addressId) { showToast('Pick an address', true); return; }
@@ -8039,11 +8105,36 @@
             let list = db.data.defects.slice();
             if (o.addressIds && o.addressIds.length) list = list.filter(d => o.addressIds.includes(d.addressId));
             if (o.contractorIds && o.contractorIds.length) list = list.filter(d => o.contractorIds.includes(d.contractorId));
-            if (o.tradeIds && o.tradeIds.length) list = list.filter(d => { const c = db.getContractor(d.contractorId); return c && (c.tradeIds || []).some(tid => o.tradeIds.includes(tid)); });
+            if (o.tradeIds && o.tradeIds.length) {
+                // Match a defect's contractor to the wanted trades via its trade
+                // links OR — for a "Trade" placeholder contractor — by name, so a
+                // sub with no trade link isn't silently dropped from a trade report.
+                const wantNames = new Set(o.tradeIds.map(id => (db.data.trades.find(t => t.id === id) || {}).name).filter(Boolean));
+                list = list.filter(d => {
+                    const c = db.getContractor(d.contractorId);
+                    if (!c) return false;
+                    if ((c.tradeIds || []).some(tid => o.tradeIds.includes(tid))) return true;
+                    if (c.isTradePlaceholder && wantNames.has(c.name)) return true;
+                    return false;
+                });
+            }
             if (o.statuses && o.statuses.length) list = list.filter(d => o.statuses.includes(defectStatusOf(d)));
             if (o.from) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) >= o.from);
             if (o.to) list = list.filter(d => d.createdAt && d.createdAt.slice(0, 10) <= o.to);
             return list;
+        }
+
+        // Trade bucket a defect belongs to, for grouping the PDF report. A trade
+        // placeholder IS the trade; a real sub uses its primary linked trade name;
+        // otherwise it falls back to the sub's own name (so it still groups), or
+        // "Unassigned". This is what makes Painter/Plumbing/Electrical items sit
+        // together and combine in the report (#7).
+        function defectTradeKey(d) {
+            const c = db.getContractor(d.contractorId);
+            if (!c) return 'Unassigned';
+            if (c.isTradePlaceholder) return c.name;
+            if (c.trades && c.trades !== 'No Trade Assigned') return c.trades.split(',')[0].trim();
+            return c.name || 'Unassigned';
         }
 
         async function runReportBuilder() {
@@ -8150,74 +8241,110 @@
             });
             y += 13;
 
-            // ── group by address ─────────────────────────────────────
+            // ── group by TRADE (Painter, Plumbing, Electrical, …) so like items ──
+            // sit together and combine (#7). "Unassigned" sinks to the bottom.
             const groups = {};
-            list.forEach(d => { const a = db.getAddress(d.addressId); const k = a ? formatAddress(a) : '(no address)'; (groups[k] = groups[k] || []).push(d); });
+            list.forEach(d => { const k = defectTradeKey(d); (groups[k] = groups[k] || []).push(d); });
+            const groupKeys = Object.keys(groups).sort((a, b) =>
+                a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b));
             const ensureSpace = (h) => { if (y + h > pageH - 18) { doc.addPage(); y = M + 4; } };
+
+            // Two-column "table" of photo cards — bigger photos, two per row (#8).
+            const gap = 6;
+            const colW = (contentW - gap) / 2;   // ≈ 88mm per column
+            const innerW = colW - 8;
+
+            const photosFor = async (d) => {
+                if (!opts.photos || !window.CloudPhotos) return [];
+                try { return await window.CloudPhotos.getForPdf(d.id); } catch (e) { return []; }
+            };
+            // First photo, sized to fill the column width; height-capped so one tall
+            // portrait shot can't swallow a whole row.
+            const photoBox = (img) => {
+                if (!img) return { pw: 0, ph: 0 };
+                let pw = innerW, ph = (img.w && img.h) ? innerW * img.h / img.w : innerW * 0.72;
+                const capH = 66;
+                if (ph > capH) { ph = capH; pw = (img.w && img.h) ? capH * img.w / img.h : innerW; }
+                return { pw, ph };
+            };
+            const cardMetaLines = (d) => {
+                const c = db.getContractor(d.contractorId);
+                const a = db.getAddress(d.addressId);
+                const bits = [a ? formatAddress(a) : '', c ? c.name : 'Unassigned', d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : ''].filter(Boolean);
+                doc.setFontSize(7.5);
+                return doc.splitTextToSize(bits.join('  ·  '), innerW);
+            };
+            const descLinesFor = (d) => {
+                doc.setFontSize(9);
+                const descTxt = (d.location ? d.location + ' — ' : '') + (d.description || '(no description)');
+                return doc.splitTextToSize(descTxt, innerW);
+            };
+            const measureCard = (d, imgs) => {
+                const dl = descLinesFor(d).length, ml = cardMetaLines(d).length;
+                const { ph } = photoBox(imgs[0]);
+                return 6 + 5 + dl * 3.9 + 1.5 + ml * 3.3 + 1 + (ph ? ph + 3 : 0) + 4;
+            };
+            const drawCard = (x, y0, boxH, d, num, imgs) => {
+                const st = defectStatusOf(d);
+                fill([250, 251, 253]); stroke(LINE);
+                doc.roundedRect(x, y0, colW, boxH, 2, 2, 'FD');
+                const px = x + 4; let cy = y0 + 6;
+                // number + status badge
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); ink(INK);
+                doc.text('#' + num, px, cy);
+                const col = statusColor[st] || [120, 120, 120];
+                const blab = st.toUpperCase();
+                doc.setFontSize(6.8); const bw = doc.getTextWidth(blab) + 6;
+                fill(col); doc.roundedRect(x + colW - 4 - bw, cy - 3.6, bw, 5, 1.2, 1.2, 'F');
+                ink([255, 255, 255]); doc.setFont('helvetica', 'bold');
+                doc.text(blab, x + colW - 4 - bw / 2, cy - 0.1, { align: 'center' });
+                cy += 5;
+                // description
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9); ink(INK);
+                const dl = descLinesFor(d);
+                doc.text(dl, px, cy); cy += dl.length * 3.9 + 1.5;
+                // meta (address · contractor · attend)
+                doc.setFontSize(7.5); ink(MUTE);
+                const ml = cardMetaLines(d);
+                doc.text(ml, px, cy); cy += ml.length * 3.3 + 1;
+                // photo — first one, large + centred in the column
+                if (imgs[0]) {
+                    const { pw, ph } = photoBox(imgs[0]);
+                    const ix = x + (colW - pw) / 2;
+                    try { doc.addImage(imgs[0].dataUrl, 'JPEG', ix, cy, pw, ph); } catch (e) {}
+                    if (imgs.length > 1) {
+                        doc.setFontSize(6.5); ink(MUTE);
+                        doc.text('+' + (imgs.length - 1) + ' more', x + colW - 4, cy + ph - 1, { align: 'right' });
+                    }
+                }
+            };
 
             let itemNo = 0;
             const bookingDates = new Set();
-            for (const gk of Object.keys(groups).sort()) {
+            for (const gk of groupKeys) {
+                const gdefects = groups[gk];
                 ensureSpace(16);
-                // address section bar
+                // trade section bar
                 fill([241, 244, 250]); doc.roundedRect(M, y, contentW, 8.5, 1.6, 1.6, 'F');
                 fill(NAVY); doc.rect(M, y, 1.8, 8.5, 'F');
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(11); ink(NAVY);
                 doc.text(gk, M + 5, y + 5.7);
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); ink(MUTE);
-                doc.text(groups[gk].length + (groups[gk].length === 1 ? ' item' : ' items'), pageW - M - 4, y + 5.7, { align: 'right' });
+                doc.text(gdefects.length + (gdefects.length === 1 ? ' item' : ' items'), pageW - M - 4, y + 5.7, { align: 'right' });
                 y += 12;
 
-                for (const d of groups[gk]) {
-                    itemNo++;
-                    const st = defectStatusOf(d);
-                    const c = db.getContractor(d.contractorId);
-                    const descTxt = (d.location ? d.location + ' — ' : '') + (d.description || '(no description)');
-                    doc.setFontSize(10);
-                    const descLines = doc.splitTextToSize(descTxt, contentW - 12);
-                    let imgs = [];
-                    if (opts.photos && window.CloudPhotos) { try { imgs = await window.CloudPhotos.getForPdf(d.id); } catch (e) {} }
-                    const photoH = imgs.length ? 30 : 0;
-                    if (d.bookingAt) bookingDates.add(fmtDateNice(d.bookingAt));
-                    const meta = [c ? ('Contractor: ' + c.name) : 'Unassigned', (c && c.email) ? c.email : '', d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : ''].filter(Boolean).join('     ·     ');
-                    const cardH = 6 + descLines.length * 4.6 + 5 + (photoH ? photoH + 3 : 0) + 5;
-                    ensureSpace(cardH + 3);
+                // Photos up front — needed to measure card heights before drawing.
+                const imgsByIdx = [];
+                for (const d of gdefects) { imgsByIdx.push(await photosFor(d)); if (d.bookingAt) bookingDates.add(fmtDateNice(d.bookingAt)); }
 
-                    // card
-                    fill([250, 251, 253]); stroke(LINE);
-                    doc.roundedRect(M, y, contentW, cardH, 2, 2, 'FD');
-                    const padX = M + 5;
-                    let cy = y + 6.5;
-
-                    // # number + status badge
-                    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); ink(INK);
-                    doc.text('#' + itemNo, padX, cy);
-                    const col = statusColor[st] || [120, 120, 120];
-                    const blab = st.toUpperCase();
-                    doc.setFontSize(7.5); const bw = doc.getTextWidth(blab) + 7;
-                    fill(col); doc.roundedRect(pageW - M - 5 - bw, cy - 4, bw, 5.6, 1.4, 1.4, 'F');
-                    ink([255, 255, 255]); doc.setFont('helvetica', 'bold');
-                    doc.text(blab, pageW - M - 5 - bw / 2, cy - 0.2, { align: 'center' });
-                    cy += 5.5;
-
-                    // description
-                    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); ink(INK);
-                    doc.text(descLines, padX, cy); cy += descLines.length * 4.6 + 1.5;
-
-                    // meta
-                    doc.setFontSize(8.5); ink(MUTE);
-                    doc.text(meta, padX, cy); cy += 4;
-
-                    // photos
-                    if (imgs.length) {
-                        let ix = padX;
-                        for (const im of imgs) {
-                            const w = 26, h = im.w ? Math.min(28, w * (im.h / im.w)) : 20;
-                            try { doc.addImage(im.dataUrl, 'JPEG', ix, cy, w, h); } catch (e) {}
-                            ix += w + 3;
-                        }
-                    }
-                    y += cardH + 3;
+                for (let i = 0; i < gdefects.length; i += 2) {
+                    const lD = gdefects[i], rD = gdefects[i + 1];
+                    const lImgs = imgsByIdx[i], rImgs = rD ? imgsByIdx[i + 1] : [];
+                    const rowH = Math.max(measureCard(lD, lImgs), rD ? measureCard(rD, rImgs) : 0);
+                    if (y + rowH > pageH - 18) { doc.addPage(); y = M + 4; }
+                    drawCard(M, y, rowH, lD, ++itemNo, lImgs);
+                    if (rD) drawCard(M + colW + gap, y, rowH, rD, ++itemNo, rImgs);
+                    y += rowH + gap;
                 }
                 y += 3;
             }
@@ -8252,12 +8379,19 @@
         // Context PDF (the 📑 icon on an address or contractor). Opens a small
         // dialog: pick statuses (default Open) and trades (all ticked by
         // default), then generate a PDF scoped to that address/contractor.
+        // 'trade' or 'contractor' — which filter list drives the context report.
+        let _crMode = 'trade';
         function generateContextReport(ctx) {
             ctx = ctx || {};
+            _crMode = 'trade';
             const tradeRows = db.data.trades.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                 .map(t => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-trade" value="${t.id}" checked style="width:auto"> ${t.name}</label>`).join('');
+            const contrRows = db.getContractors().filter(c => !c.isTradePlaceholder).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-contr" value="${c.id}" style="width:auto"> ${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</label>`).join('');
             const ctxLabel = ctx.addressId ? formatAddress(db.getAddress(ctx.addressId))
                 : (ctx.contractorId ? ((db.getContractor(ctx.contractorId) || {}).name || '') : 'All defects');
+            const onSty = 'background:var(--blue,#2563eb);color:#fff';
+            const offSty = 'background:transparent;color:var(--text-secondary,#888)';
             impOverlay(`
                 <div id="imp-head"><strong>📑 Generate Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
@@ -8268,41 +8402,78 @@
                             <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="cr-st-pending" style="width:auto"> Pending</label>
                             <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="cr-st-completed" style="width:auto"> Completed</label>
                         </div></div>
-                    <div class="imp-field"><label>Trades (all selected by default)</label>
-                        <input type="text" id="cr-trade-search" placeholder="Search trades…" oninput="crFilterTrades(this.value)" style="width:100%;margin-bottom:4px">
-                        <div style="display:flex;gap:10px;margin-bottom:4px">
-                            <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleTrades(true)">Select all</button>
-                            <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleTrades(false)">None</button>
+                    <div class="imp-field">
+                        <label style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                            <span>Filter by</span>
+                            <span style="display:inline-flex;border:1px solid var(--border-color,#ccc);border-radius:8px;overflow:hidden;font-size:12px">
+                                <button type="button" id="cr-mode-trade" onclick="crSetFilterMode('trade')" style="border:none;padding:5px 12px;cursor:pointer;font-weight:600;${onSty}">Trade</button>
+                                <button type="button" id="cr-mode-contr" onclick="crSetFilterMode('contractor')" style="border:none;padding:5px 12px;cursor:pointer;font-weight:600;${offSty}">Contractor</button>
+                            </span>
+                        </label>
+                        <div id="cr-trade-wrap">
+                            <input type="text" id="cr-trade-search" placeholder="Search trades…" oninput="crFilterList('trade', this.value)" style="width:100%;margin-bottom:4px">
+                            <div style="display:flex;gap:10px;margin-bottom:4px">
+                                <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleList('trade', true)">Select all</button>
+                                <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleList('trade', false)">None</button>
+                            </div>
+                            <div id="cr-trade-list" style="max-height:150px;overflow:auto;border:1px solid var(--brd,#ccc);border-radius:10px;padding:4px">${tradeRows}</div>
                         </div>
-                        <div id="cr-trade-list" style="max-height:150px;overflow:auto;border:1px solid var(--brd,#ccc);border-radius:10px;padding:4px">${tradeRows}</div></div>
+                        <div id="cr-contr-wrap" style="display:none">
+                            <input type="text" id="cr-contr-search" placeholder="Search contractors…" oninput="crFilterList('contr', this.value)" style="width:100%;margin-bottom:4px">
+                            <div style="display:flex;gap:10px;margin-bottom:4px">
+                                <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleList('contr', true)">Select all</button>
+                                <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleList('contr', false)">None</button>
+                            </div>
+                            <div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px">Tick the contractor(s) to include — none ticked = all.</div>
+                            <div id="cr-contr-list" style="max-height:150px;overflow:auto;border:1px solid var(--brd,#ccc);border-radius:10px;padding:4px">${contrRows}</div>
+                        </div>
+                    </div>
                     <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0 4px"><input type="checkbox" id="cr-photos" checked style="width:auto"> Include photos</label>
                     <button class="imp-btn" id="cr-go">Generate PDF →</button>
                 </div>`);
             document.getElementById('cr-go').onclick = () => runContextReport(ctx);
         }
-        function crFilterTrades(q) {
+        function crSetFilterMode(mode) {
+            _crMode = mode;
+            const tw = document.getElementById('cr-trade-wrap'), cw = document.getElementById('cr-contr-wrap');
+            if (tw) tw.style.display = mode === 'trade' ? '' : 'none';
+            if (cw) cw.style.display = mode === 'contractor' ? '' : 'none';
+            const on = 'background:var(--blue,#2563eb);color:#fff', off = 'background:transparent;color:var(--text-secondary,#888)';
+            const tb = document.getElementById('cr-mode-trade'), cb = document.getElementById('cr-mode-contr');
+            const base = 'border:none;padding:5px 12px;cursor:pointer;font-weight:600;';
+            if (tb) tb.style.cssText = base + (mode === 'trade' ? on : off);
+            if (cb) cb.style.cssText = base + (mode === 'contractor' ? on : off);
+        }
+        function crFilterList(which, q) {
             q = (q || '').toLowerCase().trim();
-            document.querySelectorAll('#cr-trade-list .rb-opt').forEach(el => {
+            document.querySelectorAll('#cr-' + which + '-list .rb-opt').forEach(el => {
                 el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
             });
         }
-        function crToggleTrades(on) {
-            document.querySelectorAll('.cr-trade').forEach(cb => { cb.checked = on; });
+        function crToggleList(which, on) {
+            document.querySelectorAll(which === 'trade' ? '.cr-trade' : '.cr-contr').forEach(cb => { cb.checked = on; });
         }
         async function runContextReport(ctx) {
             const statuses = ['open', 'pending', 'completed'].filter(s => document.getElementById('cr-st-' + s).checked);
             if (!statuses.length) { showToast('Tick at least one status', true); return; }
-            const allTrades = db.data.trades.length;
-            const sel = Array.from(document.querySelectorAll('.cr-trade:checked')).map(x => parseInt(x.value)).filter(Boolean);
-            // All (or none) ticked = no trade filter, so defects without a matching
-            // trade aren't silently dropped. A partial selection filters to it.
-            const tradeIds = (sel.length && sel.length < allTrades) ? sel : null;
             const o = {
                 addressIds: ctx.addressId ? [ctx.addressId] : [],
                 contractorIds: ctx.contractorId ? [ctx.contractorId] : [],
-                statuses, tradeIds,
+                statuses, tradeIds: null,
                 photos: document.getElementById('cr-photos').checked,
             };
+            if (_crMode === 'contractor') {
+                // Explicit contractor pick — always reliable (unlike trade links,
+                // which are blank on many subs and used to silently drop them).
+                const selC = Array.from(document.querySelectorAll('.cr-contr:checked')).map(x => parseInt(x.value)).filter(Boolean);
+                if (selC.length) o.contractorIds = selC;
+            } else {
+                const allTrades = db.data.trades.length;
+                const selT = Array.from(document.querySelectorAll('.cr-trade:checked')).map(x => parseInt(x.value)).filter(Boolean);
+                // All (or none) ticked = no trade filter, so defects without a
+                // matching trade aren't silently dropped. Partial = filter to it.
+                o.tradeIds = (selT.length && selT.length < allTrades) ? selT : null;
+            }
             const list = reportFilteredDefects(o);
             if (!list.length) { showToast('No defects match those filters', true); return; }
             impSetBusy('Generating PDF… (' + list.length + ' defect' + (list.length > 1 ? 's' : '') + ')' + (o.photos ? ' with photos' : ''));
@@ -8383,7 +8554,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-05b"></script>
+    <script src="cloud-sync.js?v=2026-07-09a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

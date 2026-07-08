@@ -1782,7 +1782,13 @@
   async function commitDefect(legacyId) {
     const d = (db.data.defects || []).find((x) => String(x.id) === String(legacyId));
     if (!d) { outboxRemove(legacyId); return; }   // deleted locally — nothing to write
-    if (!idMap.addresses[d.addressId]) { outboxAdd(legacyId); return; }   // job not mapped yet (RLS) — retry later
+    // Mark this write PENDING for its whole in-flight window. pullAll() bails while
+    // the outbox is non-empty, so a background pull (realtime/focus) can't rebuild
+    // db.data and drop/revert this just-made edit before the upsert lands. Cleared
+    // the instant the write confirms below. This is the belt-and-braces guard that
+    // stops a freshly-picked contractor reverting on a poor connection.
+    outboxAdd(legacyId);
+    if (!idMap.addresses[d.addressId]) { return; }   // job not mapped yet (RLS) — stays queued, retry later
     // DATA-LOSS GUARD: a defect IS assigned locally but the contractor map isn't
     // built yet (cold boot / pre-pull reconcile). Writing now would resolve the
     // contractor to NULL and WIPE the assignment. Defer instead — the outbox
