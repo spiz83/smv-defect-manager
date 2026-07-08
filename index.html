@@ -2408,7 +2408,8 @@
                                 <span class="supplier-actions">
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
                                     <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier — PDF attached (photos)">✉️</button>
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — link to the PDF (fills the subject in every mail app)">🔗</button>` : ''}
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — link to the PDF (fills the subject in every mail app)">🔗</button>
+                                    <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Generate a PDF of this contractor's open + pending items for this job">📑</button>` : ''}
                                 </span>
                             </div>
                             ${group.defects.map(defect => `
@@ -5050,6 +5051,19 @@
             window.location.href = 'mailto:' + encodeURIComponent(c.email) +
                 '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(itemsBody);
             markEmailedPending();   // mail client opened → items are now ordered
+        }
+
+        // 📑 in a contractor group: build + download a PDF of THIS contractor's
+        // open + pending items for THIS job (address). No email — just the report.
+        async function generateContractorJobPdf(contractorId, addressId) {
+            const defects = (db.data.defects || []).filter(d =>
+                d.addressId === addressId && d.contractorId === contractorId && !d.completed);
+            if (!defects.length) { showToast('No open items for this supplier', true); return; }
+            showToast('Building PDF…');
+            try {
+                await generateDefectPDF(defects, { photos: true, statuses: ['open', 'pending'], addressIds: [addressId], contractorIds: [contractorId] });
+                showToast('PDF downloaded');
+            } catch (e) { console.error('contractor job PDF', e); showToast('Could not build the PDF', true); }
         }
 
         // Defects currently in view — matches what generateDefectText() lists, so
@@ -8602,7 +8616,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-09g"></script>
+    <script src="cloud-sync.js?v=2026-07-09h"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
