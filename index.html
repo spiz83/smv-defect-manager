@@ -4969,18 +4969,21 @@
                 c.email = email; db.save();                          // persists locally + syncs to cloud
                 showToast('Email saved for ' + c.name);
             }
-            showToast('Preparing email…');
+            showToast('Building PDF…');
             const booking = db.getContractorBooking(contractorId, addressId);
             const subject = 'Defects - ' + addr;
 
-            // Gather photos for the share sheet. The BPI report PDF is deliberately
-            // NOT auto-attached — only the defect photos go on the email.
+            // Attach ONE PDF (photos embedded) scoped to THIS contractor's open +
+            // pending items at this address, instead of loose photos. Outlook lifts
+            // the "Defects - <address>" first body line into the Subject AND keeps
+            // the PDF (both); Apple Mail keeps the PDF (subject stays in the body —
+            // iOS won't set a Subject alongside any attachment). `defects` above is
+            // already this contractor's open + pending items.
             const files = [];
-            for (const d of defects) {
-                if (window.CloudPhotos && window.CloudPhotos.getFiles) {
-                    try { (await window.CloudPhotos.getFiles(d.id)).forEach(f => files.push(f)); } catch (e) {}
-                }
-            }
+            try {
+                const pdf = await generateDefectPDF(defects, { photos: true, asFile: true, statuses: ['open', 'pending'], addressIds: [addressId], contractorIds: [contractorId] });
+                if (pdf) files.push(pdf);
+            } catch (e) { console.error('supplier email PDF', e); }
             const reportAttached = false;
 
             // Time-of-day greeting → standard line → the items, each formatted
@@ -8565,7 +8568,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-09e"></script>
+    <script src="cloud-sync.js?v=2026-07-09f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
