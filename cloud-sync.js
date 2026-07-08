@@ -1700,6 +1700,24 @@
     }
   };
 
+  // ----- Ad-hoc PDF sharing: upload a generated PDF, get a shareable link -----
+  // Used by the "email a link" buttons. A link in the email body is NOT an
+  // attachment, so iOS Mail fills the Subject. Signed URL is valid 7 days and
+  // works for the (unauthenticated) trade who receives it.
+  window.CloudShare = {
+    uploadTempPdf: async (blob, filename) => {
+      try {
+        const safe = (filename || 'defects.pdf').replace(/[^a-z0-9._-]+/gi, '_').slice(0, 80);
+        const path = `shared/${Date.now()}_${safe}`;
+        const up = await sb.storage.from(REPORT_BUCKET).upload(path, blob, { contentType: 'application/pdf', upsert: true });
+        if (up.error) { console.error('[CloudShare] upload', up.error); return null; }
+        const { data, error } = await sb.storage.from(REPORT_BUCKET).createSignedUrl(path, 604800);
+        if (error) { console.error('[CloudShare] sign', error); return null; }
+        return data.signedUrl;
+      } catch (e) { console.error('[CloudShare] uploadTempPdf', e); return null; }
+    }
+  };
+
   // ----- Framework call-up (BPI import contractor suggestions) -----
   window.CloudCallups = {
     rowsForAddress: (legacyId) => callupsByAddress[legacyId] || [],
