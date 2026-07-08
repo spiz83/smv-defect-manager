@@ -2237,7 +2237,7 @@
                         <div class="lot-title">${contractor.name}</div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailListChooser()" title="Email Defect List">📧</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email Defect List">📧</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">➕</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
@@ -2319,7 +2319,7 @@
                         <div class="lot-title">${tradeName}</div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailListChooser()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2648,7 +2648,7 @@
                         <div class="lot-title">Search Multiple Contractors:<br><span style="font-size: 14px; font-weight: 400; color: var(--text-secondary);">${contractorNames}</span></div>
                         <div class="toolbar">
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailListChooser()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2764,7 +2764,7 @@
                             <button class="icon-btn" onclick="toggleShowCompleted()" title="${state.showCompleted ? 'Hide completed' : 'Show completed'}" style="${state.showCompleted ? 'background: var(--blue); color: #fff;' : ''}">${state.showCompleted ? '🙈' : '👁️'}</button>
                             <button class="icon-btn" onclick="openReportBuilder()" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailListChooser()" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -4973,21 +4973,15 @@
             const booking = db.getContractorBooking(contractorId, addressId);
             const subject = 'Defects - ' + addr;
 
-            // Gather photos for the share sheet, and the inspection report PDF
-            // first, so the intro line can accurately say it's attached.
+            // Gather photos for the share sheet. The BPI report PDF is deliberately
+            // NOT auto-attached — only the defect photos go on the email.
             const files = [];
             for (const d of defects) {
                 if (window.CloudPhotos && window.CloudPhotos.getFiles) {
                     try { (await window.CloudPhotos.getFiles(d.id)).forEach(f => files.push(f)); } catch (e) {}
                 }
             }
-            let reportAttached = false;
-            if (window.CloudReports && window.CloudReports.fileForAddress) {
-                try {
-                    const rep = await window.CloudReports.fileForAddress(addressId);
-                    if (rep) { files.push(rep); reportAttached = true; }
-                } catch (e) {}
-            }
+            const reportAttached = false;
 
             // Time-of-day greeting → standard line → the items, each formatted
             // "BPI # — location — item" with NO bullet points. The greeting is by
@@ -5049,25 +5043,11 @@
             return db.getDefects();
         }
 
-        // Small chooser so the user picks per-email how to send the list:
-        //  • Email + photos — share sheet, attaches photos + report (Apple Mail
-        //    can't set the Subject then, so the address leads the body).
-        //  • Email with subject — opens Mail with the real Subject filled, no
-        //    attachments (the only way Apple Mail shows a Subject).
-        function emailListChooser() {
-            impOverlay(`
-                <div id="imp-head"><strong>📧 Email defect list</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body">
-                    <p style="font-size:13.5px;color:var(--text-secondary,#888);margin:0 0 14px;line-height:1.4">Apple Mail can't fill the Subject when photos are attached — choose how to send:</p>
-                    <button class="imp-btn" id="em-photos" style="margin-bottom:12px;text-align:left;line-height:1.35">📎 Email + photos<br><span style="font-weight:400;font-size:12px;opacity:.85">Attaches photos + report · subject shown at the top of the email</span></button>
-                    <button class="imp-btn secondary" id="em-plain" style="text-align:left;line-height:1.35">✉️ Email with subject<br><span style="font-weight:400;font-size:12px;opacity:.85">Opens Mail with the Subject filled in · no photo attachments</span></button>
-                </div>`);
-            document.getElementById('em-photos').onclick = () => { impClose(); emailDefectList(true); };
-            document.getElementById('em-plain').onclick = () => { impClose(); emailDefectList(false); };
-        }
-
-        // withPhotos=true attaches photos + report via the share sheet; false opens
-        // Mail with the real Subject filled and no attachments. See emailListChooser.
+        // Always shares with photos + report. On the share sheet: Outlook pulls the
+        // first body line ("Defects - <address>") up as the Subject AND attaches the
+        // files — so it gets BOTH; Apple Mail attaches the files and shows that line
+        // at the top of the body (iOS won't let it set a Subject with attachments).
+        // withPhotos is kept as a param for the mailto fallback path only.
         async function emailDefectList(withPhotos = true) {
             const textContent = generateDefectText();
             let subject = 'Defect List';
@@ -5117,9 +5097,8 @@
                         try { (await window.CloudPhotos.getFiles(d.id)).forEach(fl => files.push(fl)); } catch (e) {}
                     }
                 }
-                if (singleAddressId != null && window.CloudReports && window.CloudReports.fileForAddress) {
-                    try { const rep = await window.CloudReports.fileForAddress(singleAddressId); if (rep) files.push(rep); } catch (e) {}
-                }
+                // NOTE: the BPI report PDF is deliberately NOT auto-attached — only
+                // photos go on the email. Use 📑 Generate Report to send a PDF.
             }
 
             // Share path leads the body with the subject line (Outlook adopts it as
@@ -8577,7 +8556,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-09b"></script>
+    <script src="cloud-sync.js?v=2026-07-09c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
