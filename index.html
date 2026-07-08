@@ -5085,20 +5085,26 @@
                 scoped = false;
             }
 
-            // Only gather attachments for the "+ photos" mode. Without photos we go
-            // straight to mailto so Apple Mail shows the real Subject.
+            // Attach ONE trade-scoped PDF (photos embedded) instead of loose images:
+            // open + pending items for this view, each with its photo. Outlook lifts
+            // the "Defects - <address>" first body line into the Subject AND keeps
+            // the PDF (both); Apple Mail keeps the PDF (subject stays in the body).
+            // A single PDF also shares far more reliably than a dozen photos.
+            // currentViewDefects() is already open+pending (getDefects drops completed).
             const files = [];
-            if (withPhotos) {
-                showToast('Preparing email…');
-                // Attach every listed defect's photos + (for a single address) the
-                // BPI report, so the trade gets the images — not just a text list.
-                if (scoped && window.CloudPhotos && window.CloudPhotos.getFiles) {
-                    for (const d of currentViewDefects()) {
-                        try { (await window.CloudPhotos.getFiles(d.id)).forEach(fl => files.push(fl)); } catch (e) {}
+            if (withPhotos && scoped) {
+                showToast('Building PDF…');
+                try {
+                    const list = currentViewDefects();
+                    if (list.length) {
+                        const pdfOpts = { photos: true, asFile: true, statuses: ['open', 'pending'] };
+                        if (singleAddressId != null) pdfOpts.addressIds = [singleAddressId];
+                        else if (state.currentView === 'view-defects-contractor' && state.filters.contractorId) pdfOpts.contractorIds = [state.filters.contractorId];
+                        else if (state.filters && state.filters.contractorIds) pdfOpts.contractorIds = state.filters.contractorIds;
+                        const pdf = await generateDefectPDF(list, pdfOpts);
+                        if (pdf) files.push(pdf);
                     }
-                }
-                // NOTE: the BPI report PDF is deliberately NOT auto-attached — only
-                // photos go on the email. Use 📑 Generate Report to send a PDF.
+                } catch (e) { console.error('email PDF', e); showToast('Could not build the PDF — sending text only', true); }
             }
 
             // Share path leads the body with the subject line (Outlook adopts it as
@@ -8374,6 +8380,9 @@
                 doc.text('Page ' + p + ' of ' + pages, pageW - M, pageH - 7.5, { align: 'right' });
             }
 
+            // asFile: hand the PDF back as a File (for attaching to an email)
+            // instead of triggering a download.
+            if (opts.asFile) return new File([doc.output('blob')], buildReportFilename(opts), { type: 'application/pdf' });
             doc.save(buildReportFilename(opts));
         }
 
@@ -8556,7 +8565,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-09d"></script>
+    <script src="cloud-sync.js?v=2026-07-09e"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
