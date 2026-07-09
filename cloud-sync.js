@@ -1700,20 +1700,30 @@
     }
   };
 
-  // ----- Ad-hoc PDF sharing: upload a generated PDF, get a shareable link -----
-  // Used by the "email a link" buttons. A link in the email body is NOT an
-  // attachment, so iOS Mail fills the Subject. Signed URL is valid 7 days and
-  // works for the (unauthenticated) trade who receives it.
+  // ----- Ad-hoc PDF sharing: upload a generated PDF, get a SHORT shareable link -
+  // Used by the "email a link" 🔗 buttons. A link in the email body isn't an
+  // attachment, so iOS Mail fills the Subject. We upload to the PUBLIC
+  // 'shared-pdfs' bucket under a short random name and return a short
+  // /go.html?f=… redirect on our own domain — short enough that mail apps
+  // auto-linkify it (so the trade taps it, no copy-paste). Unguessable name.
+  const SHARE_BUCKET = 'shared-pdfs';
+  const SHARE_BASE = 'https://smv-defect-manager.vercel.app/go.html?f=';
   window.CloudShare = {
     uploadTempPdf: async (blob, filename) => {
       try {
-        const safe = (filename || 'defects.pdf').replace(/[^a-z0-9._-]+/gi, '_').slice(0, 80);
-        const path = `shared/${Date.now()}_${safe}`;
-        const up = await sb.storage.from(REPORT_BUCKET).upload(path, blob, { contentType: 'application/pdf', upsert: true });
-        if (up.error) { console.error('[CloudShare] upload', up.error); return null; }
-        const { data, error } = await sb.storage.from(REPORT_BUCKET).createSignedUrl(path, 604800);
-        if (error) { console.error('[CloudShare] sign', error); return null; }
-        return data.signedUrl;
+        const rand = (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).slice(-12);
+        const name = rand + '.pdf';
+        const up = await sb.storage.from(SHARE_BUCKET).upload(name, blob, { contentType: 'application/pdf', upsert: true });
+        if (up.error) {
+          // Fallback: private bucket + long signed URL still works (just not short).
+          console.error('[CloudShare] upload', up.error);
+          const path = `shared/${Date.now()}_defects.pdf`;
+          const alt = await sb.storage.from(REPORT_BUCKET).upload(path, blob, { contentType: 'application/pdf', upsert: true });
+          if (alt.error) return null;
+          const { data } = await sb.storage.from(REPORT_BUCKET).createSignedUrl(path, 604800);
+          return data ? data.signedUrl : null;
+        }
+        return SHARE_BASE + name;
       } catch (e) { console.error('[CloudShare] uploadTempPdf', e); return null; }
     }
   };

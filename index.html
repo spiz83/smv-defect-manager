@@ -5027,7 +5027,7 @@
                 try { if (scopedPdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name); }
                 catch (e) { console.error('supplier PDF link', e); }
                 let linkBody = itemsBody;
-                if (url) linkBody += '\nPhotos + full report (PDF, opens in your browser):\n' + url + '\n';
+                if (url) linkBody += '\nReport + photos — tap to open:\n' + url + '\n';
                 else showToast('Could not build the PDF link — sending text only', true);
                 window.location.href = 'mailto:' + encodeURIComponent(c.email) +
                     '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(linkBody);
@@ -5140,7 +5140,7 @@
                 try { const pdf = scoped ? await buildScopedPdf() : null; if (pdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(pdf, pdf.name); }
                 catch (e) { console.error('email PDF link', e); }
                 let body = textContent;
-                if (url) body += '\n\nPhotos + full report (PDF, opens in your browser):\n' + url + '\n';
+                if (url) body += '\n\nReport + photos — tap to open:\n' + url + '\n';
                 else showToast('Could not build the PDF link — sending text only', true);
                 window.location.href = (recipient ? `mailto:${recipient}` : 'mailto:') +
                     `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
@@ -8246,7 +8246,7 @@
             await ensureJsPdf();
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-            const pageW = 210, pageH = 297, M = 14, contentW = pageW - 2 * M;
+            const pageW = 210, pageH = 297, M = 11, contentW = pageW - 2 * M;
             const now = new Date();
             const dateStr = now.toISOString().slice(0, 10);
             const niceDate = now.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -8308,72 +8308,82 @@
                 a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b));
             const ensureSpace = (h) => { if (y + h > pageH - 18) { doc.addPage(); y = M + 4; } };
 
-            // Two-column "table" of photo cards — bigger photos, two per row (#8).
-            const gap = 6;
-            const colW = (contentW - gap) / 2;   // ≈ 88mm per column
-            const innerW = colW - 8;
+            // Two-column "table" of photo cards — DENSE: big, wide photos with a
+            // tight 2-line description and minimal margins so ~6 defects fit a page.
+            const gap = 3;
+            const colW = (contentW - gap) / 2;   // ≈ 91mm per column
+            const innerW = colW - 3;             // photo/text span almost the full card
+            const PAD = 2;                       // inner padding (small = little margin)
 
             const photosFor = async (d) => {
                 if (!opts.photos || !window.CloudPhotos) return [];
                 try { return await window.CloudPhotos.getForPdf(d.id); } catch (e) { return []; }
             };
-            // First photo, sized to fill the column width; height-capped so one tall
-            // portrait shot can't swallow a whole row.
+            // First photo, sized to fill the (wide) card; height-capped so one tall
+            // portrait shot can't swallow more than its share of a dense page.
             const photoBox = (img) => {
                 if (!img) return { pw: 0, ph: 0 };
-                let pw = innerW, ph = (img.w && img.h) ? innerW * img.h / img.w : innerW * 0.72;
-                const capH = 66;
+                let pw = innerW, ph = (img.w && img.h) ? innerW * img.h / img.w : innerW * 0.7;
+                const capH = 64;
                 if (ph > capH) { ph = capH; pw = (img.w && img.h) ? capH * img.w / img.h : innerW; }
                 return { pw, ph };
+            };
+            // Truncate a wrapped block to N lines with an ellipsis (keeps text area
+            // small so the photo dominates — the user asked to cut words, not wrap).
+            const clampLines = (lines, n) => {
+                if (lines.length <= n) return lines;
+                const out = lines.slice(0, n);
+                out[n - 1] = out[n - 1].replace(/\s*\S*$/, '') + '…';
+                return out;
             };
             const cardMetaLines = (d) => {
                 const c = db.getContractor(d.contractorId);
                 const a = db.getAddress(d.addressId);
                 const bits = [a ? formatAddress(a) : '', c ? c.name : 'Unassigned', d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : ''].filter(Boolean);
-                doc.setFontSize(7.5);
-                return doc.splitTextToSize(bits.join('  ·  '), innerW);
+                doc.setFontSize(7);
+                return clampLines(doc.splitTextToSize(bits.join('  ·  '), innerW), 1);
             };
             const descLinesFor = (d) => {
-                doc.setFontSize(9);
+                doc.setFontSize(8.5);
                 const descTxt = (d.location ? d.location + ' — ' : '') + (d.description || '(no description)');
-                return doc.splitTextToSize(descTxt, innerW);
+                return clampLines(doc.splitTextToSize(descTxt, innerW), 2);
             };
             const measureCard = (d, imgs) => {
                 const dl = descLinesFor(d).length, ml = cardMetaLines(d).length;
                 const { ph } = photoBox(imgs[0]);
-                return 6 + 5 + dl * 3.9 + 1.5 + ml * 3.3 + 1 + (ph ? ph + 3 : 0) + 4;
+                return 4.6 + 4 + dl * 3.3 + 1 + ml * 2.9 + 0.8 + (ph ? ph : 0) + 2;
             };
             const drawCard = (x, y0, boxH, d, num, imgs) => {
                 const st = defectStatusOf(d);
                 fill([250, 251, 253]); stroke(LINE);
-                doc.roundedRect(x, y0, colW, boxH, 2, 2, 'FD');
-                const px = x + 4; let cy = y0 + 6;
-                // number + status badge
-                doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); ink(INK);
+                doc.roundedRect(x, y0, colW, boxH, 1.6, 1.6, 'FD');
+                const px = x + PAD; let cy = y0 + 4.6;
+                // number + status badge (one line)
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(9); ink(INK);
                 doc.text('#' + num, px, cy);
                 const col = statusColor[st] || [120, 120, 120];
                 const blab = st.toUpperCase();
-                doc.setFontSize(6.8); const bw = doc.getTextWidth(blab) + 6;
-                fill(col); doc.roundedRect(x + colW - 4 - bw, cy - 3.6, bw, 5, 1.2, 1.2, 'F');
+                doc.setFontSize(6.6); const bw = doc.getTextWidth(blab) + 5;
+                fill(col); doc.roundedRect(x + colW - PAD - bw, cy - 3.4, bw, 4.8, 1.2, 1.2, 'F');
                 ink([255, 255, 255]); doc.setFont('helvetica', 'bold');
-                doc.text(blab, x + colW - 4 - bw / 2, cy - 0.1, { align: 'center' });
-                cy += 5;
-                // description
-                doc.setFont('helvetica', 'normal'); doc.setFontSize(9); ink(INK);
+                doc.text(blab, x + colW - PAD - bw / 2, cy - 0.1, { align: 'center' });
+                cy += 4;
+                // description (compact, max 2 lines)
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); ink(INK);
                 const dl = descLinesFor(d);
-                doc.text(dl, px, cy); cy += dl.length * 3.9 + 1.5;
-                // meta (address · contractor · attend)
-                doc.setFontSize(7.5); ink(MUTE);
+                doc.text(dl, px, cy); cy += dl.length * 3.3 + 1;
+                // meta (address · contractor · attend) — one line
+                doc.setFontSize(7); ink(MUTE);
                 const ml = cardMetaLines(d);
-                doc.text(ml, px, cy); cy += ml.length * 3.3 + 1;
-                // photo — first one, large + centred in the column
+                doc.text(ml, px, cy); cy += ml.length * 2.9 + 0.8;
+                // photo — big, wide, centred, almost no border
                 if (imgs[0]) {
                     const { pw, ph } = photoBox(imgs[0]);
                     const ix = x + (colW - pw) / 2;
                     try { doc.addImage(imgs[0].dataUrl, 'JPEG', ix, cy, pw, ph); } catch (e) {}
                     if (imgs.length > 1) {
-                        doc.setFontSize(6.5); ink(MUTE);
-                        doc.text('+' + (imgs.length - 1) + ' more', x + colW - 4, cy + ph - 1, { align: 'right' });
+                        doc.setFontSize(6.3); ink([255, 255, 255]);
+                        doc.text('+' + (imgs.length - 1) + ' more', x + colW - PAD - 1, cy + ph - 1.5, { align: 'right' });
                     }
                 }
             };
@@ -8616,7 +8626,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-09h"></script>
+    <script src="cloud-sync.js?v=2026-07-09i"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
