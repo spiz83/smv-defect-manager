@@ -13,13 +13,13 @@
  *
  * Bump CACHE (and the cloud-sync ?v= below) whenever the shell changes.
  */
-const CACHE = 'deffixer-shell-2026-07-11a';
+const CACHE = 'deffixer-shell-2026-07-11b';
 
 // Same-origin shell. All of these must exist or install precache will fail.
 const CORE = [
   './',
   './index.html',
-  './cloud-sync.js?v=2026-07-11a',
+  './cloud-sync.js?v=2026-07-11b',
   './manifest.webmanifest',
   './icon.svg',
   './favicon-48.png',
@@ -67,17 +67,32 @@ self.addEventListener('fetch', (event) => {
   // Use cache:'reload' to BYPASS the browser HTTP cache — GitHub Pages serves
   // index.html with a 10-min max-age, which would otherwise hand back stale code
   // for minutes after a deploy.
+  //
+  // DEAD-ZONE FIX (Spiro 2026-07-11): poor reception is not a clean failure —
+  // the fetch can HANG for ~60s, and Safari shows "server stopped responding"
+  // before our catch-fallback ever runs. So when a cached shell exists, race
+  // the network against a short timer: no answer in 3.5s → boot from cache NOW
+  // (the fetch still finishes in the background and refreshes the cache).
   if (isNav || isAppCode) {
     event.respondWith((async () => {
-      try {
+      const cacheKey = isNav ? './index.html' : req;
+      const cached = await caches.match(cacheKey);
+      const network = (async () => {
         const res = await fetch(req, { cache: 'reload' });
         const cache = await caches.open(CACHE);
-        cache.put(isNav ? './index.html' : req, res.clone());
+        cache.put(cacheKey, res.clone());
         return res;
-      } catch (e) {
-        const cached = await caches.match(isNav ? './index.html' : req);
-        return cached || caches.match('./index.html');
+      })();
+      network.catch(() => {});   // background refresh may lose the race — never an unhandled rejection
+      if (cached) {
+        const winner = await Promise.race([
+          network.catch(() => null),
+          new Promise((r) => setTimeout(() => r(null), 3500)),
+        ]);
+        return winner || cached;
       }
+      try { return await network; }
+      catch (e) { return caches.match('./index.html'); }
     })());
     return;
   }

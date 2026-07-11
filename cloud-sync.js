@@ -1127,15 +1127,24 @@
   // skip a duplicate DB row if a previous attempt already recorded it. The blob
   // is NEVER discarded here — only the caller deletes it from the outbox, and
   // only after this returns true.
-  async function uploadDefectPhoto(legacyId, file, idKey) {
+  // `quiet` = background retry: no progress pill, no error toast. The user was
+  // already told once when the photo first queued — re-toasting "No connection"
+  // on every 20s retry cycle (even WITH reception, when the real failure was a
+  // server rejection) made the banner look permanently stuck (Spiro 2026-07-11).
+  async function uploadDefectPhoto(legacyId, file, idKey, quiet) {
     const uuid = await resolveDefectUuid(legacyId);
     if (!uuid) { return false; }   // defect not in cloud yet — keep the photo queued, retry later
+    // Honest failure wording: only claim "No connection" when the device is
+    // actually offline; otherwise say what really happened (server error).
+    const failMsg = () => (typeof navigator !== 'undefined' && navigator.onLine === false)
+      ? 'No connection — photo saved on your phone, will upload automatically'
+      : 'Photo upload failed — kept on your phone, retrying in the background';
     // First path folder is the job uuid when we can resolve it (keeps photos
     // grouped per job), otherwise the defect uuid — we no longer BLOCK on a
     // missing job mapping (the bucket RLS no longer requires it).
     const jobUuid = jobUuidForDefect(legacyId);
     const folder1 = jobUuid || uuid;
-    photoProgStart();
+    if (!quiet) photoProgStart();
     // Compress, but NEVER lose the photo over a compression hiccup — fall back
     // to the original file so it still uploads.
     let blob = null;
@@ -1147,7 +1156,7 @@
       const up = await withTimeout(
         sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: !!idKey }),
         60000, 'photo upload');
-      if (up.error) { console.error('[CloudSync] upload', up.error); photoProgError('No connection — photo saved on your phone, will upload automatically'); return false; }
+      if (up.error) { console.error('[CloudSync] upload', up.error); if (!quiet) photoProgError(failMsg()); return false; }
       // Idempotent record: if a prior attempt already inserted this path, don't
       // double-insert (deterministic path + upsert means the object is the same).
       let already = false;
@@ -1157,15 +1166,15 @@
       } catch (e) { /* treat as not-yet-recorded; insert below */ }
       if (!already) {
         const ins = await withTimeout(sb.from('dm_defect_photos').insert({ defect_id: uuid, storage_path: path, bytes: blob.size }), 30000, 'photo record');
-        if (ins.error) { console.error(ins.error); photoProgError('No connection — photo saved on your phone, will upload automatically'); return false; }
+        if (ins.error) { console.error(ins.error); if (!quiet) photoProgError(failMsg()); return false; }
       }
     } catch (e) {
       // Timeout / network drop — the blob stays in the outbox and retries.
       console.warn('[CloudSync] photo upload retrying later:', e && e.message);
-      photoProgError('No connection — photo saved on your phone, will upload automatically');
+      if (!quiet) photoProgError(failMsg());
       return false;
     }
-    photoProgDone();
+    if (!quiet) photoProgDone();
     if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     // Re-query authoritatively so the badge reflects the now-confirmed cloud row.
     refreshPhotoCounts();
@@ -1491,6 +1500,10 @@
   // and on a periodic timer while anything is queued. Leaves un-resolvable ones
   // (defect not synced yet, or no signal) for the next sweep — never drops them.
   let sweepingPhotos = false;
+  // Consecutive failures per outbox key (in-memory). First failure of an item
+  // is loud (toast); background retries are quiet. Repeated failures back the
+  // timer off so a permanently-rejected photo can't hammer + toast every 20s.
+  const photoFailCounts = {};
   async function uploadPendingPhotos() {
     if (sweepingPhotos) return;
     sweepingPhotos = true;
@@ -1501,9 +1514,11 @@
       for (const it of items) {
         try {
           // Pass the outbox key so the storage path is deterministic (retry-safe).
-          const ok = await uploadDefectPhoto(it.legacyId, it.blob, it.key);
-          if (ok) { await pendingDelete(it.key); await refreshPendingCounts(); }
-        } catch (e) { /* leave it queued; next sweep retries */ }
+          const quiet = (photoFailCounts[it.key] || 0) > 0;
+          const ok = await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet);
+          if (ok) { delete photoFailCounts[it.key]; await pendingDelete(it.key); await refreshPendingCounts(); }
+          else photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1;
+        } catch (e) { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; /* leave it queued; next sweep retries */ }
       }
     } finally {
       sweepingPhotos = false;
@@ -1514,13 +1529,16 @@
 
   // Keep retrying on a gentle timer for as long as ANY photo is still on-phone —
   // so a photo taken with no signal uploads itself the moment signal returns,
-  // without the user having to do anything (or even reopen the app).
+  // without the user having to do anything (or even reopen the app). Items that
+  // keep failing (≥5 in a row, e.g. a server rejection) slow the loop to 5 min.
   let photoRetryTimer = null;
   async function schedulePhotoRetry() {
     clearTimeout(photoRetryTimer);
-    let n = 0;
-    try { n = (await pendingAll()).length; } catch (e) { n = 0; }
-    if (n > 0) photoRetryTimer = setTimeout(() => { uploadPendingPhotos().catch(() => {}); }, 20000);
+    let items = [];
+    try { items = await pendingAll(); } catch (e) { items = []; }
+    if (!items.length) return;
+    const allStuck = items.every(it => (photoFailCounts[it.key] || 0) >= 5);
+    photoRetryTimer = setTimeout(() => { uploadPendingPhotos().catch(() => {}); }, allStuck ? 300000 : 20000);
   }
 
   // THE durable save path for every captured photo (new-defect rows AND photos

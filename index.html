@@ -2406,6 +2406,7 @@
                             <div class="contractor-name contractor-hdr">
                                 <span ${group.contractor.id != null ? `onclick="viewDefectsForContractor(${group.contractor.id})" style="cursor:pointer" title="View all of this contractor's defects"` : ''}>${group.contractor.name || 'Unassigned'}${group.contractor.id != null ? ' ›' : ''}</span>
                                 <span class="supplier-actions">
+                                    <button class="supplier-email-btn" onclick="openReassignGroup(${group.contractor.id != null ? group.contractor.id : 'null'}, ${addressId})" title="Reassign ALL of these defects to another contractor or trade">✏️</button>
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
                                     <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier — PDF attached (photos)">✉️</button>
                                     <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — link to the PDF (fills the subject in every mail app)">🔗</button>
@@ -4680,6 +4681,57 @@
                 impClose(); render(); flushStatus();
                 const sup = (contractorId != null && (db.getContractor(contractorId) || {}).name) || '';
                 showToast(cidRaw === '' && sup ? ('Supplier set to ' + sup) : 'Defect updated');
+            };
+        }
+        // ── Bulk reassign: move EVERY open defect in a contractor group (at one
+        // address) to another contractor or trade (Spiro 2026-07-11 — the ✏️ on
+        // the group header). Uses the same predictive picker as the edit modal
+        // (real subs + active trade placeholders). Each move also teaches the
+        // learner the NEW contractor's trade for each defect's wording.
+        function openReassignGroup(contractorId, addressId) {
+            const groupDefects = db.getDefects({ addressId }).filter(d =>
+                contractorId == null ? (d.contractorId == null) : d.contractorId === contractorId);
+            if (!groupDefects.length) { showToast('No active defects in this group'); return; }
+            const fromName = contractorId != null ? ((db.getContractor(contractorId) || {}).name || 'Unknown') : 'Unassigned';
+            const esc = s => (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            impOverlay(`
+                <div id="imp-head"><strong>✏️ Reassign all — ${esc(fromName)}</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <div style="font-size:13px;color:var(--text-secondary,#888);margin-bottom:12px">
+                        Move <strong>${groupDefects.length}</strong> defect${groupDefects.length === 1 ? '' : 's'} at this job to another contractor or trade.
+                    </div>
+                    <div class="imp-field" style="margin-bottom:16px">
+                        <label>New contractor / trade</label>
+                        <div class="rv-combo">
+                            <input type="text" id="de-contractor-input" class="rv-combo-input" placeholder="Type to search…" autocomplete="off" value="">
+                            <input type="hidden" id="de-contractor" value="">
+                            <div class="rv-combo-list" id="de-contractor-list"></div>
+                        </div>
+                    </div>
+                    <button class="imp-btn" id="rg-save">Reassign ${groupDefects.length} defect${groupDefects.length === 1 ? '' : 's'}</button>
+                </div>`);
+            defectEditCombo();
+            document.getElementById('rg-save').onclick = () => {
+                const cidRaw = document.getElementById('de-contractor').value;
+                const newId = cidRaw === '' ? null : parseInt(cidRaw, 10);
+                if (newId == null) { showToast('Pick a contractor or trade first', true); return; }
+                if (newId === contractorId) { showToast('That’s the same contractor'); return; }
+                const newC = db.getContractor(newId);
+                if (!newC) { showToast('Contractor not found', true); return; }
+                // The reassignment is a supervisor confirmation: teach the learner
+                // the NEW contractor's TRADE for each defect's wording (clean desc,
+                // without the "BPI #N (p.X) — " report reference).
+                const learnedTrade = contractorToBpiTrade(newC);
+                for (const d of groupDefects) {
+                    db.updateDefect(d.id, { contractorId: newId });
+                    if (learnedTrade && window.CloudLearning) {
+                        const cleanDesc = String(d.description || '').replace(/^BPI #\d+\s*(\(p\.\d+\))?\s*—\s*/, '');
+                        const phrase = normalizePhrase((d.location || '') + ' ' + cleanDesc);
+                        if (phrase) { try { window.CloudLearning.record(phrase, learnedTrade); } catch (e) {} }
+                    }
+                }
+                impClose(); render(); flushStatus();
+                showToast(`Moved ${groupDefects.length} defect${groupDefects.length === 1 ? '' : 's'} to ${newC.name}`);
             };
         }
         // Self-contained predictive supplier dropdown for the edit modal (mirrors
@@ -7423,6 +7475,8 @@
         const BPI_TRADE_RULES = [
             ['Painter',      /\bpaint|repaint|raw timber|hinge knuckle|touch ?up|overspray|paint runs?\b/i],
             ['Renderer',     /\brender|acrylic render/i],
+            ['Brick Cleaner', /\bacid ?wash|brick ?clean|mortar (stain|smear|residue)/i],
+            ['Site Cleaner', /\bsite (clean|rubbish|cage)|building (rubbish|waste)\b/i],
             ['Bricklayer',   /\bbrick|mortar|mortal|perpend|\bpier\b|weep ?hole|articulation joint|lintel/i],
             ['Plasterer',    /\bcornice|plaster|nail pop|patch (hole|the)|crack(ing|ed)? to (wall|ceiling)|set joint|sheet join|\bdip\b|bulkhead/i],
             ['Electrician',  /\bexhaust fan|light switch|power ?point|\bgpo\b|down ?light|wiring|switchboard|\btimer\b|sensor|smoke alarm|data point|\blight\b/i],
@@ -7448,6 +7502,7 @@
             Tiler:['tile','tiling'], Waterproofer:['waterproof'], Flooring:['floor','carpet','vinyl','laminate'],
             Carpenter:['carpen','fixing','door','cabinet','joinery','lock'],
             Glazier:['glaz','glass','window'], Concreter:['concret'], Caulker:['caulk','silicone','seal'], Cleaner:['clean'],
+            'Site Cleaner':['site clean','earthmov','enviro'], 'Brick Cleaner':['brick clean','acid'],
             Insulation:['insulat','sisal','sarking','wrap','foil'],
         };
         function suggestContractorForTrade(trade) {
@@ -7524,6 +7579,8 @@
             Concreter: ['concrete', 'concretor', 'driveway'],
             Caulker: ['caulk', 'joint sealing'],
             Cleaner: ['cleaner', 'cleaning', 'clean'],
+            'Site Cleaner': ['site clean', 'site cage', 'rubbish'],
+            'Brick Cleaner': ['brick clean', 'acid'],
             Insulation: ['insulation', 'sisalation', 'sarking', 'wall wrap', 'foil'],
             'Cabinet Maker': ['kitchen', 'cabinet', 'joinery'],
             'Garage Door': ['garage door'],
@@ -8053,14 +8110,21 @@
                 let chips = [];
                 if (state.assignByTrade) {
                     const ph = db.getContractors().filter(c => c.isTradePlaceholder && c.isActive !== false);
+                    // Multiple trade suggestions (Spiro 2026-07-11): the resolved
+                    // trade plus runner-ups from other signals, in case the top
+                    // guess is wrong. Capped at 3, deduped by placeholder.
                     const wanted = [];
-                    if (effTrade) wanted.push(effTrade);
-                    const lt = learned && learned.trade; if (lt && wanted.indexOf(lt) < 0) wanted.push(lt);
-                    chips = wanted.map(tn => {
-                        const t = tn.toLowerCase();
+                    const addW = (tn, hint) => { if (tn && !wanted.some(w => w.tn.toLowerCase() === tn.toLowerCase())) wanted.push({ tn, hint }); };
+                    addW(effTrade, 'suggested trade');
+                    addW(learned && learned.trade, 'from history');
+                    addW(classifyBpiTrade(_rvText.toLowerCase()), 'keyword match');
+                    chips = wanted.map(w => {
+                        const t = w.tn.toLowerCase();
                         const p = ph.find(x => (x.name || '').toLowerCase() === t) || ph.find(x => (x.name || '').toLowerCase().includes(t));
-                        return p ? { id: p.id, icon: '🛠', name: p.name, hint: 'suggested trade' } : null;
-                    }).filter(Boolean);
+                        return p ? { id: p.id, icon: '🛠', name: p.name, hint: w.hint } : null;
+                    }).filter(Boolean)
+                      .filter((c, i2, arr) => arr.findIndex(y => y.id === c.id) === i2)
+                      .slice(0, 3);
                 } else {
                     chips = candidates.slice(0, 4).map(c => ({ id: c.contractorId, icon: c.icon, name: c.name, hint: c.hint }));
                 }
@@ -8766,7 +8830,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-11a"></script>
+    <script src="cloud-sync.js?v=2026-07-11b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
