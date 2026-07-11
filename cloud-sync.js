@@ -84,6 +84,11 @@
   // rows ({ cost_centre, supplier_name, ... }). Rebuilt on every pull; consumed
   // by the BPI review to suggest the contractor actually engaged for a trade.
   let callupsByAddress = {};
+  // Called For archive rows ({ activity, supplier_name }) keyed by address legacy
+  // id. The daily Framework Called For report names the supplier on EVERY
+  // activity line — the most accurate who-did-which-trade record per job, and
+  // the BPI review's TOP contractor signal (above the order-profile call-up).
+  let calledForByAddress = {};
   // BPI trade learning: normalised defect phrase -> { trade: count }. Rebuilt per
   // pull; the spine of "learn as you go" trade classification (shared by all users).
   let tradeLearning = {};
@@ -419,13 +424,14 @@
 
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
-    const [trades, contractors, links, jobs, defects, callups, learning, supers] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers] = await Promise.all([
       sb.from('dm_trades').select('*'),
       sb.from('dm_contractors').select('*'),
       sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
       sb.from('jobs').select('id, job_number, lot, street, suburb, active'),
       sb.from('dm_defects').select('*'),
       sb.from('job_call_up_archive').select('job_id, cost_centre, supplier_name'),   // Framework call-up archive (accumulates across uploads); best-effort
+      sb.from('job_called_for_archive').select('job_id, activity, supplier_name'),   // Called For archive (who actually did each trade activity); best-effort
       sb.from('dm_trade_learning').select('phrase_key, trade, n'),   // learned trades; best-effort
       // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
       // view is readable by authenticated users; an error just means no My Jobs.
@@ -514,6 +520,17 @@
         const lid = uuidToLegacy.addresses[r.job_id];
         if (lid == null) return;                          // job not visible to this user
         (callupsByAddress[lid] = callupsByAddress[lid] || []).push({ supplier_name: r.supplier_name, cost_centre: r.cost_centre });
+      });
+    }
+
+    // Called For archive rows, keyed by address legacy id. Best-effort like the
+    // call-up: an error just means no called-for suggestions.
+    calledForByAddress = {};
+    if (calledFor && !calledFor.error && Array.isArray(calledFor.data)) {
+      calledFor.data.forEach(r => {
+        const lid = uuidToLegacy.addresses[r.job_id];
+        if (lid == null) return;
+        (calledForByAddress[lid] = calledForByAddress[lid] || []).push({ activity: r.activity, supplier_name: r.supplier_name });
       });
     }
 
@@ -1731,7 +1748,10 @@
   // ----- Framework call-up (BPI import contractor suggestions) -----
   window.CloudCallups = {
     rowsForAddress: (legacyId) => callupsByAddress[legacyId] || [],
-    hasProfile: (legacyId) => Array.isArray(callupsByAddress[legacyId]) && callupsByAddress[legacyId].length > 0
+    hasProfile: (legacyId) => Array.isArray(callupsByAddress[legacyId]) && callupsByAddress[legacyId].length > 0,
+    // Called For archive rows ({ activity, supplier_name }) for a job — who
+    // actually carried out each trade activity there. Top suggestion signal.
+    calledForForAddress: (legacyId) => calledForByAddress[legacyId] || []
   };
 
   // ----- Job visibility (manager-only: reveal handed-over / inactive jobs) -----

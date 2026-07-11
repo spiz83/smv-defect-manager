@@ -7211,6 +7211,14 @@
               .rv-combo-item:last-child{border-bottom:0;}
               .rv-combo-item:hover{background:var(--blue,#2563eb);color:#fff;}
               .rv-combo-empty{padding:11px 13px;color:var(--text-secondary,#888);font-size:13px;}
+              .rv-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+              .rv-chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;padding:7px 11px;
+                border:1px solid var(--border-color,#ccc);border-radius:999px;background:var(--input-bg,#fff);
+                color:var(--text-primary,#111);font:inherit;font-size:13px;cursor:pointer;text-align:left;}
+              .rv-chip i{font-style:normal;font-size:11px;color:var(--text-secondary,#888);white-space:nowrap;}
+              .rv-chip b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw;}
+              .rv-chip.active{border-color:var(--blue,#2563eb);background:var(--blue,#2563eb);color:#fff;}
+              .rv-chip.active i{color:rgba(255,255,255,.8);}
               .imp-report{display:flex;align-items:center;justify-content:space-between;gap:10px;
                 padding:12px;border:1px solid var(--border-color,#eee);border-radius:12px;margin-bottom:8px;}
               .imp-report small{color:var(--text-secondary,#888);}
@@ -7501,23 +7509,32 @@
         // "Tiler" on "Roof Tiles". Scoring breaks ties (roofer beats plumber on a
         // gutter defect via 'roof'+'gutter').
         const CALLUP_TRADE_KEYWORDS = {
-            Painter: ['painter', 'painting'],
+            Painter: ['painter', 'painting', 'paint'],
             Renderer: ['render'],
             Bricklayer: ['bricklayer', 'brick lay'],
             Plasterer: ['plaster', 'cornice'],
             Electrician: ['electrical', 'electrician'],
-            'Roof Plumber': ['roof', 'gutter', 'fascia', 'flashing', 'capping'],
-            Plumber: ['plumber', 'plumbing'],
-            Tiler: ['floor tile', 'wall tile', 'tiles labour', 'tiling'],
+            'Roof Plumber': ['roof', 'gutter', 'fascia', 'flashing', 'capping', 'downpipe'],
+            Plumber: ['plumber', 'plumbing', 'drain', 'sewer', 'stormwater'],
+            Tiler: ['floor tile', 'wall tile', 'tiles labour', 'tiling', 'tile'],
             Waterproofer: ['waterproof'],
             Flooring: ['carpet', 'floor covering', 'vinyl', 'laminate', 'timber floor'],
             Carpenter: ['carpenter', 'carpentry'],
-            Glazier: ['window', 'entry frame', 'glazing', 'glazier'],
-            Concreter: ['concrete', 'concretor'],
+            Glazier: ['window', 'entry frame', 'glazing', 'glazier', 'mirror', 'splashback'],
+            Concreter: ['concrete', 'concretor', 'driveway'],
             Caulker: ['caulk', 'joint sealing'],
-            Cleaner: ['cleaner', 'cleaning'],
+            Cleaner: ['cleaner', 'cleaning', 'clean'],
             Insulation: ['insulation', 'sisalation', 'sarking', 'wall wrap', 'foil'],
+            'Cabinet Maker': ['kitchen', 'cabinet', 'joinery'],
+            'Garage Door': ['garage door'],
+            Landscaper: ['landscap', 'retaining wall'],
         };
+        // Word-boundary prefix match: "roof" hits "Roof Clean" but NOT
+        // "waterproofing" (substring matching mis-suggested the waterproofer for
+        // roof-plumbing defects); "render" still hits "rendering".
+        function kwMatch(hay, kw) {
+            return new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(hay);
+        }
         // Suggest the called-up contractor for `trade` on the job at `addressLid`.
         // Returns null when the job has no profile or no engaged sub fits the trade
         // (a clean miss → caller falls back to learned history / the static rule).
@@ -7528,10 +7545,74 @@
             let best = null, bestScore = 0;
             for (const e of engaged) {
                 const hay = ((e.contractor.trades || '') + ' ' + (e.contractor.name || '')).toLowerCase();
-                const score = kws.reduce((n, k) => n + (hay.includes(k) ? 1 : 0), 0);
+                const score = kws.reduce((n, k) => n + (kwMatch(hay, k) ? 1 : 0), 0);
                 if (score > bestScore) { bestScore = score; best = e; }
             }
             return best ? { contractorId: best.contractor.id, costCentre: best.costCentre } : null;
+        }
+        // ── Called For: who ACTUALLY carried out this trade's activities here ──
+        // The daily Framework Called For report names the supplier on every
+        // activity line (job_called_for_archive, permanent), so it beats the
+        // Order Profile — which skews to PO/material suppliers and misses many
+        // supervisor-selected trades. The TRADE is matched against the ACTIVITY
+        // text ("Paint Touch Ups", "Downpipe Install"), never the supplier's
+        // catalogue, so a "Truss Delivery" row can't make the truss manufacturer
+        // the Carpenter suggestion. Repeat call-ups = the job's regular sub.
+        function suggestCalledForTrade(trade, addressLid) {
+            const kws = CALLUP_TRADE_KEYWORDS[trade]; if (!kws) return null;
+            if (addressLid == null || !window.CloudCallups || !window.CloudCallups.calledForForAddress) return null;
+            const rows = window.CloudCallups.calledForForAddress(addressLid) || [];
+            if (!rows.length) return null;
+            const contractors = db.getContractors();
+            const byNorm = new Map();
+            contractors.forEach(c => { const n = normCompanyName(c.name); if (n) byNorm.set(n, c); });
+            const tally = new Map();   // contractorId -> { c, times, activity }
+            for (const r of rows) {
+                const act = String(r.activity || '').toLowerCase();
+                if (!act || !kws.some(k => kwMatch(act, k))) continue;
+                const n = normCompanyName(r.supplier_name || '');
+                if (!n || n === 'supervisor to select') continue;
+                let c = byNorm.get(n);
+                if (!c) c = contractors.find(x => { const cn = normCompanyName(x.name); return cn && (cn.includes(n) || n.includes(cn)); });
+                if (!c || CALLUP_MATERIAL_SUPPLIERS.has(normCompanyName(c.name))) continue;
+                const cur = tally.get(c.id);
+                if (cur) cur.times++;
+                else tally.set(c.id, { c, times: 1, activity: r.activity || '' });
+            }
+            let best = null;
+            for (const t of tally.values()) if (!best || t.times > best.times) best = t;
+            return best ? { contractorId: best.c.id, activity: best.activity, times: best.times } : null;
+        }
+        // ── Job-scoped history: who already fixed similar defects on THIS job ──
+        // Same token model as the global suggester but restricted to this job's
+        // defects, with relaxed gates (singleton tokens count — the painter
+        // already sent to this address is very likely the painter again). Still
+        // needs ≥2 agreeing token-hits so one loose word can't pick a sub.
+        function suggestFromJobHistory(text, addressLid) {
+            if (addressLid == null) return null;
+            const defects = ((db.data && db.data.defects) || []).filter(d => d.addressId === addressLid && d.contractorId != null);
+            if (!defects.length) return null;
+            const byToken = new Map(), tokenTotal = new Map();
+            for (const d of defects) addLearningExample(byToken, tokenTotal, (d.description || '') + ' ' + (d.location || ''), d.contractorId);
+            const score = new Map(), support = new Map();
+            let contributing = 0;
+            for (const tok of bpiTokens(text)) {
+                const m = byToken.get(tok); if (!m) continue;
+                contributing++;
+                const total = tokenTotal.get(tok) || 0;
+                for (const [cid, cnt] of m) {
+                    score.set(cid, (score.get(cid) || 0) + cnt / total);
+                    support.set(cid, (support.get(cid) || 0) + cnt);
+                }
+            }
+            if (contributing < 2) return null;
+            let bestId = null, bestScore = 0;
+            for (const [cid, s] of score) if (s > bestScore) { bestScore = s; bestId = cid; }
+            if (bestId == null) return null;
+            const confidence = bestScore / contributing;
+            if (confidence < 0.5 || bestScore < 1.5) return null;
+            if (!db.getContractor(bestId)) return null;
+            return { contractorId: bestId, support: support.get(bestId) || 0, confidence };
         }
         // ════════ Trade learning (hybrid): server-learned → curated rule → keyword ════════
         // Normalise a defect line to a stable phrase key: lowercase, strip rooms,
@@ -7584,7 +7665,7 @@
             const hay = ((contractor.trades || '') + ' ' + (contractor.name || '')).toLowerCase();
             let best = '', bestScore = 0;
             for (const trade in CALLUP_TRADE_KEYWORDS) {
-                const score = CALLUP_TRADE_KEYWORDS[trade].reduce((n, k) => n + (hay.includes(k) ? 1 : 0), 0);
+                const score = CALLUP_TRADE_KEYWORDS[trade].reduce((n, k) => n + (kwMatch(hay, k) ? 1 : 0), 0);
                 if (score > bestScore) { bestScore = score; best = trade; }
             }
             return best;
@@ -7927,23 +8008,66 @@
             const raw = r.items[r.index];
             const item = (typeof raw === 'string') ? { description: raw, location: '', page: null, trade: '' } : raw;
             if (typeof raw === 'string') r.items[r.index] = item;   // normalise so edits persist across a re-render
-            // Suggestion priority:
-            //   1. Framework call-up — the sub actually engaged for this trade on THIS job
-            //   2. learned history    — who this supervisor has assigned similar defects to
-            //   3. static trade rule  — global keyword guess (cold-start fallback)
-            // Resolve the trade via the hybrid learner (shared learning → curated
-            // rule → keyword), overriding the parse-time guess; it drives the
-            // call-up contractor pick below.
+            // Suggestion priority (Spiro 2026-07-11):
+            //   1. Called For archive — who ACTUALLY did this trade's activities here
+            //   2. Framework call-up  — the sub engaged for this trade on THIS job
+            //   3. job history        — who fixed similar defects on THIS job
+            //   4. global history / directory — chips ONLY, never auto-filled: a sub
+            //      learned from other jobs may be another region's contractor.
             const resolved = resolveTrade((item.location || '') + ' ' + (item.description || ''));
             const effTrade = resolved.trade;
+            const _rvText = (item.location || '') + ' ' + (item.description || '');
+            const candidates = [];   // { contractorId, icon, name, hint, note, autofill }
+            const _seenCand = new Set();
+            const addCand = (cid, icon, hint, note, autofill) => {
+                if (cid == null || _seenCand.has(cid)) return;
+                const c = db.getContractor(cid);
+                if (!c || c.isTradePlaceholder) return;
+                _seenCand.add(cid);
+                candidates.push({ contractorId: cid, icon, name: c.name, hint, note, autofill });
+            };
+            const calledfor = effTrade ? suggestCalledForTrade(effTrade, r.lastAddressId) : null;
+            if (calledfor) addCand(calledfor.contractorId, '📅', 'did this work here',
+                '📅 Did this work here: ' + ((db.getContractor(calledfor.contractorId) || {}).name || '') + ' (' + calledfor.activity + (calledfor.times > 1 ? ' ×' + calledfor.times : '') + ')', true);
             const callup = effTrade ? suggestCallupForTrade(effTrade, r.lastAddressId) : null;
-            const learned = suggestFromHistory((item.location || '') + ' ' + (item.description || ''));
-            const suggestedContractor = (callup && callup.contractorId)
-                || (learned && learned.contractorId)
-                || (effTrade ? suggestContractorForTrade(effTrade) : null);
+            if (callup) addCand(callup.contractorId, '📋', 'called up on this job',
+                '📋 Called up on this job: ' + ((db.getContractor(callup.contractorId) || {}).name || '') + (callup.costCentre ? ' (cost centre ' + callup.costCentre + ')' : ''), true);
+            const jobHist = suggestFromJobHistory(_rvText, r.lastAddressId);
+            if (jobHist) addCand(jobHist.contractorId, '🏠', jobHist.support + ' past defect' + (jobHist.support === 1 ? '' : 's') + ' here',
+                '🏠 Already on this job: ' + ((db.getContractor(jobHist.contractorId) || {}).name || ''), true);
+            const learned = suggestFromHistory(_rvText);
+            if (learned) addCand(learned.contractorId, '🧠', 'learned ×' + learned.support + ' (other jobs)', '', false);
+            const kwId = effTrade ? suggestContractorForTrade(effTrade) : null;
+            if (kwId != null) addCand(kwId, '🔎', 'directory: ' + effTrade, '', false);
+            const autoCand = candidates.find(c => c.autofill) || null;
+            const suggestedContractor = autoCand ? autoCand.contractorId : null;
             const suggestedTrade = effTrade || (learned && learned.trade) || '';
             // Sticky contractor: a manual pick survives address-change re-renders.
             const chosenContractorId = (typeof raw === 'object' && raw._contractorId != null) ? raw._contractorId : suggestedContractor;
+            // Quick-pick chips below the Assign box (Spiro's original scope): one tap
+            // selects a suggestion instead of typing. Contractor mode shows the ranked
+            // candidates (incl. global-history ones that are never auto-filled);
+            // Trade mode shows the suggested trade placeholder(s).
+            let chipsHtml = '';
+            {
+                let chips = [];
+                if (state.assignByTrade) {
+                    const ph = db.getContractors().filter(c => c.isTradePlaceholder && c.isActive !== false);
+                    const wanted = [];
+                    if (effTrade) wanted.push(effTrade);
+                    const lt = learned && learned.trade; if (lt && wanted.indexOf(lt) < 0) wanted.push(lt);
+                    chips = wanted.map(tn => {
+                        const t = tn.toLowerCase();
+                        const p = ph.find(x => (x.name || '').toLowerCase() === t) || ph.find(x => (x.name || '').toLowerCase().includes(t));
+                        return p ? { id: p.id, icon: '🛠', name: p.name, hint: 'suggested trade' } : null;
+                    }).filter(Boolean);
+                } else {
+                    chips = candidates.slice(0, 4).map(c => ({ id: c.contractorId, icon: c.icon, name: c.name, hint: c.hint }));
+                }
+                const escC = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+                if (chips.length) chipsHtml = '<div class="rv-chips" id="rv-chips">' + chips.map(c =>
+                    `<button type="button" class="rv-chip${c.id === chosenContractorId ? ' active' : ''}" data-cid="${c.id}">${c.icon} <b>${escC(c.name)}</b><i>${escC(c.hint)}</i></button>`).join('') + '</div>';
+            }
             const addrObj = r.lastAddressId != null ? db.getAddress(r.lastAddressId) : null;
             const addrLabel = (addrObj ? formatAddress(addrObj) : '').replace(/"/g, '&quot;');
             const cObj = chosenContractorId != null ? db.getContractor(chosenContractorId) : null;
@@ -7955,13 +8079,11 @@
             const locOpts = ['<option value="">— Location —</option>', customLocOpt].concat(BPI_LOCATIONS.map(l => `<option value="${l}" ${l === item.location ? 'selected' : ''}>${l}</option>`)).join('');
             const pct = Math.round((r.index / r.items.length) * 100);
             const tradeTag = resolved.source === 'learned' ? ' (learned' + (resolved.n ? ' ×' + resolved.n : '') + ')' : resolved.source === 'rule' ? ' (rule)' : '';
-            const suggestNote = callup
-                ? '📋 Called up on this job: ' + ((db.getContractor(callup.contractorId) || {}).name || '') + (callup.costCentre ? ' (cost centre ' + callup.costCentre + ')' : '')
-                : learned
-                ? '🧠 Suggested: ' + ((db.getContractor(learned.contractorId) || {}).name || '') + (learned.support ? ' (learned from ' + learned.support + ' past defect' + (learned.support === 1 ? '' : 's') + ')' : '')
-                : '';
+            // Only THIS-job evidence earns the authoritative note; global-history
+            // suggestions live in the chips where the supervisor chooses.
+            const suggestNote = autoCand ? autoCand.note : '';
             const refLbl = item.itemNo != null ? ('BPI #' + item.itemNo + (item.page ? ', p.' + item.page : '')) : (item.page ? 'Page ' + item.page : '');
-            const meta = [refLbl, effTrade ? 'Trade: ' + effTrade + tradeTag : '', suggestNote, _amftDbg ? '🐞 ' + _amftDbg : ''].filter(Boolean).join(' · ');
+            const meta = [refLbl, effTrade ? 'Trade: ' + effTrade + tradeTag : '', suggestNote].filter(Boolean).join(' · ');
             impOverlay(`
                 <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
@@ -7984,7 +8106,7 @@
                     </div>
                     <div class="imp-field">
                         <label style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-                            <span>Assign to ${state.assignByTrade ? 'trade' : 'contractor'}${!state.assignByTrade && (callup ? ' (from call-up)' : suggestedContractor ? ' (suggested)' : '') || ''}</span>
+                            <span>Assign to ${state.assignByTrade ? 'trade' : 'contractor'}${!state.assignByTrade && autoCand ? (calledfor ? ' (from called-for)' : callup ? ' (from call-up)' : ' (suggested)') : ''}</span>
                             <span class="rv-assign-toggle" style="display:inline-flex;border:1px solid var(--border-color,#ccc);border-radius:8px;overflow:hidden;font-size:12px">
                                 <button type="button" onclick="setAssignMode(false)" style="border:none;padding:5px 10px;cursor:pointer;background:${state.assignByTrade ? 'transparent' : 'var(--blue,#2563eb)'};color:${state.assignByTrade ? 'var(--text-secondary,#888)' : '#fff'};font-weight:600">Contractor</button>
                                 <button type="button" onclick="setAssignMode(true)" style="border:none;padding:5px 10px;cursor:pointer;background:${state.assignByTrade ? 'var(--blue,#2563eb)' : 'transparent'};color:${state.assignByTrade ? '#fff' : 'var(--text-secondary,#888)'};font-weight:600">Trade</button>
@@ -7995,6 +8117,7 @@
                             <input type="hidden" id="rv-contractor" value="${chosenContractorId != null ? chosenContractorId : ''}">
                             <div class="rv-combo-list" id="rv-contractor-list"></div>
                         </div>
+                        ${chipsHtml}
                     </div>
                     <div class="imp-row">
                         <button class="imp-btn secondary" id="rv-skip">Skip</button>
@@ -8013,6 +8136,23 @@
             // (to refresh the call-up suggestion); see rvCombo.
             rvCombo('address');
             rvCombo('contractor');
+            // Suggestion chips: one tap fills the Assign combo (visible text +
+            // hidden id + sticky pick), same as tapping a dropdown item.
+            const chipsEl = document.getElementById('rv-chips');
+            if (chipsEl) chipsEl.querySelectorAll('.rv-chip').forEach(btn => {
+                btn.onclick = () => {
+                    const cid = parseInt(btn.getAttribute('data-cid'));
+                    const c = db.getContractor(cid); if (!c) return;
+                    const input = document.getElementById('rv-contractor-input');
+                    const hidden = document.getElementById('rv-contractor');
+                    const label = c.name + (!state.assignByTrade && c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : '');
+                    if (input) input.value = label;
+                    if (hidden) hidden.value = cid;
+                    const cur = _review.items[_review.index];
+                    if (cur && typeof cur === 'object') cur._contractorId = cid;
+                    chipsEl.querySelectorAll('.rv-chip').forEach(b => b.classList.toggle('active', b === btn));
+                };
+            });
             document.getElementById('rv-save').onclick = () => {
                 const desc = document.getElementById('rv-desc').value.trim();
                 const addressId = parseInt(document.getElementById('rv-address').value) || null;
@@ -8626,7 +8766,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-09i"></script>
+    <script src="cloud-sync.js?v=2026-07-11a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
