@@ -8598,25 +8598,14 @@
             if (opts.asFile) return new File([doc.output('blob')], fname, { type: 'application/pdf' });
             const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
                 || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            // On iPhone/iPad, navigator.share() ALWAYS leaks the PDF's "blob:"
-            // object URL into the message — even sharing files-only — and
-            // doc.save() opens the PDF at a blob: URL too. The only clean path is
-            // to host the PDF at an https URL and share THAT link (an https link
-            // never leaks a blob). Works for both Mail and Messages/SMS.
-            if (iOS) {
-                const blob = doc.output('blob');
-                let url = null;
-                try { if (window.CloudShare) url = await window.CloudShare.uploadTempPdf(new File([blob], fname, { type: 'application/pdf' }), fname); }
-                catch (e) { console.error('report link upload', e); }
-                if (url) {
-                    const note = 'Defects report — tap to open:\n' + url;
-                    if (navigator.share) {
-                        try { await navigator.share({ text: note }); return; }
-                        catch (e) { if (e && e.name === 'AbortError') return; /* fall through */ }
-                    }
-                    window.location.href = url; return;   // no share API → just open the hosted PDF
-                }
-                // Hosting unavailable (offline) — fall through to a plain save.
+            // iOS: attach the actual PDF via the share sheet (files ONLY — never
+            // pair it with title/text, which is what leaked the blob: link). This
+            // is the only way to send a real file attachment from a web app on
+            // iPhone. Desktop just downloads.
+            const file = new File([doc.output('blob')], fname, { type: 'application/pdf' });
+            if (iOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+                try { await navigator.share({ files: [file] }); return; }
+                catch (e) { if (e && e.name === 'AbortError') return; /* fall through to download */ }
             }
             doc.save(fname);
         }
@@ -8744,7 +8733,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-13c';
+        const APP_VERSION = '2026-07-13d';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
