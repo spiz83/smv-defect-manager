@@ -8598,14 +8598,22 @@
             if (opts.asFile) return new File([doc.output('blob')], fname, { type: 'application/pdf' });
             const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
                 || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            // iOS: attach the actual PDF via the share sheet (files ONLY — never
-            // pair it with title/text, which is what leaked the blob: link). This
-            // is the only way to send a real file attachment from a web app on
-            // iPhone. Desktop just downloads.
-            const file = new File([doc.output('blob')], fname, { type: 'application/pdf' });
-            if (iOS && navigator.canShare && navigator.canShare({ files: [file] })) {
-                try { await navigator.share({ files: [file] }); return; }
-                catch (e) { if (e && e.name === 'AbortError') return; /* fall through to download */ }
+            // CONFIRMED on-device: iOS attaches the PDF's blob: object URL to the
+            // message body on EVERY file share — even files-only — for both Mail
+            // and Messages. It's an Apple Web-Share bug with no web-side fix. So
+            // we never share the File. Host it at an https URL and share THAT as a
+            // proper link (via the `url` field, so iOS renders a tidy tappable
+            // card, not a raw URL). Desktop still downloads.
+            if (iOS) {
+                let url = null;
+                try { if (window.CloudShare) url = await window.CloudShare.uploadTempPdf(new File([doc.output('blob')], fname, { type: 'application/pdf' }), fname); }
+                catch (e) { console.error('report link upload', e); }
+                if (url && navigator.share) {
+                    try { await navigator.share({ title: 'Defects Report', url }); return; }
+                    catch (e) { if (e && e.name === 'AbortError') return; /* fall through */ }
+                }
+                if (url) { window.location.href = url; return; }   // no share API → open the hosted PDF
+                // Hosting unavailable (offline) — fall through to a plain save.
             }
             doc.save(fname);
         }
@@ -8733,7 +8741,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-13d';
+        const APP_VERSION = '2026-07-13e';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
