@@ -28,6 +28,11 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid JSON body" }, 400);
   }
   if (!text.trim()) return json({ error: "Missing 'text'" }, 400);
+  // Cap input so a caller holding the public anon key can't run up the
+  // Anthropic bill (or DoS the wallet) with a giant payload. Real inspection
+  // reports are far under this; ~100k chars ≈ 25k tokens.
+  const MAX_CHARS = 100_000;
+  if (text.length > MAX_CHARS) return json({ error: "Report text too large" }, 413);
 
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) return json({ error: "Server not configured: ANTHROPIC_API_KEY missing" }, 500);

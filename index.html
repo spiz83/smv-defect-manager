@@ -6586,46 +6586,6 @@
             showToast(`Backup saved as ${filename}`);
         }
 
-        function handleBackupImport(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = JSON.parse(e.target.result);
-                    
-                    // Validate data structure
-                    if (!data.addresses || !data.contractors || !data.trades || !data.defects) {
-                        showToast('Invalid backup file format', true);
-                        return;
-                    }
-                    
-                    // Confirm before importing
-                    if (!confirm(`Import backup? This will replace all current data.\n\nBackup contains:\n- ${data.addresses.length} addresses\n- ${data.contractors.length} contractors\n- ${data.trades.length} trades\n- ${data.defects.length} defects`)) {
-                        return;
-                    }
-                    
-                    // Import the data
-                    localStorage.setItem('defectTrackerDB', JSON.stringify(data));
-                    
-                    showToast('Backup imported successfully! Reloading...');
-                    
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1000);
-                    
-                } catch (err) {
-                    showToast('Failed to import backup: Invalid JSON file', true);
-                    console.error(err);
-                }
-                
-                // Reset file input
-                event.target.value = '';
-            };
-            
-            reader.readAsText(file);
-        }
 
         function confirmHideTrades() {
             const checkedBoxes = document.querySelectorAll('.hide-trade-checkbox:checked');
@@ -6681,18 +6641,6 @@
             window.location.href = `mailto:${email}?subject=${subject}`;
         }
 
-        // Dark Mode Functions
-        function setTheme(theme) {
-            if (theme === 'dark') {
-                document.body.classList.add('dark-mode');
-                localStorage.setItem('theme', 'dark');
-            } else {
-                document.body.classList.remove('dark-mode');
-                localStorage.setItem('theme', 'light');
-            }
-            render(); // Re-render to update button states
-        }
-
         function loadTheme() {
             // Light/dark removed (Spiro 2026-06): the selected Theme controls all
             // colours, so force the neutral base off and drop any saved dark pref.
@@ -6713,14 +6661,6 @@
 
         function currentClubTheme() {
             return localStorage.getItem('clubTheme') || 'default';
-        }
-
-        function renderThemePicker() {
-            const cur = currentClubTheme();
-            return `<div class="theme-grid">` + CLUB_THEMES.map(t => `
-                <div class="theme-swatch ${t.id === cur ? 'active' : ''}" onclick="setClubTheme('${t.id}')">
-                    <span class="theme-dot" style="background:${t.dot};"></span>${t.name}
-                </div>`).join('') + `</div>`;
         }
 
         function applyClubTheme(id) {
@@ -6772,14 +6712,6 @@
             applyDesign(currentDesign());
             if (currentDesign() === 'f1') applyF1Theme(currentF1Theme());
         }
-        // Manager toggle: include handed-over (inactive) jobs in the address list.
-        async function setShowInactiveJobs(v) {
-            if (!window.CloudJobs) return;
-            showToast(v ? 'Loading all jobs…' : 'Active jobs only…');
-            await window.CloudJobs.setShowInactive(v);   // re-pulls + re-renders
-            showToast(v ? 'Showing handed-over jobs too' : 'Showing active jobs only');
-        }
-
         // Home-page section visibility toggles (default HIDDEN). Pure localStorage
         // UI prefs — flip them from Manage. Follows the setDesign() pattern.
         function showMultiContractors() { return localStorage.getItem('dm_show_multi_contractors') === '1'; }
@@ -6885,21 +6817,6 @@
                 <div id="myjobs-list" style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:360px;overflow-y:auto;margin-bottom:18px;">
                     ${body}
                 </div>`;
-        }
-        // Live-narrow the job list as the manager/supervisor types (DOM hide/show,
-        // no re-render so focus is kept).
-        function filterMyJobs(q) {
-            q = (q || '').trim().toLowerCase();
-            const wrap = document.getElementById('myjobs-list');
-            if (!wrap) return;
-            let shown = 0;
-            wrap.querySelectorAll('[data-job-search]').forEach(el => {
-                const hit = !q || el.getAttribute('data-job-search').indexOf(q) !== -1;
-                el.style.display = hit ? '' : 'none';
-                if (hit) shown++;
-            });
-            const none = document.getElementById('myjobs-none');
-            if (none) none.style.display = shown ? 'none' : '';
         }
         function startDefectsForJob(addressId) {
             const address = db.getAddress(addressId);
@@ -8741,7 +8658,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-13e';
+        const APP_VERSION = '2026-07-13f';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
