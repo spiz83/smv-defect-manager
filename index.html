@@ -5092,7 +5092,11 @@
             // plain mailto where attaching files isn't supported (e.g. desktop).
             if (files.length && navigator.canShare && navigator.canShare({ files })) {
                 try {
-                    await navigator.share({ title: subject, text: shareText, files });
+                    // FILES ONLY. On iOS, passing title/text alongside files makes
+                    // Messages/Mail leak the PDF's "blob: … .vercel.app" object URL
+                    // into the message as a stray link. The PDF is self-contained
+                    // (every defect + photos), so the file alone is all that's needed.
+                    await navigator.share({ files });
                     markEmailedPending();   // share completed → items are now ordered
                     return;
                 } catch (e) {
@@ -5215,7 +5219,9 @@
             // subject field, so it uses the plain text body.
             const shareText = subject + '\n\n' + textContent;
             if (files.length && navigator.canShare && navigator.canShare({ files })) {
-                try { await navigator.share({ title: subject, text: shareText, files }); showToast('📧 Sharing…'); return; }
+                // FILES ONLY — see emailSupplier: title/text alongside files makes
+                // iOS leak the PDF's "blob:" object URL into the message as a link.
+                try { await navigator.share({ files }); showToast('📧 Sharing…'); return; }
                 catch (e) { if (e && e.name === 'AbortError') return; /* else fall through to mailto */ }
             }
             const mailtoLink = recipient
@@ -8647,8 +8653,22 @@
 
             // asFile: hand the PDF back as a File (for attaching to an email)
             // instead of triggering a download.
-            if (opts.asFile) return new File([doc.output('blob')], buildReportFilename(opts), { type: 'application/pdf' });
-            doc.save(buildReportFilename(opts));
+            const fname = buildReportFilename(opts);
+            if (opts.asFile) return new File([doc.output('blob')], fname, { type: 'application/pdf' });
+            // On iPhone/iPad a standalone PWA can't "download" a file: doc.save()
+            // opens the PDF at a blob: URL, and sharing from THAT page leaks the
+            // "blob: … smv-defect-manager.vercel.app" link into the message next
+            // to the PDF. So on iOS share the File itself — files ONLY, no
+            // url/text/title — so only the clean PDF goes out. Everywhere else
+            // keeps the normal download.
+            const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+                || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            const file = new File([doc.output('blob')], fname, { type: 'application/pdf' });
+            if (iOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+                try { await navigator.share({ files: [file] }); return; }
+                catch (e) { if (e && e.name === 'AbortError') return; /* fall through to download */ }
+            }
+            doc.save(fname);
         }
 
         // One-tap PDF for the screen you're on — per job (address) or per supplier (contractor)
