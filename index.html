@@ -5041,28 +5041,6 @@
             } catch (e) { console.error('supplier email PDF', e); }
             const reportAttached = false;
 
-            // Time-of-day greeting → standard line → the items, each formatted
-            // "BPI # — location — item" with NO bullet points. The greeting is by
-            // SYDNEY time (AEST/AEDT), not the device's timezone, so it's right
-            // even if a phone is set elsewhere.
-            const hr = parseInt(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Australia/Sydney' }).format(new Date()), 10) % 24;
-            const greeting = hr < 12 ? 'Good morning,' : hr < 17 ? 'Good afternoon,' : 'Good evening,';
-            const intro = reportAttached
-                ? 'Please see attached BPI report along with the outstanding defect items below:'
-                : 'Please see the outstanding defect items below:';
-            let itemsBody = greeting + '\n\n'
-                + 'Property: ' + addr + '\n\n'
-                + intro + '\n\n';
-            // One blank line between each item so the list scans easily on a phone.
-            itemsBody += defects.map(d => formatDefectEmailLine(d)).join('\n\n') + '\n';
-            if (booking) itemsBody += '\nPlease confirm booking date of ' + fmtDateNice(booking) + '.\n';
-            // No sign-off — the user's own email signature provides it.
-            // iOS Mail/Outlook drop the Web-Share "title", so the share path leads
-            // the body with the subject line: Outlook adopts it as the subject,
-            // Mail shows it as the first line. mailto (fallback) sets the real
-            // subject field, so it uses the plain item body.
-            const shareText = subject + '\n\n' + itemsBody;
-
             // Once the email is sent, move every item we just emailed from
             // 'open' (red) to 'pending' (amber) — they're now ordered/booked
             // with the trade. Only flips items still open; leaves pending ones.
@@ -5072,40 +5050,26 @@
                 if (changed) { render(); flushStatus(); showToast(changed + ' item' + (changed === 1 ? '' : 's') + ' marked pending'); }
             };
 
-            // LINK MODE (🔗): host the PDF and drop a link in the body so Apple Mail
-            // (and every app) fills the real Subject — a link isn't an attachment.
-            if (asLink) {
-                let url = null;
-                try { if (scopedPdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name); }
-                catch (e) { console.error('supplier PDF link', e); }
-                let linkBody = itemsBody;
-                if (url) linkBody += '\nReport + photos — tap to open:\n' + url + '\n';
-                else showToast('Could not build the PDF link — sending text only', true);
-                window.location.href = 'mailto:' + encodeURIComponent(c.email) +
-                    '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(linkBody);
-                markEmailedPending();
-                return;
-            }
+            // Open the Mail app via mailto so it gets a REAL Subject + body (the
+            // only way iOS fills the Subject field — a share-sheet attachment
+            // never does, and pairing text with a file leaks a blob: link).
+            // The defect list + photos ride as a tap-to-open PDF link, hosted
+            // in the cloud, so nothing is attached (= no blob, subject stays).
+            let url = null;
+            try { if (scopedPdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name); }
+            catch (e) { console.error('supplier PDF link', e); }
 
-            // Prefer the share sheet so the actual photos ATTACH to the email
-            // (clean), instead of pasting long, messy links. Falls back to a
-            // plain mailto where attaching files isn't supported (e.g. desktop).
-            if (files.length && navigator.canShare && navigator.canShare({ files })) {
-                try {
-                    // FILES ONLY. On iOS, passing title/text alongside files makes
-                    // Messages/Mail leak the PDF's "blob: … .vercel.app" object URL
-                    // into the message as a stray link. The PDF is self-contained
-                    // (every defect + photos), so the file alone is all that's needed.
-                    await navigator.share({ files });
-                    markEmailedPending();   // share completed → items are now ordered
-                    return;
-                } catch (e) {
-                    if (e && e.name === 'AbortError') return;   // user closed the sheet → leave statuses
-                    /* otherwise fall through to mailto */
-                }
-            }
+            const bookingLine = booking
+                ? 'Please see attached Defects list and booking for ' + fmtDateNice(booking) + '.'
+                : 'Please see attached Defects list.';
+            let body = 'RE: ' + addr + '\n\n'
+                + bookingLine + '\n\n'
+                + 'Please confirm booking.\n';
+            if (url) body += '\nDefects list + photos — tap to open:\n' + url + '\n';
+            else showToast('Could not build the PDF link — sending text only', true);
+
             window.location.href = 'mailto:' + encodeURIComponent(c.email) +
-                '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(itemsBody);
+                '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
             markEmailedPending();   // mail client opened → items are now ordered
         }
 
@@ -5188,47 +5152,24 @@
                 return await generateDefectPDF(list, pdfOpts);
             };
 
-            // LINK MODE (🔗): host the PDF and put a link in the body. A link isn't an
-            // attachment, so Apple Mail (and every app) fills the real Subject.
-            if (asLink) {
-                showToast('Building PDF link…');
-                let url = null;
-                try { const pdf = scoped ? await buildScopedPdf() : null; if (pdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(pdf, pdf.name); }
-                catch (e) { console.error('email PDF link', e); }
-                let body = textContent;
-                if (url) body += '\n\nReport + photos — tap to open:\n' + url + '\n';
-                else showToast('Could not build the PDF link — sending text only', true);
-                window.location.href = (recipient ? `mailto:${recipient}` : 'mailto:') +
-                    `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                showToast('📧 Opening email…');
-                return;
-            }
-
-            // ATTACH MODE (📧/✉️): attach the PDF via the share sheet. Outlook lifts
-            // the "Defects - <address>" first body line into the Subject AND keeps the
-            // PDF; Apple Mail keeps the PDF (subject stays in the body — iOS limit).
-            const files = [];
-            if (withPhotos && scoped) {
-                showToast('Building PDF…');
-                try { const pdf = await buildScopedPdf(); if (pdf) files.push(pdf); }
-                catch (e) { console.error('email PDF', e); showToast('Could not build the PDF — sending text only', true); }
-            }
-
-            // Share path leads the body with the subject line (Outlook adopts it as
-            // the subject; Mail shows it first). mailto fallback sets the real
-            // subject field, so it uses the plain text body.
-            const shareText = subject + '\n\n' + textContent;
-            if (files.length && navigator.canShare && navigator.canShare({ files })) {
-                // FILES ONLY — see emailSupplier: title/text alongside files makes
-                // iOS leak the PDF's "blob:" object URL into the message as a link.
-                try { await navigator.share({ files }); showToast('📧 Sharing…'); return; }
-                catch (e) { if (e && e.name === 'AbortError') return; /* else fall through to mailto */ }
-            }
-            const mailtoLink = recipient
-                ? `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textContent)}`
-                : `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(textContent)}`;
-            window.location.href = mailtoLink;
-            showToast('📧 Opening email client...');
+            // Open the Mail app via mailto so it gets a REAL Subject + body — the
+            // only reliable way on iOS (a share-sheet attachment never sets the
+            // Subject, and pairing text with a file leaks a blob: link). The
+            // defect list + photos ride as a tap-to-open PDF link hosted in the
+            // cloud, so nothing is attached (= no blob, and the Subject sticks).
+            showToast('Building email…');
+            let url = null;
+            try { const pdf = scoped ? await buildScopedPdf() : null; if (pdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(pdf, pdf.name); }
+            catch (e) { console.error('email PDF link', e); }
+            const reTarget = subject.replace(/^Defects - /, '');
+            let body = 'RE: ' + reTarget + '\n\n'
+                + 'Please see attached Defects list.\n\n'
+                + 'Please confirm booking.\n';
+            if (url) body += '\nDefects list + photos — tap to open:\n' + url + '\n';
+            else showToast('Could not build the PDF link — sending text only', true);
+            window.location.href = (recipient ? `mailto:${recipient}` : 'mailto:') +
+                `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            showToast('📧 Opening email…');
         }
 
         async function refreshDefects() {
@@ -8794,7 +8735,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-13a';
+        const APP_VERSION = '2026-07-13b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
