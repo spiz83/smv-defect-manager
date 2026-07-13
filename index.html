@@ -8793,6 +8793,9 @@
         }
         window.isBusyEditing = isBusyEditing;
 
+        // Build stamp — keep in step with the sw.js CACHE string on every deploy.
+        const APP_VERSION = '2026-07-13a';
+
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
         // hasn't kicked in yet.
@@ -8817,12 +8820,27 @@
                     localStorage.removeItem('cs_snapshot');
                     localStorage.removeItem('cs_idmap');
                 } catch (e) {}
+                // Force the NEWEST code, not just the newest data. The service
+                // worker serves a cached shell within 3.5s in poor reception /
+                // Low-Power-Mode, so a plain reload can keep booting old code.
+                // Nuke every cache + unregister the SW so the reload fetches a
+                // fresh index.html straight from the network.
+                try { if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } } catch (e) {}
+                try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r => r.unregister())); } } catch (e) {}
                 const u = new URL(window.location.href);
                 u.searchParams.set('_r', Date.now().toString());
                 window.location.replace(u.toString());
             };
             b.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99999;width:42px;height:42px;border-radius:50%;border:1px solid var(--brd,#bbb);background:var(--sur,#fff);color:var(--t1,#111);font-size:20px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;';
             document.body.appendChild(b);
+            // Tiny build stamp under the refresh button so it's obvious at a
+            // glance which version this phone is actually running — turns "is it
+            // updated?" into a fact you can read.
+            const ver = document.createElement('div');
+            ver.textContent = 'v' + APP_VERSION;
+            ver.title = 'App version loaded on this device';
+            ver.style.cssText = 'position:fixed;left:8px;bottom:56px;z-index:99999;font-size:9px;color:var(--t3,#999);background:var(--sur,#fff);opacity:.75;padding:1px 4px;border-radius:4px;pointer-events:none;font-family:monospace;';
+            document.body.appendChild(ver);
         }
 
         // Initialize app
