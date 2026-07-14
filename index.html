@@ -7345,7 +7345,8 @@
             ['Plasterer',    /\bcornice|plaster|nail pop|patch (hole|the)|crack(ing|ed)? to (wall|ceiling)|set joint|sheet join|\bdip\b|bulkhead/i],
             ['Electrician',  /\bexhaust fan|light switch|power ?point|\bgpo\b|down ?light|wiring|switchboard|\btimer\b|sensor|smoke alarm|data point|\blight\b/i],
             ['Roof Plumber', /\bdownpipe|fascia|barge|gutter|fc sheet|\broof|flashing|ridge|valley/i],
-            ['Plumber',      /\btap\b|basin|sink|toilet|\bwc\b|drain|waste|plumb|trough|grommet|\bmixer\b|spout|cistern|hand ?held shower|shower bracket|overflow pipe|\briser|storm ?water|grate cover|pipe penetration|no water to|garden tap/i],
+            ['Drainer',      /\bsewer|storm ?water|silt pit|\bagi\b|drainage pit|stormwater pit/i],
+            ['Plumber',      /\btap\b|basin|sink|toilet|\bwc\b|drain|waste|plumb|trough|grommet|\bmixer\b|spout|cistern|hand ?held shower|shower bracket|overflow pipe|\briser|grate cover|pipe penetration|no water to|garden tap/i],
             ['Tiler',        /\btile|grout|tiling/i],
             ['Waterproofer', /\bwaterproof|shower (base|fall)|puddle flange/i],
             ['Flooring',     /\bcarpet|spikes (can be )?felt|floating floor|laminate floor|vinyl plank/i],
@@ -7362,7 +7363,7 @@
         // Trade label → keywords to find a matching contractor (by its trades/name).
         const BPI_TRADE_KEYWORDS = {
             Painter:['paint'], Renderer:['render','acrylic'], Bricklayer:['brick','mason'], Plasterer:['plaster','cornice','gyprock'],
-            Electrician:['electric','elec'], 'Roof Plumber':['roof','gutter','plumb'], Plumber:['plumb'],
+            Electrician:['electric','elec'], 'Roof Plumber':['roof','gutter','plumb'], Plumber:['plumb'], Drainer:['drain','sewer','stormwater'],
             Tiler:['tile','tiling'], Waterproofer:['waterproof'], Flooring:['floor','carpet','vinyl','laminate'],
             Carpenter:['carpen','fixing','door','cabinet','joinery','lock'],
             Glazier:['glaz','glass','window'], Concreter:['concret'], Caulker:['caulk','silicone','seal'], Cleaner:['clean'],
@@ -7434,7 +7435,11 @@
             Plasterer: ['plaster', 'cornice'],
             Electrician: ['electrical', 'electrician'],
             'Roof Plumber': ['roof', 'gutter', 'fascia', 'flashing', 'capping', 'downpipe'],
-            Plumber: ['plumber', 'plumbing', 'drain', 'sewer', 'stormwater'],
+            // Plumber must NOT carry drainage words — they made the drainage sub
+            // (TechFlow, "Sewerage & Stormwater Drains") outscore the actual
+            // plumber on Plumber defects. Drainage is its own CH trade.
+            Plumber: ['plumber', 'plumbing', 'gas fit', 'hot water'],
+            Drainer: ['sewer', 'stormwater', 'storm water', 'drainage', 'drains', 'agi'],
             Tiler: ['floor tile', 'wall tile', 'tiles labour', 'tiling', 'tile'],
             Waterproofer: ['waterproof'],
             Flooring: ['carpet', 'floor covering', 'vinyl', 'laminate', 'timber floor'],
@@ -7564,7 +7569,9 @@
             { re: /\bwaterproof/, trade: 'Waterproofer' },
             { re: /\b(door (handle|lock|hinge|latch|catch|stop)|striker plate|deadlock)\b/, trade: 'Carpenter' },
             { re: /\b(light|down ?light|power ?point|gpo|switch|switchboard|exhaust fan|smoke alarm|globe|wiring)\b/, trade: 'Electrician' },
-            { re: /\b(tap|mixer|toilet|cistern|basin waste|drainage|down ?pipe|water hammer)\b/, trade: 'Plumber' },
+            { re: /\b(sewer|storm ?water|silt pit|drainage pit|agi (pipe|drain))\b/, trade: 'Drainer' },
+            { re: /\b(down ?pipe|gutter|fascia)\b/, trade: 'Roof Plumber' },
+            { re: /\b(tap|mixer|toilet|cistern|basin waste|water hammer)\b/, trade: 'Plumber' },
         ];
         // The trade for a defect line: shared learning (confident) wins, then a
         // curated rule, then the keyword classifier. Returns the source for display.
@@ -8673,7 +8680,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-14a';
+        const APP_VERSION = '2026-07-14b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -8747,7 +8754,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-14a"></script>
+    <script src="cloud-sync.js?v=2026-07-14b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
