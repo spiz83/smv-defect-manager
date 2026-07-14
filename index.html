@@ -4678,9 +4678,33 @@
                     ? db.supervisorContractorIdFor(d.addressId)
                     : parseInt(cidRaw, 10);
                 db.updateDefect(defectId, { description: desc, contractorId });
+                // "Assign all <Trade> tasks to <Supplier>?" (Spiro 2026-07-14, parity
+                // with CH Tracker): a real-sub pick offers to also assign every other
+                // not-yet-really-assigned defect of the same trade at this job.
+                let bulkN = 0;
+                const newC = (cidRaw !== '' && contractorId != null) ? db.getContractor(contractorId) : null;
+                const isRealSub = c => c && !c.isTradePlaceholder && !/\bsupervisor\b/i.test(c.trades || '');
+                if (newC && isRealSub(newC)) {
+                    const clean = s => String(s || '').replace(/^BPI #\d+\s*(\(p\.\d+\))?\s*—\s*/, '');
+                    const trade = resolveTrade((d.location || '') + ' ' + clean(desc)).trade || contractorToBpiTrade(newC);
+                    if (trade) {
+                        const others = db.getDefects({ addressId: d.addressId }).filter(x =>
+                            x.id !== d.id &&
+                            !isRealSub(x.contractorId != null ? db.getContractor(x.contractorId) : null) &&
+                            resolveTrade((x.location || '') + ' ' + clean(x.description)).trade === trade);
+                        if (others.length && confirm('Assign all ' + (others.length + 1) + ' ' + trade + ' task' + (others.length ? 's' : '') + ' at this job to ' + newC.name + '?\n\n(Cancel assigns only this one.)')) {
+                            for (const x of others) db.updateDefect(x.id, { contractorId });
+                            bulkN = others.length;
+                        }
+                        // The pick is a confirmation — teach the shared learner.
+                        const phrase = normalizePhrase((d.location || '') + ' ' + clean(desc));
+                        if (phrase && window.CloudLearning) { try { window.CloudLearning.record(phrase, contractorToBpiTrade(newC) || trade, null,
+                            { observation: (d.location ? d.location + ' ' : '') + clean(desc), source: 'edit', jobId: window.CloudLearning.jobUuidForAddress(d.addressId) }); } catch (e) {} }
+                    }
+                }
                 impClose(); render(); flushStatus();
                 const sup = (contractorId != null && (db.getContractor(contractorId) || {}).name) || '';
-                showToast(cidRaw === '' && sup ? ('Supplier set to ' + sup) : 'Defect updated');
+                showToast(bulkN ? ((bulkN + 1) + ' defects assigned to ' + (newC ? newC.name : sup)) : (cidRaw === '' && sup ? ('Supplier set to ' + sup) : 'Defect updated'));
             };
         }
         // ── Bulk reassign: move EVERY open defect in a contractor group (at one
@@ -8735,7 +8759,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-14d';
+        const APP_VERSION = '2026-07-14e';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -8809,7 +8833,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-14d"></script>
+    <script src="cloud-sync.js?v=2026-07-14e"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
