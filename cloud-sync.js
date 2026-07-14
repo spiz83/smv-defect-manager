@@ -432,7 +432,7 @@
       sb.from('dm_defects').select('*'),
       sb.from('job_call_up_archive').select('job_id, cost_centre, supplier_name'),   // Framework call-up archive (accumulates across uploads); best-effort
       sb.from('job_called_for_archive').select('job_id, activity, supplier_name'),   // Called For archive (who actually did each trade activity); best-effort
-      sb.from('dm_trade_learning').select('phrase_key, trade, n'),   // learned trades; best-effort
+      sb.from('dm_trade_learning').select('phrase_key, trade, n, w'),   // learned trades (weighted); best-effort
       // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
       // view is readable by authenticated users; an error just means no My Jobs.
       sb.from('v_jobs_with_current_supervisor').select('id, current_supervisor_id, current_supervisor_name, status')
@@ -534,11 +534,13 @@
       });
     }
 
-    // Learned trade tallies, keyed by normalised phrase. Best-effort.
+    // Learned trade tallies, keyed by normalised phrase. Best-effort. Uses the
+    // WEIGHTED score `w` (role-weighted, correction-decayed — mig 092/099) so
+    // the phone agrees with CH Tracker's verdicts; falls back to n for legacy rows.
     tradeLearning = {};
     if (learning && !learning.error && Array.isArray(learning.data)) {
       learning.data.forEach(row => {
-        (tradeLearning[row.phrase_key] = tradeLearning[row.phrase_key] || {})[row.trade] = row.n || 1;
+        (tradeLearning[row.phrase_key] = tradeLearning[row.phrase_key] || {})[row.trade] = Number(row.w != null ? row.w : row.n) || 1;
       });
     }
 
@@ -1789,21 +1791,54 @@
   };
 
   // ----- BPI trade learning (suggest + record), shared across all users -----
+  // Role weight matches bpi_ai_settings defaults: a manager's confirmation
+  // moves the shared model 5× a supervisor's (kept in sync with CH Tracker).
+  function learnWeight() { return userRole === 'manager' ? 5 : 1; }
   window.CloudLearning = {
-    // Best learned trade for a normalised phrase, or null. minN gates confidence.
+    // Best learned trade for a normalised phrase, or null. Tallies are the
+    // WEIGHTED score `w` (manager corrections count more); minN gates confidence.
     suggestTrade: (phraseKey, minN = 2) => {
       const tallies = tradeLearning[phraseKey]; if (!tallies) return null;
       let bestTrade = null, bestN = 0, total = 0;
       for (const t in tallies) { total += tallies[t]; if (tallies[t] > bestN) { bestN = tallies[t]; bestTrade = t; } }
       return bestN >= minN ? { trade: bestTrade, n: bestN, total } : null;
     },
-    // Record a supervisor's trade choice for a phrase (fire-and-forget upsert).
-    record: async (phraseKey, trade) => {
+    // Record a trade choice for a phrase (fire-and-forget, role-weighted).
+    // When the engine PREDICTED a different trade (wrongTrade), the correction
+    // also decays the wrong association (mig 099) — negative learning, so a
+    // phrase mislabelled early stops competing once the team corrects it.
+    record: async (phraseKey, trade, wrongTrade) => {
       if (!userId || !phraseKey || !trade) return;
+      const w = learnWeight();
       try {
-        await sb.rpc('dm_learn_trade', { p_phrase: phraseKey, p_trade: trade });
-        (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {})[trade] = (tradeLearning[phraseKey][trade] || 0) + 1;
+        if (wrongTrade && wrongTrade !== trade) {
+          await sb.rpc('dm_learn_trade_correct', { p_phrase: phraseKey, p_wrong: wrongTrade, p_right: trade, p_weight: w });
+          const m = (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {});
+          if (m[wrongTrade]) m[wrongTrade] = Math.max(0, m[wrongTrade] - w);
+        } else {
+          await sb.rpc('dm_learn_trade_weighted', { p_phrase: phraseKey, p_trade: trade, p_weight: w });
+        }
+        (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {})[trade] = (tradeLearning[phraseKey][trade] || 0) + w;
       } catch (e) { console.warn('[CloudLearning] record', e); }
+    },
+    // Legacy address id → job uuid (for prediction logging). Null pre-pull.
+    jobUuidForAddress: (legacyId) => idMap.addresses[legacyId] || null,
+    // Log a prediction + how the human resolved it (fire-and-forget), so the
+    // Admin → BPI AI accuracy dashboard sees phone-side reviews too — until
+    // now only CH Tracker imports fed bpi_prediction_history.
+    logPrediction: async (row) => {
+      if (!userId) return;
+      try {
+        const hadPrediction = !!row.predictedTrade;
+        await sb.from('bpi_prediction_history').insert({
+          observation: row.observation || '', phrase_key: row.phraseKey || null,
+          predicted_trade: row.predictedTrade || null, predicted_confidence: row.confidence != null ? row.confidence : null,
+          source: row.source || null, final_trade: row.finalTrade || null,
+          accepted: hadPrediction ? (!!row.finalTrade && row.finalTrade === row.predictedTrade) : null,
+          corrected: hadPrediction ? (!!row.finalTrade && row.finalTrade !== row.predictedTrade) : null,
+          corrected_by: userId, job_id: row.jobId || null,
+        });
+      } catch (e) { console.warn('[CloudLearning] logPrediction', e); }
     }
   };
 
