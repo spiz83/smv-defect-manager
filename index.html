@@ -7381,7 +7381,7 @@
             ['Paving',       /\bpav(ing|ers?)\b/i],
             ['Concreter',    /\bdriveway|concrete|\bslab|\bpath\b|crossover/i],
             ['Caulker',      /\bcaulk|silicone|seal gap|sealant|gap between|bath hob/i],
-            ['Cleaner',      /\bclean/i],
+            ['Cleaner',      /\bclean|\bsweep\b|\bvacuum\b/i],
         ];
         function classifyBpiTrade(text) {
             for (const [trade, re] of BPI_TRADE_RULES) if (re.test(text)) return trade;
@@ -7427,7 +7427,9 @@
             'bowens', 'bowens timber hardware', 'dahlsens', 'dahlsens building centres',
             'austral bricks', 'boral', 'boral csr bricks', 'beaumont tiles',
             'e s trading', 'e s trading discounts', 'corinthian', 'corinthian industries australia',
-            'dabsand dabaco sand supply', 'css victoria the trustee for css victoria'
+            'dabsand dabaco sand supply', 'css victoria the trustee for css victoria',
+            'reece plumbing centres', 'hardings hardware', 'national tiles co', 'volare concepts',
+            'fowles auctions', 'arc australian reinforcing company', 'hy tec industries victoria'
         ].map(normCompanyName));
         // Contractors engaged on this job (call-up supplier_name → our contractor).
         function callupContractorsForAddress(addressLid) {
@@ -7493,7 +7495,9 @@
         };
         // Disqualifiers: matching one of these means the text can NEVER represent
         // the trade — fixes the roofing sub ("Roof Tiles") suggested as the TILER.
-        const CALLUP_TRADE_EXCLUDES = { Tiler: ['roof'], Flooring: ['roof'], Cleaner: ['brick clean', 'site'] };
+        const CALLUP_TRADE_EXCLUDES = { Tiler: ['roof'], Flooring: ['roof'], Cleaner: ['brick clean', 'site'],
+            'Roof Plumber': ['truss', 'frame'],   // frame carpenters ("Wall Frame & Roof Trusses") are not roofers
+            Concreter: ['temporary', 'silt fence'] };
         // Word-boundary prefix match: "roof" hits "Roof Clean" but NOT
         // "waterproofing" (substring matching mis-suggested the waterproofer for
         // roof-plumbing defects); "render" still hits "rendering".
@@ -7622,8 +7626,16 @@
             { re: /\bfloat(ing)?\b[^.]{0,40}\bceiling|\bre-?float\b|\bfloat coat\b/, trade: 'Plasterer' },
             { re: /\bconduit\b/, trade: 'Electrician' },
             { re: /\bshower (rail|rose|head|arm)\b|\b(rail|bracket)\b[^.]{0,30}\bshower\b/, trade: 'Plumber' },
+            // Shower screens / mirrors / robe doors — must beat Carpenter's 'door'.
+            { re: /\bshower screen|robe door|wardrobe door|sliding robe\b/, trade: 'Shower Screen' },
             { re: /\b(grout|tile|tiling)\b[^.]{0,50}\bshower\b|\bshower\b[^.]{0,50}\b(grout|tiles?|tiling)\b/, trade: 'Tiler' },
+            // Damaged/replace tiles — BOTH word orders ("cracked wall tile").
+            { re: /\b(crack(ed)?|chip(ped)?|loose|drummy|replace|missing)\b[^.]{0,40}\btil(es?|ing)\b/, trade: 'Tiler' },
             { re: /\b(re)?paint\b/, trade: 'Painter' },
+            // Cabinet/cupboard door & drawer adjustments = carpenter (after paint
+            // so "paint cabinet doors" stays the Painter; 'sink' must not make
+            // "sink cabinet doors" the plumber).
+            { re: /\b(cabinet|cupboard|vanity) (door|drawer)s?\b/, trade: 'Carpenter' },
             { re: /\bseal(ing|ant)?\b[^.]*\b(door|window|frame|architrave|skirt|cornice|reveal|jamb|trim)/, trade: 'Painter' },
             { re: /\b(gap|crack)s?\b[^.]*\b(door|window|architrave|skirt|cornice|trim|wall|ceiling|frame)/, trade: 'Painter' },
             { re: /\b(touch ?up|repaint|undercoat|overspray|over ?paint(ed|ing)?|paint (run|drip|finish|coverage|mark))\b/, trade: 'Painter' },
@@ -8771,7 +8783,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-15a';
+        const APP_VERSION = '2026-07-15b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -8845,7 +8857,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-15a"></script>
+    <script src="cloud-sync.js?v=2026-07-15b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
