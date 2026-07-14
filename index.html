@@ -7376,7 +7376,9 @@
             ['Waterproofer', /\bwaterproof|shower (base|fall)|puddle flange/i],
             ['Flooring',     /\bcarpet|spikes (can be )?felt|floating floor|laminate floor|vinyl plank/i],
             ['Carpenter',    /\bgripper catch|margin|architrave|skirting|\bdoor|\bgate|cabinet|cupboard|hinge|latch|handle|shelf|robe|\block\b|towel rail|towel ring|\bquads?\b|drawer|\bdraw\b|slider|flooring|manhole|screw cap|twisted|cushion stop|porch post|\bbolts?\b|chipped|vanity/i],
-            ['Glazier',      /\bglass|glazing|window|mirror|shower screen/i],
+            ['Shower Screen', /\bshower screen|robe door|wardrobe door|sliding robe|\bmirror\b/i],
+            ['Glazier',      /\bglass|glazing|window/i],
+            ['Paving',       /\bpav(ing|ers?)\b/i],
             ['Concreter',    /\bdriveway|concrete|\bslab|\bpath\b|crossover/i],
             ['Caulker',      /\bcaulk|silicone|seal gap|sealant|gap between|bath hob/i],
             ['Cleaner',      /\bclean/i],
@@ -7485,6 +7487,9 @@
             'Garage Door': ['garage door'],
             Landscaper: ['landscap', 'retaining wall'],
             Supervisor: ['supervisor'],
+            'Shower Screen': ['shower screen', 'robe', 'wardrobe', 'mirror'],
+            Paving: ['paving', 'paver'],
+            Fencing: ['fence', 'fencing'],
         };
         // Disqualifiers: matching one of these means the text can NEVER represent
         // the trade — fixes the roofing sub ("Roof Tiles") suggested as the TILER.
@@ -8037,16 +8042,14 @@
                 '📋 Called up on this job: ' + ((db.getContractor(callup.contractorId) || {}).name || '') + (callup.costCentre ? ' (cost centre ' + callup.costCentre + ')' : ''), true);
             const jobHist = suggestFromJobHistory(_rvText, r.lastAddressId);
             if (jobHist) {
-                // TRADE-CONSISTENCY GATE (Spiro 2026-07-14): job history is
-                // token-based and trade-blind — the job's SUPERVISOR (assigned a
-                // few misc items) was auto-filling on everything. Only pre-fill
-                // when the candidate's own trade agrees with the defect's trade;
-                // a disagreeing match stays available as a chip.
+                // CHIP ONLY, never auto-fill (Spiro 2026-07-14): past-defect
+                // similarity isn't authoritative — one wrong assignment
+                // self-reinforces through this signal (HAR on Lot 931). Only
+                // Called-For / Call-Up records may auto-assign a supplier.
                 const jhTrade = contractorToBpiTrade(db.getContractor(jobHist.contractorId));
-                const jhAgrees = !effTrade || !jhTrade || jhTrade === effTrade;
                 addCand(jobHist.contractorId, '🏠',
-                    jobHist.support + ' past defect' + (jobHist.support === 1 ? '' : 's') + ' here' + (jhAgrees ? '' : ' (' + jhTrade + ')'),
-                    jhAgrees ? '🏠 Already on this job: ' + ((db.getContractor(jobHist.contractorId) || {}).name || '') : '', jhAgrees);
+                    jobHist.support + ' past defect' + (jobHist.support === 1 ? '' : 's') + ' here' + (jhTrade && effTrade && jhTrade !== effTrade ? ' (' + jhTrade + ')' : ''),
+                    '', false);
             }
             const learned = suggestFromHistory(_rvText);
             if (learned) addCand(learned.contractorId, '🧠', 'learned ×' + learned.support + ' (other jobs)', '', false);
@@ -8768,7 +8771,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-14f';
+        const APP_VERSION = '2026-07-14g';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -8842,7 +8845,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-14f"></script>
+    <script src="cloud-sync.js?v=2026-07-14g"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
