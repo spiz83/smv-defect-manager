@@ -7365,7 +7365,7 @@
             ['Painter',      /\bpaint|repaint|raw timber|hinge knuckle|touch ?up|overspray|paint runs?\b/i],
             ['Renderer',     /\brender|acrylic render/i],
             ['Brick Cleaner', /\bacid ?wash|brick ?clean|mortar (stain|smear|residue)/i],
-            ['Site Cleaner', /\bsite (clean|rubbish|cage)|building (rubbish|waste)\b/i],
+            ['Site Cleaner', /\bsite (clean|rubbish|cage)|building (rubbish|waste)|debris|rubbish|builders?'?\s*material|spoil removal|grade back/i],
             ['Bricklayer',   /\bbrick|mortar|mortal|perpend|\bpier\b|weep ?hole|articulation joint|lintel/i],
             ['Plasterer',    /\bcornice|plaster|nail pop|patch (hole|the)|crack(ing|ed)? to (wall|ceiling)|set joint|sheet join|\bdip\b|bulkhead/i],
             ['Electrician',  /\bexhaust fan|light switch|power ?point|\bgpo\b|down ?light|wiring|switchboard|\btimer\b|sensor|smoke alarm|data point|\blight\b/i],
@@ -7379,7 +7379,7 @@
             ['Glazier',      /\bglass|glazing|window|mirror|shower screen/i],
             ['Concreter',    /\bdriveway|concrete|\bslab|\bpath\b|crossover/i],
             ['Caulker',      /\bcaulk|silicone|seal gap|sealant|gap between|bath hob/i],
-            ['Cleaner',      /\bclean|builders'? material|debris|residue|rubbish/i],
+            ['Cleaner',      /\bclean/i],
         ];
         function classifyBpiTrade(text) {
             for (const [trade, re] of BPI_TRADE_RULES) if (re.test(text)) return trade;
@@ -7472,8 +7472,13 @@
             Glazier: ['window', 'entry frame', 'glazing', 'glazier', 'mirror', 'splashback'],
             Concreter: ['concrete', 'concretor', 'driveway'],
             Caulker: ['caulk', 'joint sealing'],
-            Cleaner: ['cleaner', 'cleaning', 'clean'],
-            'Site Cleaner': ['site clean', 'site cage', 'rubbish'],
+            // Cleaner = INTERIOR detailing (Kalad-style). Site Cleaner = bulk
+            // site cleanup (DFO/Jumbocorp/Enviro Waste). 'clean' alone is too
+            // broad (matches "Site Cleaner - OH&S Clean" too) so Cleaner needs
+            // the 'site' exclude below AND Site Cleaner needs a vocabulary
+            // strong enough to outscore it (Spiro 2026-07-14).
+            Cleaner: ['internal clean', 'interior clean', 'int. cleaner', 'settlement clean', 'appliance clean', 'house clean', 'final clean', 'cleaner', 'cleaning', 'clean'],
+            'Site Cleaner': ['site clean', 'site cage', 'site grade', 'oh&s clean', 'grade back', 'spoil removal', 'cut & fill', 'bobcat', 'waste management', 'rubbish'],
             'Brick Cleaner': ['brick clean', 'acid'],
             Insulation: ['insulation', 'sisalation', 'sarking', 'wall wrap', 'foil'],
             'Cabinet Maker': ['kitchen', 'cabinet', 'joinery'],
@@ -7483,7 +7488,7 @@
         };
         // Disqualifiers: matching one of these means the text can NEVER represent
         // the trade — fixes the roofing sub ("Roof Tiles") suggested as the TILER.
-        const CALLUP_TRADE_EXCLUDES = { Tiler: ['roof'], Flooring: ['roof'], Cleaner: ['brick clean'] };
+        const CALLUP_TRADE_EXCLUDES = { Tiler: ['roof'], Flooring: ['roof'], Cleaner: ['brick clean', 'site'] };
         // Word-boundary prefix match: "roof" hits "Roof Clean" but NOT
         // "waterproofing" (substring matching mis-suggested the waterproofer for
         // roof-plumbing defects); "render" still hits "rendering".
@@ -7603,7 +7608,11 @@
             { re: /\b(insulation|sisalation|sisal|sarking|wall ?wrap|foilboard|foil board|reflective foil|sarked|batts?)\b/, trade: 'Insulation' },
             // ACTION-FIRST (Spiro 2026-07-14): the defect's VERB names the trade,
             // not an object mentioned later ("paint bulkhead above the cabinets").
-            { re: /\b(clean|remove|wipe)\b[^.]{0,50}\b(mud|dirt|dust|debris|residue|splatter|marks?|stains?)|^\s*(fully\s+|please\s+)?clean\b/, trade: 'Cleaner' },
+            // SITE Cleaner (bulk cleanup: DFO/Jumbocorp/Enviro Waste) vs interior
+            // Cleaner (Kalad-style detailing) — must be checked first, debris/
+            // rubbish/builders-material is ALWAYS site cleanup (Spiro 2026-07-14).
+            { re: /\b(debris|rubbish|builders?'?\s*material|building material|spoil removal|grade back|construction waste|site clean)\b/i, trade: 'Site Cleaner' },
+            { re: /\b(clean|remove|wipe)\b[^.]{0,50}\b(mud|dirt|dust|splatter|marks?|stains?)|^\s*(fully\s+|please\s+)?clean\b/, trade: 'Cleaner' },
             { re: /\b(touch ?up|scratch(es|ed)?|chip(s|ped)?|marks?)\b[^.]{0,50}\b(aluminium|window frame|door frame)|\b(aluminium|window) frames?\b[^.]{0,50}\b(touch ?up|scratch|chip|mark|repair)/, trade: 'Supervisor' },
             { re: /\bfloat(ing)?\b[^.]{0,40}\bceiling|\bre-?float\b|\bfloat coat\b/, trade: 'Plasterer' },
             { re: /\bconduit\b/, trade: 'Electrician' },
@@ -8759,7 +8768,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-14e';
+        const APP_VERSION = '2026-07-14f';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -8833,7 +8842,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-14e"></script>
+    <script src="cloud-sync.js?v=2026-07-14f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
