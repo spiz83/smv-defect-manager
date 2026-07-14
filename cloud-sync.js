@@ -92,6 +92,11 @@
   // BPI trade learning: normalised defect phrase -> { trade: count }. Rebuilt per
   // pull; the spine of "learn as you go" trade classification (shared by all users).
   let tradeLearning = {};
+  // Manager-editable keyword rules + live AI settings (bpi_trade_rules /
+  // bpi_ai_settings), refreshed each pull so Admin edits reach the phone.
+  // Defaults match the bpi_ai_settings row defaults for cold boots.
+  let bpiDbRules = [];
+  let bpiAiSettings = { weight_supervisor: 1, weight_senior: 3, weight_manager: 5, weight_admin: 10, min_examples: 2, auto_learning: true };
 
   function emptySnap() {
     return { trades: {}, contractors: {}, addresses: {}, defects: {} };
@@ -424,7 +429,7 @@
 
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
-    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet] = await Promise.all([
       sb.from('dm_trades').select('*'),
       sb.from('dm_contractors').select('*'),
       sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
@@ -435,7 +440,12 @@
       sb.from('dm_trade_learning').select('phrase_key, trade, n, w'),   // learned trades (weighted); best-effort
       // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
       // view is readable by authenticated users; an error just means no My Jobs.
-      sb.from('v_jobs_with_current_supervisor').select('id, current_supervisor_id, current_supervisor_name, status')
+      sb.from('v_jobs_with_current_supervisor').select('id, current_supervisor_id, current_supervisor_name, status'),
+      // Manager-editable keyword rules + AI settings (Admin → BPI AI in CH
+      // Tracker). Pulled here so a rule edit reaches the phone on next sync —
+      // without this the DB rule engine only ever applied to Tracker imports.
+      sb.from('bpi_trade_rules').select('keyword, trade, priority').eq('enabled', true),
+      sb.from('bpi_ai_settings').select('*').eq('id', 1)
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -542,6 +552,21 @@
       learning.data.forEach(row => {
         (tradeLearning[row.phrase_key] = tradeLearning[row.phrase_key] || {})[row.trade] = Number(row.w != null ? row.w : row.n) || 1;
       });
+    }
+    // DB-managed keyword rules (priority order) + live AI settings. Best-effort:
+    // a failed pull just keeps the previous values / defaults.
+    if (dbRules && !dbRules.error && Array.isArray(dbRules.data)) {
+      bpiDbRules = dbRules.data.slice().sort((a, b) => (a.priority || 100) - (b.priority || 100));
+    }
+    if (aiSet && !aiSet.error && Array.isArray(aiSet.data) && aiSet.data[0]) {
+      const s = aiSet.data[0];
+      const num = (v, d) => (v == null || v === '' ? d : Number(v));
+      bpiAiSettings = {
+        weight_supervisor: num(s.weight_supervisor, 1), weight_senior: num(s.weight_senior, 3),
+        weight_manager: num(s.weight_manager, 5), weight_admin: num(s.weight_admin, 10),
+        min_examples: num(s.min_examples_before_historical, 2),
+        auto_learning: s.auto_learning !== false,
+      };
     }
 
     defects.data.forEach(d => {
@@ -1791,9 +1816,17 @@
   };
 
   // ----- BPI trade learning (suggest + record), shared across all users -----
-  // Role weight matches bpi_ai_settings defaults: a manager's confirmation
-  // moves the shared model 5× a supervisor's (kept in sync with CH Tracker).
-  function learnWeight() { return userRole === 'manager' ? 5 : 1; }
+  // Role weight from the LIVE settings — a weight change in Admin → BPI AI now
+  // reaches the phone on next sync instead of being hardcoded here.
+  function learnWeight() {
+    const s = bpiAiSettings;
+    switch (String(userRole || 'supervisor').toLowerCase()) {
+      case 'manager': return s.weight_manager;
+      case 'admin': return s.weight_admin;
+      case 'senior': case 'senior_supervisor': return s.weight_senior;
+      default: return s.weight_supervisor;
+    }
+  }
   window.CloudLearning = {
     // Best learned trade for a normalised phrase, or null. Tallies are the
     // WEIGHTED score `w` (manager corrections count more); minN gates confidence.
@@ -1807,20 +1840,42 @@
     // When the engine PREDICTED a different trade (wrongTrade), the correction
     // also decays the wrong association (mig 099) — negative learning, so a
     // phrase mislabelled early stops competing once the team corrects it.
-    record: async (phraseKey, trade, wrongTrade) => {
+    // `detail` ({ observation, source, jobId }) additionally logs an append-only
+    // training example (bpi_training_examples) so phone-side confirmations show
+    // in the Admin → BPI AI curation table exactly like Tracker ones.
+    record: async (phraseKey, trade, wrongTrade, detail) => {
       if (!userId || !phraseKey || !trade) return;
       const w = learnWeight();
       try {
-        if (wrongTrade && wrongTrade !== trade) {
+        if (!bpiAiSettings.auto_learning) { /* learning paused from Admin */ }
+        else if (wrongTrade && wrongTrade !== trade) {
           await sb.rpc('dm_learn_trade_correct', { p_phrase: phraseKey, p_wrong: wrongTrade, p_right: trade, p_weight: w });
           const m = (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {});
           if (m[wrongTrade]) m[wrongTrade] = Math.max(0, m[wrongTrade] - w);
+          (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {})[trade] = (tradeLearning[phraseKey][trade] || 0) + w;
         } else {
           await sb.rpc('dm_learn_trade_weighted', { p_phrase: phraseKey, p_trade: trade, p_weight: w });
+          (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {})[trade] = (tradeLearning[phraseKey][trade] || 0) + w;
         }
-        (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {})[trade] = (tradeLearning[phraseKey][trade] || 0) + w;
       } catch (e) { console.warn('[CloudLearning] record', e); }
+      // Append-only training example — always logged (even with auto-learning
+      // off, examples accumulate for later curation), best-effort.
+      try {
+        await sb.from('bpi_training_examples').insert({
+          observation: (detail && detail.observation) || phraseKey,
+          phrase_key: phraseKey,
+          predicted_trade: wrongTrade || null,
+          correct_trade: trade,
+          source: (detail && detail.source) || null,
+          was_correction: !!(wrongTrade && wrongTrade !== trade),
+          corrected_by: userId, corrected_by_role: userRole || 'supervisor',
+          user_weight: w, job_id: (detail && detail.jobId) || null,
+        });
+      } catch (e) { console.warn('[CloudLearning] example', e); }
     },
+    // Live DB rule set + min-examples gate (Admin-editable, pulled each sync).
+    dbRules: () => bpiDbRules,
+    minExamples: () => bpiAiSettings.min_examples,
     // Legacy address id → job uuid (for prediction logging). Null pre-pull.
     jobUuidForAddress: (legacyId) => idMap.addresses[legacyId] || null,
     // Log a prediction + how the human resolved it (fire-and-forget), so the

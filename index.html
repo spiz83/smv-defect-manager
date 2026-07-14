@@ -4727,7 +4727,8 @@
                     if (learnedTrade && window.CloudLearning) {
                         const cleanDesc = String(d.description || '').replace(/^BPI #\d+\s*(\(p\.\d+\))?\s*—\s*/, '');
                         const phrase = normalizePhrase((d.location || '') + ' ' + cleanDesc);
-                        if (phrase) { try { window.CloudLearning.record(phrase, learnedTrade); } catch (e) {} }
+                        if (phrase) { try { window.CloudLearning.record(phrase, learnedTrade, null,
+                            { observation: (d.location ? d.location + ' ' : '') + cleanDesc, source: 'reassign', jobId: window.CloudLearning.jobUuidForAddress(d.addressId) }); } catch (e) {} }
                     }
                 }
                 impClose(); render(); flushStatus();
@@ -7599,15 +7600,26 @@
             { re: /\b(tap|mixer|toilet|cistern|basin waste|water hammer)\b/, trade: 'Plumber' },
         ];
         // The trade for a defect line: shared learning (confident) wins, then a
-        // curated rule, then the keyword classifier. Returns the source for display.
+        // curated rule, then the manager-editable DB rules, then the keyword
+        // classifier. Returns the source for display. (Same order as CH Tracker.)
+        // Compound DB rules: 'a+b' = both required, 'a+-b' = b must be absent.
+        function dbRuleHits(low, keyword) {
+            const parts = String(keyword || '').toLowerCase().split('+').map(s => s.trim()).filter(Boolean);
+            if (!parts.length) return false;
+            return parts.every(p => p.charAt(0) === '-' ? low.indexOf(p.slice(1).trim()) === -1 : low.indexOf(p) !== -1);
+        }
         function resolveTrade(text) {
             const phrase = normalizePhrase(text);
             if (window.CloudLearning) {
-                const learned = window.CloudLearning.suggestTrade(phrase);
+                const learned = window.CloudLearning.suggestTrade(phrase, window.CloudLearning.minExamples ? window.CloudLearning.minExamples() : 2);
                 if (learned && learned.trade) return { trade: learned.trade, source: 'learned', n: learned.n };
             }
             const low = String(text || '').toLowerCase();
             for (const o of CURATED_TRADE_OVERRIDES) if (o.re.test(low)) return { trade: o.trade, source: 'rule' };
+            // Admin-editable rules (bpi_trade_rules) — pulled each sync, so a rule
+            // added in CH Tracker's Admin → BPI AI applies here without a deploy.
+            const rules = (window.CloudLearning && window.CloudLearning.dbRules) ? window.CloudLearning.dbRules() : [];
+            for (const r of rules) if (r.keyword && dbRuleHits(low, r.keyword)) return { trade: r.trade, source: 'rule' };
             const t = classifyBpiTrade(low);
             return { trade: t || '', source: t ? 'keyword' : 'none' };
         }
@@ -8157,7 +8169,10 @@
                     const learnedTrade = contractorToBpiTrade(db.getContractor(contractorId));   // shared: phrase → trade
                     // Role-weighted record; passing the engine's PREDICTED trade
                     // lets a correction decay the wrong association (mig 099).
-                    if (learnedTrade && window.CloudLearning) window.CloudLearning.record(normalizePhrase((location || '') + ' ' + desc), learnedTrade, resolved && resolved.trade);
+                    // The detail object also logs an append-only training example.
+                    if (learnedTrade && window.CloudLearning) window.CloudLearning.record(
+                        normalizePhrase((location || '') + ' ' + desc), learnedTrade, resolved && resolved.trade,
+                        { observation: (location ? location + ' ' : '') + desc, source: (resolved && resolved.source) || null, jobId: window.CloudLearning.jobUuidForAddress(addressId) });
                 }
                 // Feed the shared accuracy dashboard (best-effort): what the
                 // engine predicted for this line vs what was actually saved.
@@ -8720,7 +8735,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-14c';
+        const APP_VERSION = '2026-07-14d';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -8794,7 +8809,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-14c"></script>
+    <script src="cloud-sync.js?v=2026-07-14d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
