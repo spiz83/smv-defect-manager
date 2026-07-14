@@ -8771,7 +8771,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-14g';
+        const APP_VERSION = '2026-07-15a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -8845,7 +8845,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-14g"></script>
+    <script src="cloud-sync.js?v=2026-07-15a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

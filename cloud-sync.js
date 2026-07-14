@@ -1932,6 +1932,45 @@
   function outboxAdd(id) { id = Number(id); if (!defectOutbox.includes(id)) { defectOutbox.push(id); saveDefectOutbox(); } }
   function outboxRemove(id) { id = Number(id); const i = defectOutbox.indexOf(id); if (i >= 0) { defectOutbox.splice(i, 1); saveDefectOutbox(); } }
 
+  // ── DELETE TOMBSTONES (Spiro 2026-07-15) ──────────────────────────────────
+  // An INTENTIONAL delete (CH Tracker's bulk-delete, or any hard delete) must
+  // stay deleted — but this engine's loss-protection (commitDefect's re-create
+  // branch + reconcileLocalDefectsUp) treated "in my cache, missing in cloud"
+  // as lost field data and re-inserted it, resurrecting deleted rows as Open.
+  // The delete-archive trigger (mig 080) records every deleted row; we read it
+  // as a tombstone list (uuid + legacy_id) and (a) never re-create a
+  // tombstoned defect, (b) purge it from the local cache/outbox instead.
+  const defectTombstones = { uuids: new Set(), legacies: new Set(), loadedAt: 0 };
+  async function ensureTombstones(force) {
+    if (!force && Date.now() - defectTombstones.loadedAt < 5 * 60 * 1000) return true;
+    try {
+      const since = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString();
+      const { data, error } = await sb.from('deleted_rows_archive')
+        .select('row_id, row_data').eq('table_name', 'dm_defects').gt('deleted_at', since);
+      if (error) throw error;
+      defectTombstones.uuids = new Set((data || []).map((r) => String(r.row_id)));
+      defectTombstones.legacies = new Set((data || [])
+        .map((r) => r.row_data && r.row_data.legacy_id).filter((x) => x != null).map(Number));
+      defectTombstones.loadedAt = Date.now();
+      return true;
+    } catch (e) { console.warn('[CloudSync] tombstones', e && e.message); return false; }
+  }
+  // Remove a deliberately-deleted defect from every local store so nothing
+  // re-pushes it: data, snapshot baseline, id maps and the outbox.
+  function purgeLocalDefect(legacyId) {
+    const i = (db.data.defects || []).findIndex((x) => String(x.id) === String(legacyId));
+    if (i >= 0) db.data.defects.splice(i, 1);
+    if (snapshot.defects) delete snapshot.defects[legacyId];
+    const uuid = idMap.defects[legacyId];
+    if (uuid) delete defectUuidToLegacy[uuid];
+    delete idMap.defects[legacyId];
+    outboxRemove(legacyId);
+  }
+  function isTombstoned(d) {
+    const uuid = idMap.defects[d.id];
+    return (uuid && defectTombstones.uuids.has(String(uuid))) || defectTombstones.legacies.has(Number(d.id));
+  }
+
   // Write ONE defect straight to dm_defects (upsert by legacy_id). Advances the
   // diff baseline so the legacy engine won't also touch it. On any failure the
   // id is queued in the outbox for retry — so an offline edit is never lost.
@@ -1968,7 +2007,15 @@
       }
       // Brand-new local defect (no known cloud row), or the known row has since
       // been deleted in the cloud → (re)create it, upserting by legacy_id.
+      // TOMBSTONE GUARD: if that "missing" row was deliberately deleted (CH
+      // Tracker bulk-delete → delete-archive), purge it locally instead of
+      // resurrecting it. When the tombstone list can't be fetched (offline),
+      // a previously-synced row (knownUuid) stays QUEUED rather than being
+      // blindly re-created — genuinely new local defects still push normally.
       if (!error && !data) {
+        const tombsOk = await ensureTombstones(!!knownUuid);
+        if (isTombstoned(d)) { purgeLocalDefect(legacyId); persistSyncState(); return; }
+        if (knownUuid && !tombsOk) { return; }   // can't verify — retry via outbox later
         const res = await sb.from('dm_defects').upsert(defectRow(d), { onConflict: 'legacy_id' }).select('id, legacy_id').maybeSingle();
         data = res.data; error = res.error;
       }
@@ -1999,8 +2046,17 @@
   // Runs on boot BEFORE the first pull so the pull can't wipe the local-only
   // rows; once they're in the cloud the pull brings them straight back.
   async function reconcileLocalDefectsUp() {
-    const locals = (db.data.defects || []).filter((d) => !idMap.defects[d.id]);
+    let locals = (db.data.defects || []).filter((d) => !idMap.defects[d.id]);
     if (!locals.length) return;
+    // Deliberately-deleted rows must not be "recovered" — purge them from the
+    // local cache instead of re-pushing (tombstones from the delete-archive).
+    if (await ensureTombstones(true)) {
+      const dead = locals.filter((d) => isTombstoned(d));
+      for (const d of dead) purgeLocalDefect(d.id);
+      if (dead.length) persistSyncState();
+      locals = locals.filter((d) => !isTombstoned(d));
+      if (!locals.length) return;
+    }
     // Make sure the address→job-uuid map is available so commitDefect can set
     // job_id; if it's empty (cold boot), fetch the jobs to build it.
     if (!Object.keys(idMap.addresses).length) {
