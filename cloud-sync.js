@@ -431,7 +431,7 @@
       sb.from('jobs').select('id, job_number, lot, street, suburb, active'),
       sb.from('dm_defects').select('*'),
       sb.from('job_call_up_archive').select('job_id, cost_centre, supplier_name'),   // Framework call-up archive (accumulates across uploads); best-effort
-      sb.from('job_called_for_archive').select('job_id, activity, supplier_name'),   // Called For archive (who actually did each trade activity); best-effort
+      sb.from('job_called_for_archive').select('job_id, activity, supplier_name, called_actual, last_seen_at'),   // Called For archive (who actually did each trade activity, with recency); best-effort
       sb.from('dm_trade_learning').select('phrase_key, trade, n, w'),   // learned trades (weighted); best-effort
       // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
       // view is readable by authenticated users; an error just means no My Jobs.
@@ -530,7 +530,7 @@
       calledFor.data.forEach(r => {
         const lid = uuidToLegacy.addresses[r.job_id];
         if (lid == null) return;
-        (calledForByAddress[lid] = calledForByAddress[lid] || []).push({ activity: r.activity, supplier_name: r.supplier_name });
+        (calledForByAddress[lid] = calledForByAddress[lid] || []).push({ activity: r.activity, supplier_name: r.supplier_name, called_actual: r.called_actual, last_seen_at: r.last_seen_at });
       });
     }
 

@@ -7454,12 +7454,23 @@
             'Cabinet Maker': ['kitchen', 'cabinet', 'joinery'],
             'Garage Door': ['garage door'],
             Landscaper: ['landscap', 'retaining wall'],
+            Supervisor: ['supervisor'],
         };
+        // Disqualifiers: matching one of these means the text can NEVER represent
+        // the trade — fixes the roofing sub ("Roof Tiles") suggested as the TILER.
+        const CALLUP_TRADE_EXCLUDES = { Tiler: ['roof'], Flooring: ['roof'], Cleaner: ['brick clean'] };
         // Word-boundary prefix match: "roof" hits "Roof Clean" but NOT
         // "waterproofing" (substring matching mis-suggested the waterproofer for
         // roof-plumbing defects); "render" still hits "rendering".
         function kwMatch(hay, kw) {
             return new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(hay);
+        }
+        // Keyword score for `hay` representing `trade` — 0 when a disqualifier hits.
+        function tradeHayScore(hay, trade) {
+            const kws = CALLUP_TRADE_KEYWORDS[trade]; if (!kws) return 0;
+            const ex = CALLUP_TRADE_EXCLUDES[trade];
+            if (ex && ex.some(k => kwMatch(hay, k))) return 0;
+            return kws.reduce((n, k) => n + (kwMatch(hay, k) ? 1 : 0), 0);
         }
         // Suggest the called-up contractor for `trade` on the job at `addressLid`.
         // Returns null when the job has no profile or no engaged sub fits the trade
@@ -7471,7 +7482,7 @@
             let best = null, bestScore = 0;
             for (const e of engaged) {
                 const hay = ((e.contractor.trades || '') + ' ' + (e.contractor.name || '')).toLowerCase();
-                const score = kws.reduce((n, k) => n + (kwMatch(hay, k) ? 1 : 0), 0);
+                const score = tradeHayScore(hay, trade);
                 if (score > bestScore) { bestScore = score; best = e; }
             }
             return best ? { contractorId: best.contractor.id, costCentre: best.costCentre } : null;
@@ -7492,21 +7503,26 @@
             const contractors = db.getContractors();
             const byNorm = new Map();
             contractors.forEach(c => { const n = normCompanyName(c.name); if (n) byNorm.set(n, c); });
-            const tally = new Map();   // contractorId -> { c, times, activity }
+            const ex = CALLUP_TRADE_EXCLUDES[trade];
+            const tally = new Map();   // contractorId -> { c, times, activity, latest }
             for (const r of rows) {
                 const act = String(r.activity || '').toLowerCase();
                 if (!act || !kws.some(k => kwMatch(act, k))) continue;
+                if (ex && ex.some(k => kwMatch(act, k))) continue;   // "Roof Tiles" ≠ Tiler
                 const n = normCompanyName(r.supplier_name || '');
                 if (!n || n === 'supervisor to select') continue;
                 let c = byNorm.get(n);
                 if (!c) c = contractors.find(x => { const cn = normCompanyName(x.name); return cn && (cn.includes(n) || n.includes(cn)); });
                 if (!c || CALLUP_MATERIAL_SUPPLIERS.has(normCompanyName(c.name))) continue;
+                const when = String(r.called_actual || r.last_seen_at || '');
                 const cur = tally.get(c.id);
-                if (cur) cur.times++;
-                else tally.set(c.id, { c, times: 1, activity: r.activity || '' });
+                if (cur) { cur.times++; if (when > cur.latest) { cur.latest = when; cur.activity = r.activity || cur.activity; } }
+                else tally.set(c.id, { c, times: 1, activity: r.activity || '', latest: when });
             }
+            // Most-recently-called supplier wins (trades get swapped mid-job);
+            // frequency only breaks date ties.
             let best = null;
-            for (const t of tally.values()) if (!best || t.times > best.times) best = t;
+            for (const t of tally.values()) if (!best || t.latest > best.latest || (t.latest === best.latest && t.times > best.times)) best = t;
             return best ? { contractorId: best.c.id, activity: best.activity, times: best.times } : null;
         }
         // ── Job-scoped history: who already fixed similar defects on THIS job ──
@@ -7560,9 +7576,18 @@
             // Insulation / wall-wrap (sisalation, sarking) — must beat the "roof"
             // keyword, since these defects mention "roof members"/"ceiling".
             { re: /\b(insulation|sisalation|sisal|sarking|wall ?wrap|foilboard|foil board|reflective foil|sarked|batts?)\b/, trade: 'Insulation' },
+            // ACTION-FIRST (Spiro 2026-07-14): the defect's VERB names the trade,
+            // not an object mentioned later ("paint bulkhead above the cabinets").
+            { re: /\b(clean|remove|wipe)\b[^.]{0,50}\b(mud|dirt|dust|debris|residue|splatter|marks?|stains?)|^\s*(fully\s+|please\s+)?clean\b/, trade: 'Cleaner' },
+            { re: /\b(touch ?up|scratch(es|ed)?|chip(s|ped)?|marks?)\b[^.]{0,50}\b(aluminium|window frame|door frame)|\b(aluminium|window) frames?\b[^.]{0,50}\b(touch ?up|scratch|chip|mark|repair)/, trade: 'Supervisor' },
+            { re: /\bfloat(ing)?\b[^.]{0,40}\bceiling|\bre-?float\b|\bfloat coat\b/, trade: 'Plasterer' },
+            { re: /\bconduit\b/, trade: 'Electrician' },
+            { re: /\bshower (rail|rose|head|arm)\b|\b(rail|bracket)\b[^.]{0,30}\bshower\b/, trade: 'Plumber' },
+            { re: /\b(grout|tile|tiling)\b[^.]{0,50}\bshower\b|\bshower\b[^.]{0,50}\b(grout|tiles?|tiling)\b/, trade: 'Tiler' },
+            { re: /\b(re)?paint\b/, trade: 'Painter' },
             { re: /\bseal(ing|ant)?\b[^.]*\b(door|window|frame|architrave|skirt|cornice|reveal|jamb|trim)/, trade: 'Painter' },
             { re: /\b(gap|crack)s?\b[^.]*\b(door|window|architrave|skirt|cornice|trim|wall|ceiling|frame)/, trade: 'Painter' },
-            { re: /\b(touch ?up|repaint|undercoat|overspray|paint (run|drip|finish|coverage|mark))\b/, trade: 'Painter' },
+            { re: /\b(touch ?up|repaint|undercoat|overspray|over ?paint(ed|ing)?|paint (run|drip|finish|coverage|mark))\b/, trade: 'Painter' },
             { re: /\b(silicone|caulk)[^.]*\b(shower|bath|basin|vanity|sink|splashback|wet area|tile)/, trade: 'Caulker' },
             { re: /\b(re-?grout|grout)\b/, trade: 'Tiler' },
             { re: /\b(tile|tiling)\b[^.]*\b(loose|drummy|crack|chip|lippage|missing)/, trade: 'Tiler' },
@@ -7593,7 +7618,7 @@
             const hay = ((contractor.trades || '') + ' ' + (contractor.name || '')).toLowerCase();
             let best = '', bestScore = 0;
             for (const trade in CALLUP_TRADE_KEYWORDS) {
-                const score = CALLUP_TRADE_KEYWORDS[trade].reduce((n, k) => n + (kwMatch(hay, k) ? 1 : 0), 0);
+                const score = tradeHayScore(hay, trade);
                 if (score > bestScore) { bestScore = score; best = trade; }
             }
             return best;
@@ -7633,6 +7658,11 @@
             const defects = (db.data && db.data.defects) || [];   // includes completed
             for (const d of defects) {
                 if (d.contractorId == null) continue;
+                // GLOBAL model excludes supervisor rows ("Ian Quayle — Supervisor"):
+                // another job's supervisor is never the right sub here. The
+                // job-scoped model keeps them (gated by trade consistency).
+                const c = db.getContractor(d.contractorId);
+                if (c && /\bsupervisor\b/i.test(c.trades || '')) continue;
                 addLearningExample(byToken, tokenTotal, (d.description || '') + ' ' + (d.location || ''), d.contractorId);
             }
             _bpiLearn = { byToken, tokenTotal, defectCount: defects.length };
@@ -7961,8 +7991,18 @@
             if (callup) addCand(callup.contractorId, '📋', 'called up on this job',
                 '📋 Called up on this job: ' + ((db.getContractor(callup.contractorId) || {}).name || '') + (callup.costCentre ? ' (cost centre ' + callup.costCentre + ')' : ''), true);
             const jobHist = suggestFromJobHistory(_rvText, r.lastAddressId);
-            if (jobHist) addCand(jobHist.contractorId, '🏠', jobHist.support + ' past defect' + (jobHist.support === 1 ? '' : 's') + ' here',
-                '🏠 Already on this job: ' + ((db.getContractor(jobHist.contractorId) || {}).name || ''), true);
+            if (jobHist) {
+                // TRADE-CONSISTENCY GATE (Spiro 2026-07-14): job history is
+                // token-based and trade-blind — the job's SUPERVISOR (assigned a
+                // few misc items) was auto-filling on everything. Only pre-fill
+                // when the candidate's own trade agrees with the defect's trade;
+                // a disagreeing match stays available as a chip.
+                const jhTrade = contractorToBpiTrade(db.getContractor(jobHist.contractorId));
+                const jhAgrees = !effTrade || !jhTrade || jhTrade === effTrade;
+                addCand(jobHist.contractorId, '🏠',
+                    jobHist.support + ' past defect' + (jobHist.support === 1 ? '' : 's') + ' here' + (jhAgrees ? '' : ' (' + jhTrade + ')'),
+                    jhAgrees ? '🏠 Already on this job: ' + ((db.getContractor(jobHist.contractorId) || {}).name || '') : '', jhAgrees);
+            }
             const learned = suggestFromHistory(_rvText);
             if (learned) addCand(learned.contractorId, '🧠', 'learned ×' + learned.support + ' (other jobs)', '', false);
             const kwId = effTrade ? suggestContractorForTrade(effTrade) : null;
@@ -8680,7 +8720,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-14b';
+        const APP_VERSION = '2026-07-14c';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -8754,7 +8794,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-14b"></script>
+    <script src="cloud-sync.js?v=2026-07-14c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
