@@ -8522,21 +8522,28 @@
                 if (!opts.photos || !window.CloudPhotos) return [];
                 try { return await window.CloudPhotos.getForPdf(d.id); } catch (e) { return []; }
             };
-            // Photo layout for a card: a single big photo, or up to FOUR photos in
-            // a 2×2 grid (smaller) when a defect has several. Returns the grid
+            // Photo layout for a card: a single big photo, or a 2-column grid
+            // when a defect has several. EVERY photo is shown (nothing is dropped)
+            // — the grid flows down as many rows as needed. Returns the grid
             // geometry + total block height so cards can be measured before drawing.
-            const MAXP = 4;          // most photos shown per defect (rest → "+N more")
             const cellGap = 1.5;
             const photoBlock = (imgs) => {
-                const n = Math.min((imgs || []).length, MAXP);
+                const n = (imgs || []).length;
                 if (!n) return { n: 0, cols: 0, rows: 0, cellW: 0, cellH: 0, totalH: 0 };
                 const cols = n === 1 ? 1 : 2;
                 const rows = Math.ceil(n / cols);
                 const cellW = (innerW - (cols - 1) * cellGap) / cols;
                 // Single photo can be tall; grid cells are shorter so several fit.
-                const capH = n === 1 ? 64 : 33;
-                const cellH = Math.min(cellW * 0.72, capH);
-                const totalH = rows * cellH + (rows - 1) * cellGap;
+                let cellH = Math.min(cellW * 0.72, n === 1 ? 64 : 33);
+                let totalH = rows * cellH + (rows - 1) * cellGap;
+                // Safety: a defect with lots of photos would overflow the page, so
+                // shrink the cells until the whole grid fits one page — every photo
+                // still appears, just smaller, rather than being cut off.
+                const maxGridH = 230;
+                if (totalH > maxGridH) {
+                    cellH = Math.max(10, (maxGridH - (rows - 1) * cellGap) / rows);
+                    totalH = rows * cellH + (rows - 1) * cellGap;
+                }
                 return { n, cols, rows, cellW, cellH, totalH };
             };
             // Draw one image "contained" (whole photo visible, aspect kept) and
@@ -8604,7 +8611,8 @@
                 doc.setFontSize(7); ink(MUTE);
                 const ml = cardMetaLines(d);
                 doc.text(ml, px, cy); cy += ml.length * 2.9 + 0.8;
-                // photos — one big, or up to four in a 2×2 grid when there are several
+                // photos — one big, or ALL of them in a 2-column grid that flows
+                // down as many rows as the defect needs
                 const pb = photoBlock(imgs);
                 if (pb.n) {
                     for (let k = 0; k < pb.n; k++) {
@@ -8612,10 +8620,6 @@
                         const cx = px + c * (pb.cellW + cellGap);
                         const cyy = cy + r * (pb.cellH + cellGap);
                         drawContained(imgs[k], cx, cyy, pb.cellW, pb.cellH);
-                    }
-                    if (imgs.length > pb.n) {
-                        doc.setFontSize(6.3); ink(MUTE);
-                        doc.text('+' + (imgs.length - pb.n) + ' more', x + colW - PAD - 1, cy + pb.totalH - 1, { align: 'right' });
                     }
                     cy += pb.totalH;
                 }
@@ -8954,7 +8958,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-21c"></script>
+    <script src="cloud-sync.js?v=2026-07-21d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
