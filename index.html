@@ -8666,6 +8666,35 @@
         // default), then generate a PDF scoped to that address/contractor.
         // 'trade' or 'contractor' — which filter list drives the context report.
         let _crMode = 'trade';
+        // Distinct job addresses where THIS contractor currently has open or
+        // pending (non-completed) defects — i.e. the jobs they're actively
+        // nominated on right now. Powers the report builder's per-job picker so
+        // a report can be scoped to specific jobs for one contractor.
+        function contractorJobAddresses(contractorId) {
+            const seen = new Map();
+            (db.data.defects || []).forEach(d => {
+                if (d.contractorId !== contractorId) return;
+                const s = defectStatusOf(d);
+                if (s !== 'open' && s !== 'pending') return;
+                if (!seen.has(d.addressId)) {
+                    const a = db.getAddress(d.addressId);
+                    if (!a) return;
+                    seen.set(d.addressId, { id: d.addressId, label: formatAddress(a), count: 0 });
+                }
+                const rec = seen.get(d.addressId);
+                if (rec) rec.count++;
+            });
+            return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label));
+        }
+        function crToggleJobs(on) {
+            document.querySelectorAll('.cr-job').forEach(cb => { cb.checked = on; });
+        }
+        function crFilterJobs(q) {
+            q = (q || '').toLowerCase().trim();
+            document.querySelectorAll('#cr-job-list .rb-opt').forEach(el => {
+                el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+        }
         function generateContextReport(ctx) {
             ctx = ctx || {};
             _crMode = 'trade';
@@ -8675,12 +8704,30 @@
                 .map(c => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-contr" value="${c.id}" style="width:auto"> ${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</label>`).join('');
             const ctxLabel = ctx.addressId ? formatAddress(db.getAddress(ctx.addressId))
                 : (ctx.contractorId ? ((db.getContractor(ctx.contractorId) || {}).name || '') : 'All defects');
+            // Per-job picker: only when the report is for a specific contractor.
+            // Lists every job that contractor has open/pending defects on, all
+            // ticked by default, so the report can be narrowed to chosen jobs.
+            const jobs = ctx.contractorId ? contractorJobAddresses(ctx.contractorId) : [];
+            const jobRows = jobs.map(j =>
+                `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-job" value="${j.id}" checked style="width:auto"> <span style="flex:1">${j.label}</span><span style="color:var(--text-secondary,#888);font-size:12px">${j.count}</span></label>`).join('');
+            const jobField = ctx.contractorId ? `
+                    <div class="imp-field">
+                        <label>Jobs to include</label>
+                        <div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px">Only jobs ${ctxLabel} is on with open/pending defects. Untick to leave a job out.</div>
+                        ${jobs.length > 6 ? `<input type="text" id="cr-job-search" placeholder="Search jobs…" oninput="crFilterJobs(this.value)" style="width:100%;margin-bottom:4px">` : ''}
+                        <div style="display:flex;gap:10px;margin-bottom:4px">
+                            <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleJobs(true)">Select all</button>
+                            <button type="button" class="imp-btn" style="padding:4px 10px;font-size:12px" onclick="crToggleJobs(false)">None</button>
+                        </div>
+                        <div id="cr-job-list" style="max-height:180px;overflow:auto;border:1px solid var(--brd,#ccc);border-radius:10px;padding:4px">${jobRows || '<div style="padding:8px;color:var(--text-secondary,#888);font-size:13px">No open or pending jobs for this contractor.</div>'}</div>
+                    </div>` : '';
             const onSty = 'background:var(--blue,#2563eb);color:#fff';
             const offSty = 'background:transparent;color:var(--text-secondary,#888)';
             impOverlay(`
                 <div id="imp-head"><strong>📑 Generate Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-field"><label>For</label><div style="font-size:15px;font-weight:600">${ctxLabel}</div></div>
+                    ${jobField}
                     <div class="imp-field"><label>Statuses to include</label>
                         <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px;padding:4px 0">
                             <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="cr-st-open" checked style="width:auto"> Open</label>
@@ -8747,6 +8794,15 @@
                 statuses, tradeIds: null,
                 photos: document.getElementById('cr-photos').checked,
             };
+            // Per-job scope (contractor reports only): honour the ticked jobs.
+            // All ticked → whole-contractor report (o.addressIds stays empty).
+            // Some unticked → scope to just the ticked jobs. None ticked → block.
+            const jobBoxes = document.querySelectorAll('.cr-job');
+            if (jobBoxes.length) {
+                const selJobs = Array.from(document.querySelectorAll('.cr-job:checked')).map(x => parseInt(x.value)).filter(Boolean);
+                if (!selJobs.length) { showToast('Tick at least one job', true); return; }
+                if (selJobs.length < jobBoxes.length) o.addressIds = selJobs;
+            }
             if (_crMode === 'contractor') {
                 // Explicit contractor pick — always reliable (unlike trade links,
                 // which are blank on many subs and used to silently drop them).
@@ -8857,7 +8913,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-15b"></script>
+    <script src="cloud-sync.js?v=2026-07-21a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
