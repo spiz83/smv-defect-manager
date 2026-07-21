@@ -5061,7 +5061,7 @@
             const files = [];
             let scopedPdf = null;
             try {
-                scopedPdf = await generateDefectPDF(defects, { photos: true, asFile: true, statuses: ['open', 'pending'], addressIds: [addressId], contractorIds: [contractorId] });
+                scopedPdf = await generateDefectPDF(defects, { photos: true, asFile: true, statuses: ['open', 'pending'], addressIds: [addressId], contractorIds: [contractorId], groupBy: 'address' });
                 if (scopedPdf && !asLink) files.push(scopedPdf);   // attach mode only; link mode hosts it below
             } catch (e) { console.error('supplier email PDF', e); }
             const reportAttached = false;
@@ -5106,7 +5106,7 @@
             if (!defects.length) { showToast('No open items for this supplier', true); return; }
             showToast('Building PDF…');
             try {
-                await generateDefectPDF(defects, { photos: true, statuses: ['open', 'pending'], addressIds: [addressId], contractorIds: [contractorId] });
+                await generateDefectPDF(defects, { photos: true, statuses: ['open', 'pending'], addressIds: [addressId], contractorIds: [contractorId], groupBy: 'address' });
                 showToast('PDF downloaded');
             } catch (e) { console.error('contractor job PDF', e); showToast('Could not build the PDF', true); }
         }
@@ -5170,7 +5170,7 @@
             const buildScopedPdf = async () => {
                 const list = currentViewDefects();
                 if (!list.length) return null;
-                const pdfOpts = { photos: true, asFile: true, statuses: ['open', 'pending'] };
+                const pdfOpts = { photos: true, asFile: true, statuses: ['open', 'pending'], groupBy: 'address' };
                 if (singleAddressId != null) pdfOpts.addressIds = [singleAddressId];
                 else if (state.currentView === 'view-defects-contractor' && state.filters.contractorId) pdfOpts.contractorIds = [state.filters.contractorId];
                 else if (state.filters && state.filters.contractorIds) pdfOpts.contractorIds = state.filters.contractorIds;
@@ -8412,7 +8412,17 @@
         function buildReportFilename(opts) {
             opts = opts || {};
             const now = new Date();
-            const dm = now.getDate() + '.' + (now.getMonth() + 1);
+            // Date as d.m.yy, e.g. 21.7.26.
+            const dm = now.getDate() + '.' + (now.getMonth() + 1) + '.' + String(now.getFullYear()).slice(-2);
+            // Supplier report → "<supplier><date>", e.g. downeys21.7.26. The
+            // supplier is abbreviated to the first word of their name, lower-cased
+            // (Downeys Group Aust (VIC) P/L T/A DGA Roofing → downeys).
+            if (opts.contractorIds && opts.contractorIds.length === 1) {
+                const c = db.getContractor(opts.contractorIds[0]);
+                const who = c && c.name ? c.name.trim().split(/\s+/)[0].replace(/[^a-z0-9]/gi, '').toLowerCase() : '';
+                if (who) return who + dm + '.pdf';
+            }
+            // Otherwise fall back to a job-based name when scoped to one address.
             const STREET_TYPES = /\b(rd|road|st|street|ave|avenue|dr|drive|drv|ct|court|cres|crescent|pl|place|blvd|boulevard|ln|lane|tce|terrace|cl|close|pde|parade|cct|circuit|gr|grove|hwy|highway|way|esp|esplanade|sq|square|vista|cir|circle|grn|green|rise|view|walk|prom|promenade)\b/gi;
             let addrPart = '';
             if (opts.addressIds && opts.addressIds.length === 1) {
@@ -8424,13 +8434,7 @@
                     addrPart = lot + nm;
                 }
             }
-            let who = '';
-            if (opts.contractorIds && opts.contractorIds.length === 1) {
-                const c = db.getContractor(opts.contractorIds[0]);
-                if (c && c.name) who = c.name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-            }
             let name = addrPart ? (addrPart + '_defects') : 'defects';
-            if (who) name += '_' + who;
             name += '_' + dm;
             return name + '.pdf';
         }
@@ -8493,12 +8497,18 @@
             });
             y += 13;
 
-            // ── group by TRADE (Painter, Plumbing, Electrical, …) so like items ──
-            // sit together and combine (#7). "Unassigned" sinks to the bottom.
+            // Section grouping. Default groups by TRADE (Painter, Plumbing, …) so
+            // like items combine (#7). opts.groupBy === 'address' groups by JOB
+            // instead — each address is a header with its defects below — which
+            // is what per-contractor / per-job reports use so a supplier reads
+            // their items laid out job-by-job.
+            const byAddress = opts.groupBy === 'address';
             const groups = {};
-            list.forEach(d => { const k = defectTradeKey(d); (groups[k] = groups[k] || []).push(d); });
-            const groupKeys = Object.keys(groups).sort((a, b) =>
-                a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b));
+            list.forEach(d => { const k = byAddress ? String(d.addressId) : defectTradeKey(d); (groups[k] = groups[k] || []).push(d); });
+            const groupKeys = byAddress
+                ? Object.keys(groups).sort((a, b) => formatAddress(db.getAddress(parseInt(a))).localeCompare(formatAddress(db.getAddress(parseInt(b)))))
+                : Object.keys(groups).sort((a, b) => a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b));
+            const groupLabel = (gk) => byAddress ? formatAddress(db.getAddress(parseInt(gk))) : gk;
             const ensureSpace = (h) => { if (y + h > pageH - 18) { doc.addPage(); y = M + 4; } };
 
             // Two-column "table" of photo cards — DENSE: big, wide photos with a
@@ -8532,7 +8542,12 @@
             const cardMetaLines = (d) => {
                 const c = db.getContractor(d.contractorId);
                 const a = db.getAddress(d.addressId);
-                const bits = [a ? formatAddress(a) : '', c ? c.name : 'Unassigned', d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : ''].filter(Boolean);
+                // When grouped by address the job is already the section header, so
+                // drop it from the card meta to avoid repeating it on every item.
+                const bits = (byAddress
+                    ? [c ? c.name : 'Unassigned', d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : '']
+                    : [a ? formatAddress(a) : '', c ? c.name : 'Unassigned', d.bookingAt ? ('Attend: ' + fmtDateNice(d.bookingAt)) : '']
+                ).filter(Boolean);
                 doc.setFontSize(7);
                 return clampLines(doc.splitTextToSize(bits.join('  ·  '), innerW), 1);
             };
@@ -8586,11 +8601,11 @@
             for (const gk of groupKeys) {
                 const gdefects = groups[gk];
                 ensureSpace(16);
-                // trade section bar
+                // section bar — trade name, or job address when grouped by address
                 fill([241, 244, 250]); doc.roundedRect(M, y, contentW, 8.5, 1.6, 1.6, 'F');
                 fill(NAVY); doc.rect(M, y, 1.8, 8.5, 'F');
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(11); ink(NAVY);
-                doc.text(gk, M + 5, y + 5.7);
+                doc.text(doc.splitTextToSize(groupLabel(gk), contentW - 30)[0], M + 5, y + 5.7);
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); ink(MUTE);
                 doc.text(gdefects.length + (gdefects.length === 1 ? ' item' : ' items'), pageW - M - 4, y + 5.7, { align: 'right' });
                 y += 12;
@@ -8793,6 +8808,7 @@
                 contractorIds: ctx.contractorId ? [ctx.contractorId] : [],
                 statuses, tradeIds: null,
                 photos: document.getElementById('cr-photos').checked,
+                groupBy: 'address',   // job-first layout: each address is a header
             };
             // Per-job scope (contractor reports only): honour the ticked jobs.
             // All ticked → whole-contractor report (o.addressIds stays empty).
@@ -8913,7 +8929,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-21a"></script>
+    <script src="cloud-sync.js?v=2026-07-21b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
