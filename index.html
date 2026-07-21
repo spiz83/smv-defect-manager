@@ -8522,14 +8522,34 @@
                 if (!opts.photos || !window.CloudPhotos) return [];
                 try { return await window.CloudPhotos.getForPdf(d.id); } catch (e) { return []; }
             };
-            // First photo, sized to fill the (wide) card; height-capped so one tall
-            // portrait shot can't swallow more than its share of a dense page.
-            const photoBox = (img) => {
-                if (!img) return { pw: 0, ph: 0 };
-                let pw = innerW, ph = (img.w && img.h) ? innerW * img.h / img.w : innerW * 0.7;
-                const capH = 64;
-                if (ph > capH) { ph = capH; pw = (img.w && img.h) ? capH * img.w / img.h : innerW; }
-                return { pw, ph };
+            // Photo layout for a card: a single big photo, or up to FOUR photos in
+            // a 2×2 grid (smaller) when a defect has several. Returns the grid
+            // geometry + total block height so cards can be measured before drawing.
+            const MAXP = 4;          // most photos shown per defect (rest → "+N more")
+            const cellGap = 1.5;
+            const photoBlock = (imgs) => {
+                const n = Math.min((imgs || []).length, MAXP);
+                if (!n) return { n: 0, cols: 0, rows: 0, cellW: 0, cellH: 0, totalH: 0 };
+                const cols = n === 1 ? 1 : 2;
+                const rows = Math.ceil(n / cols);
+                const cellW = (innerW - (cols - 1) * cellGap) / cols;
+                // Single photo can be tall; grid cells are shorter so several fit.
+                const capH = n === 1 ? 64 : 33;
+                const cellH = Math.min(cellW * 0.72, capH);
+                const totalH = rows * cellH + (rows - 1) * cellGap;
+                return { n, cols, rows, cellW, cellH, totalH };
+            };
+            // Draw one image "contained" (whole photo visible, aspect kept) and
+            // centred inside a cell.
+            const drawContained = (img, cx, cy, cw, ch) => {
+                if (!img) return;
+                let iw = cw, ih = ch;
+                if (img.w && img.h) {
+                    const ar = img.w / img.h;
+                    if (cw / ch > ar) { ih = ch; iw = ch * ar; } else { iw = cw; ih = cw / ar; }
+                }
+                const ox = cx + (cw - iw) / 2, oy = cy + (ch - ih) / 2;
+                try { doc.addImage(img.dataUrl, 'JPEG', ox, oy, iw, ih); } catch (e) {}
             };
             // Truncate a wrapped block to N lines with an ellipsis (keeps text area
             // small so the photo dominates — the user asked to cut words, not wrap).
@@ -8558,8 +8578,8 @@
             };
             const measureCard = (d, imgs) => {
                 const dl = descLinesFor(d).length, ml = cardMetaLines(d).length;
-                const { ph } = photoBox(imgs[0]);
-                return 4.6 + 4 + dl * 3.3 + 1 + ml * 2.9 + 0.8 + (ph ? ph : 0) + 2;
+                const { totalH } = photoBlock(imgs);
+                return 4.6 + 4 + dl * 3.3 + 1 + ml * 2.9 + 0.8 + (totalH ? totalH : 0) + 2;
             };
             const drawCard = (x, y0, boxH, d, num, imgs) => {
                 const st = defectStatusOf(d);
@@ -8584,15 +8604,20 @@
                 doc.setFontSize(7); ink(MUTE);
                 const ml = cardMetaLines(d);
                 doc.text(ml, px, cy); cy += ml.length * 2.9 + 0.8;
-                // photo — big, wide, centred, almost no border
-                if (imgs[0]) {
-                    const { pw, ph } = photoBox(imgs[0]);
-                    const ix = x + (colW - pw) / 2;
-                    try { doc.addImage(imgs[0].dataUrl, 'JPEG', ix, cy, pw, ph); } catch (e) {}
-                    if (imgs.length > 1) {
-                        doc.setFontSize(6.3); ink([255, 255, 255]);
-                        doc.text('+' + (imgs.length - 1) + ' more', x + colW - PAD - 1, cy + ph - 1.5, { align: 'right' });
+                // photos — one big, or up to four in a 2×2 grid when there are several
+                const pb = photoBlock(imgs);
+                if (pb.n) {
+                    for (let k = 0; k < pb.n; k++) {
+                        const r = Math.floor(k / pb.cols), c = k % pb.cols;
+                        const cx = px + c * (pb.cellW + cellGap);
+                        const cyy = cy + r * (pb.cellH + cellGap);
+                        drawContained(imgs[k], cx, cyy, pb.cellW, pb.cellH);
                     }
+                    if (imgs.length > pb.n) {
+                        doc.setFontSize(6.3); ink(MUTE);
+                        doc.text('+' + (imgs.length - pb.n) + ' more', x + colW - PAD - 1, cy + pb.totalH - 1, { align: 'right' });
+                    }
+                    cy += pb.totalH;
                 }
             };
 
@@ -8929,7 +8954,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-21b"></script>
+    <script src="cloud-sync.js?v=2026-07-21c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
