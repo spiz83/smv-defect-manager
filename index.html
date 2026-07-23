@@ -2380,9 +2380,16 @@
 
         function renderViewDefectsTrade(filters) {
             const { tradeName, contractorIds } = filters;
-            const contractors = db.getContractors().filter(c => contractorIds.includes(c.id));
-            const defects = db.getDefects().filter(d => contractorIds.includes(d.contractorId));
-            
+            const flt = activeStatusFilter();
+            // Pull straight from the store so Completed can be included when the
+            // filter selects it (db.getDefects excludes completed).
+            const defects = db.data.defects
+                .filter(d => contractorIds.includes(d.contractorId) && flt.includes(defectStatusOf(d)))
+                .map(d => ({ ...d, address: db.getAddress(d.addressId), contractor: db.getContractor(d.contractorId) }));
+            const emptyMsg = flt.length === 0
+                ? 'No statuses selected — tap Filter to choose'
+                : `No ${flt.length < 3 ? flt.map(s => STATUS_LABELS[s]).join(' / ').toLowerCase() + ' ' : ''}defects for this trade`;
+
             // Group by ADDRESS first, then by contractor
             const byAddress = {};
             defects.forEach(d => {
@@ -2412,6 +2419,7 @@
                     <div class="defects-header">
                         <div class="lot-title">${tradeName}</div>
                         <div class="toolbar">
+                            ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
@@ -2420,7 +2428,7 @@
                     ${Object.keys(byAddress).length === 0 ? `
                         <div class="empty-state">
                             <div class="empty-state-icon">📭</div>
-                            <p>No active defects for this trade</p>
+                            <p>${emptyMsg}</p>
                         </div>
                     ` : Object.values(byAddress).map(addressGroup => `
                         <div style="margin-bottom: 20px;">
@@ -2715,25 +2723,31 @@
         function renderMultipleContractorsView(contractorIds) {
             const contractors = contractorIds.map(id => db.getContractor(id)).filter(Boolean);
             const contractorNames = contractors.map(c => c.name).join(', ');
-            const defectGroups = db.getDefectsByAddress({ contractorIds });
-            
+            const flt = activeStatusFilter();
+            // Pull straight from the store so Completed can be included when the
+            // filter selects it (db.getDefects excludes completed).
+            const defects = db.data.defects
+                .filter(d => contractorIds.includes(d.contractorId) && flt.includes(defectStatusOf(d)))
+                .map(d => ({ ...d, address: db.getAddress(d.addressId), contractor: db.getContractor(d.contractorId) }));
+            const emptyMsg = flt.length === 0
+                ? 'No statuses selected — tap Filter to choose'
+                : `No ${flt.length < 3 ? flt.map(s => STATUS_LABELS[s]).join(' / ').toLowerCase() + ' ' : ''}defects for selected contractors`;
+
             // Reorganize to group by address then by contractor
             const byAddressThenContractor = {};
-            defectGroups.forEach(group => {
-                const addressKey = formatAddress(group.address);
+            defects.forEach(defect => {
+                const addressKey = formatAddress(defect.address);
                 if (!byAddressThenContractor[addressKey]) {
                     byAddressThenContractor[addressKey] = {
-                        address: group.address,
+                        address: defect.address,
                         contractors: {}
                     };
                 }
-                group.defects.forEach(defect => {
-                    const cName = (defect.contractor && defect.contractor.name) || 'Unassigned';
-                    if (!byAddressThenContractor[addressKey].contractors[cName]) {
-                        byAddressThenContractor[addressKey].contractors[cName] = [];
-                    }
-                    byAddressThenContractor[addressKey].contractors[cName].push(defect);
-                });
+                const cName = (defect.contractor && defect.contractor.name) || 'Unassigned';
+                if (!byAddressThenContractor[addressKey].contractors[cName]) {
+                    byAddressThenContractor[addressKey].contractors[cName] = [];
+                }
+                byAddressThenContractor[addressKey].contractors[cName].push(defect);
             });
 
             return `
@@ -2747,6 +2761,7 @@
                     <div class="defects-header">
                         <div class="lot-title">Search Multiple Contractors:<br><span style="font-size: 14px; font-weight: 400; color: var(--text-secondary);">${contractorNames}</span></div>
                         <div class="toolbar">
+                            ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
@@ -2755,7 +2770,7 @@
                     ${Object.keys(byAddressThenContractor).length === 0 ? `
                         <div class="empty-state">
                             <div class="empty-state-icon">📭</div>
-                            <p>No active defects for selected contractors</p>
+                            <p>${emptyMsg}</p>
                         </div>
                     ` : Object.keys(byAddressThenContractor).sort().map(addressKey => `
                         <div class="contractor-section">
@@ -9035,7 +9050,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-23a';
+        const APP_VERSION = '2026-07-23b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
