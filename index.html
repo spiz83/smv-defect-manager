@@ -335,6 +335,54 @@
             padding: 0;
         }
 
+        /* Status filter — the pill sits at the LEFT of the toolbar; margin-right
+           auto pushes the icon buttons to the far right (their old position). */
+        .filter-btn {
+            margin-right: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 999px;
+            padding: 7px 13px;
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .filter-btn .filter-caret { font-size: 11px; color: var(--text-secondary); }
+        .filter-dots { display: inline-flex; gap: 4px; }
+        .fdot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .fdot-open      { background: #FF4D4F; }
+        .fdot-pending   { background: #FFC02E; }
+        .fdot-completed { background: #3FCB7E; }
+        .fdot.off { background: var(--border-color, #ccc); opacity: .35; }
+
+        /* Status-filter modal rows (multi-select toggles) */
+        .sf-note { margin: 0 0 12px; font-size: 13px; color: var(--text-secondary, #888); }
+        .sf-list { display: flex; flex-direction: column; gap: 8px; }
+        .sf-row {
+            display: flex; align-items: center; gap: 12px;
+            width: 100%; box-sizing: border-box;
+            padding: 13px 14px; border: 1px solid var(--border-color, #ccc);
+            border-radius: 12px; background: var(--bg-secondary, #f5f5f5);
+            color: var(--text-primary, #111); cursor: pointer; text-align: left; font: inherit;
+        }
+        .sf-row.on { border-color: var(--blue, #2563eb); background: var(--input-bg, #fff); }
+        .sf-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+        .sf-label { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+        .sf-label b { font-size: 16px; font-weight: 700; }
+        .sf-label i { font-style: normal; font-size: 12px; color: var(--text-secondary, #888); }
+        .sf-check { font-size: 18px; color: var(--blue, #2563eb); width: 20px; text-align: center; }
+        .sf-actions { display: flex; gap: 10px; margin-top: 16px; }
+        .sf-actions .imp-btn { margin-top: 0; }
+        .completed-divider {
+            padding: 14px 20px 4px; font-size: 13px; font-weight: 700;
+            letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary, #888);
+        }
+
         .contractor-section {
             background: var(--bg-primary);
             margin-top: 10px;
@@ -2074,7 +2122,11 @@
         const state = {
             currentView: 'home',
             showCompleted: false,
-            viewAddrShowCompleted: false,   // per-job defects view: expand completed
+            // Per-defect status filter for the View-Defects screens (address &
+            // contractor). Multi-select — any combination of the three statuses is
+            // valid. Default shows active work (Open + Pending) and hides Completed,
+            // matching the screen's long-standing behaviour.
+            defectStatusFilter: ['open', 'pending'],
             filters: {},
             selectedContractors: [],
             selectedTrades: [],
@@ -2223,7 +2275,32 @@
 
         function renderViewDefectsContractor(contractorId) {
             const contractor = db.getContractor(contractorId);
-            const defectGroups = db.getDefectsByAddress({ contractorId });
+            const flt = activeStatusFilter();
+
+            // Active (Open/Pending) defects grouped by address, narrowed to the
+            // statuses in the filter; drop any address left with nothing.
+            const defectGroups = db.getDefectsByAddress({ contractorId })
+                .map(g => ({ ...g, defects: g.defects.filter(d => flt.includes(defectStatusOf(d))) }))
+                .filter(g => g.defects.length > 0);
+
+            // Completed defects for this contractor, grouped by address, shown only
+            // when the status filter includes "Completed".
+            let completedGroups = [];
+            if (flt.includes('completed')) {
+                const byAddr = {};
+                db.data.defects
+                    .filter(d => d.contractorId === contractorId && d.completed)
+                    .forEach(d => {
+                        const key = d.addressId;
+                        if (!byAddr[key]) byAddr[key] = { address: db.getAddress(d.addressId), defects: [] };
+                        byAddr[key].defects.push({ ...d, contractor });
+                    });
+                completedGroups = Object.values(byAddr);
+            }
+            const nothingShown = defectGroups.length === 0 && completedGroups.length === 0;
+            const emptyMsg = flt.length === 0
+                ? 'No statuses selected — tap Filter to choose'
+                : `No ${flt.length < 3 ? flt.map(s => STATUS_LABELS[s]).join(' / ').toLowerCase() + ' ' : ''}defects for this contractor`;
 
             return `
                 <div class="defects-container">
@@ -2236,6 +2313,7 @@
                     <div class="defects-header">
                         <div class="lot-title">${contractor.name}</div>
                         <div class="toolbar">
+                            ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList(true)" title="Email Defect List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">➕</button>
@@ -2264,22 +2342,38 @@
                         </button>
                     </div>
 
-                    ${defectGroups.length === 0 ? `
+                    ${nothingShown ? `
                         <div class="empty-state">
                             <div class="empty-state-icon">📭</div>
-                            <p>No active defects for this contractor</p>
+                            <p>${emptyMsg}</p>
                         </div>
-                    ` : defectGroups.map(group => `
-                        <div class="contractor-section">
-                            <div class="contractor-name" ${group.address && group.address.id != null ? `onclick="viewDefectsForAddress(${group.address.id})" style="cursor:pointer" title="View this address's defects"` : ''}>${formatAddress(group.address)}${group.address && group.address.id != null ? ' ›' : ''}</div>
-                            ${group.defects.map(defect => `
-                                <div class="defect-item">
-                                    ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                    ` : `
+                        ${defectGroups.map(group => `
+                            <div class="contractor-section">
+                                <div class="contractor-name" ${group.address && group.address.id != null ? `onclick="viewDefectsForAddress(${group.address.id})" style="cursor:pointer" title="View this address's defects"` : ''}>${formatAddress(group.address)}${group.address && group.address.id != null ? ' ›' : ''}</div>
+                                ${group.defects.map(defect => `
+                                    <div class="defect-item">
+                                        ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                        <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `).join('')}
+                        ${completedGroups.length > 0 ? `
+                            <div class="completed-divider">✓ Completed</div>
+                            ${completedGroups.map(group => `
+                                <div class="contractor-section">
+                                    <div class="contractor-name" ${group.address && group.address.id != null ? `onclick="viewDefectsForAddress(${group.address.id})" style="cursor:pointer" title="View this address's defects"` : ''}>${formatAddress(group.address)}${group.address && group.address.id != null ? ' ›' : ''}</div>
+                                    ${group.defects.map(defect => `
+                                        <div class="defect-item">
+                                            ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                        </div>
+                                    `).join('')}
                                 </div>
                             `).join('')}
-                        </div>
-                    `).join('')}
+                        ` : ''}
+                    `}
                 </div>
             `;
         }
@@ -2352,8 +2446,11 @@
 
         function renderViewDefectsAddress(addressId) {
             const address = db.getAddress(addressId);
-            const defects = db.getDefects({ addressId });
-            
+            const flt = activeStatusFilter();
+            // Active (Open/Pending) defects, narrowed to the statuses in the filter.
+            const defects = db.getDefects({ addressId })
+                .filter(d => flt.includes(defectStatusOf(d)));
+
             // Group by contractor. A defect with no contractor (unassigned) or
             // one whose contractor isn't in the synced list must NOT crash the
             // whole view on `group.contractor.name` — bucket those under a safe
@@ -2372,11 +2469,16 @@
                 byContractor[key].defects.push(d);
             });
 
-            // Completed defects for this address — revealed by the expand button.
+            // Completed defects for this address — shown only when the status
+            // filter includes "Completed".
             const completed = db.data.defects
                 .filter(d => d.addressId === addressId && d.completed)
                 .map(d => ({ ...d, contractor: db.getContractor(d.contractorId) }));
-            const showC = state.viewAddrShowCompleted;
+            const showC = flt.includes('completed');
+            const nothingShown = Object.keys(byContractor).length === 0 && !(showC && completed.length > 0);
+            const emptyMsg = flt.length === 0
+                ? 'No statuses selected — tap Filter to choose'
+                : `No ${flt.length < 3 ? flt.map(s => STATUS_LABELS[s]).join(' / ').toLowerCase() + ' ' : ''}defects at this address`;
 
             return `
                 <div class="defects-container">
@@ -2389,6 +2491,7 @@
                     <div class="defects-header">
                         <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="Add defects for this job">${formatAddress(address)} ＋</div>
                         <div class="toolbar">
+                            ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">➕</button>
@@ -2396,10 +2499,10 @@
                         </div>
                     </div>
 
-                    ${Object.keys(byContractor).length === 0 ? `
+                    ${nothingShown ? `
                         <div class="empty-state">
                             <div class="empty-state-icon">📭</div>
-                            <p>No active defects at this address</p>
+                            <p>${emptyMsg}</p>
                         </div>
                     ` : Object.values(byContractor).map(group => `
                         <div class="contractor-section">
@@ -2422,13 +2525,7 @@
                         </div>
                     `).join('')}
 
-                    ${completed.length > 0 ? `
-                        <div style="padding: 10px 20px;">
-                            <button onclick="toggleViewAddrCompleted()" style="width:100%; padding:11px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-secondary); color:var(--text-primary); font-size:14px; font-weight:600; cursor:pointer;">
-                                ${showC ? '▴ Hide completed' : `▾ Show ${completed.length} completed`}
-                            </button>
-                        </div>
-                        ${showC ? `
+                    ${showC && completed.length > 0 ? `
                         <div class="contractor-section">
                             <div class="contractor-name">✓ Completed (${completed.length})</div>
                             ${completed.map(defect => `
@@ -2437,7 +2534,7 @@
                                     <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
                                 </div>
                             `).join('')}
-                        </div>` : ''}
+                        </div>
                     ` : ''}
                 </div>
             `;
@@ -4843,9 +4940,63 @@
         }
 
         // Per-job (address) defects view: expand/collapse the completed list.
-        function toggleViewAddrCompleted() {
-            state.viewAddrShowCompleted = !state.viewAddrShowCompleted;
+        // ---- Status filter (View Defects: address & contractor) ----
+        // A multi-select filter over the three defect statuses. The toolbar pill
+        // summarises the active set with coloured dots; tapping it opens a modal
+        // where each status can be toggled independently.
+        const STATUS_FILTER_OPTS = [
+            { k: 'open',      label: 'Open',      hint: 'Logged — not booked in', color: '#FF4D4F' },
+            { k: 'pending',   label: 'Pending',   hint: 'Booked in — outstanding', color: '#FFC02E' },
+            { k: 'completed', label: 'Completed', hint: 'Done', color: '#3FCB7E' },
+        ];
+        const STATUS_LABELS = { open: 'Open', pending: 'Pending', completed: 'Completed' };
+        function activeStatusFilter() {
+            const f = state.defectStatusFilter;
+            return Array.isArray(f) ? f : ['open', 'pending', 'completed'];
+        }
+        // The toolbar pill. Coloured dots show which statuses are on; a dimmed dot
+        // means that status is hidden.
+        function statusFilterButton() {
+            const flt = activeStatusFilter();
+            const dots = STATUS_FILTER_OPTS
+                .map(o => `<span class="fdot fdot-${o.k} ${flt.includes(o.k) ? '' : 'off'}"></span>`)
+                .join('');
+            return `<button class="filter-btn" onclick="event.stopPropagation(); openStatusFilter()" title="Filter defects by status">
+                        Filter <span class="filter-dots">${dots}</span><span class="filter-caret">▾</span>
+                    </button>`;
+        }
+        function openStatusFilter() {
+            const flt = activeStatusFilter();
+            const rows = STATUS_FILTER_OPTS.map(o => {
+                const on = flt.includes(o.k);
+                return `<button class="sf-row ${on ? 'on' : ''}" onclick="toggleStatusFilter('${o.k}')">
+                            <span class="sf-dot" style="background:${o.color}"></span>
+                            <span class="sf-label"><b>${o.label}</b><i>${o.hint}</i></span>
+                            <span class="sf-check">${on ? '✓' : ''}</span>
+                        </button>`;
+            }).join('');
+            impOverlay(`
+                <div id="imp-head"><strong>Filter by status</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <p class="sf-note">Tap a status to show or hide it. Any combination works.</p>
+                    <div class="sf-list">${rows}</div>
+                    <div class="sf-actions">
+                        <button class="imp-btn secondary" onclick="setStatusFilterAll()">Show all</button>
+                        <button class="imp-btn" onclick="impClose()">Done</button>
+                    </div>
+                </div>`);
+        }
+        function toggleStatusFilter(k) {
+            let flt = activeStatusFilter().slice();
+            flt = flt.includes(k) ? flt.filter(x => x !== k) : flt.concat(k);
+            state.defectStatusFilter = flt;
+            render();            // apply to the list behind the modal
+            openStatusFilter();  // rebuild the modal so the ticks reflect the change
+        }
+        function setStatusFilterAll() {
+            state.defectStatusFilter = ['open', 'pending', 'completed'];
             render();
+            openStatusFilter();
         }
 
         // Unified function to generate defect text for clipboard/export/email
@@ -8884,7 +9035,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-15b';
+        const APP_VERSION = '2026-07-23a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
