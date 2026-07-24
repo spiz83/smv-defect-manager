@@ -19,7 +19,7 @@ const CACHE = 'deffixer-shell-2026-07-23b';
 const CORE = [
   './',
   './index.html',
-  './cloud-sync.js?v=2026-07-21d',
+  './cloud-sync.js?v=2026-07-23b',
   './manifest.webmanifest',
   './icon.svg',
   './favicon-48.png',
