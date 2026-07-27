@@ -2,6 +2,28 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-07-27 (b) — ROOT CAUSE of "says it saves but it's not there"
+- **Decision:** Defect ids are no longer recycled (persisted high-water mark in
+  `dm_defect_id_hw`, raised on every load/save), and `isTombstoned()` only trusts
+  a **legacy-id** tombstone match for a defect that actually came from the cloud
+  (has a uuid, or a snapshot baseline entry).
+- **Why:** `addDefect()` allocated `max(existing id) + 1`, so deleting the
+  highest defect handed its id to the next brand-new one. That id is the
+  `legacy_id` the cloud upserts on, and CH Tracker's delete-archive keeps
+  tombstones for 60 days. So a new defect could inherit a deleted defect's id,
+  match its tombstone in `commitDefect()`, and be `purgeLocalDefect()`d
+  milliseconds after the "✓ saved successfully" toast — the defect saved, then
+  vanished. Because it never reached the cloud, any attached photo stayed in the
+  IndexedDB outbox forever, which is the "📸 1 photo saved on this phone ·
+  uploading when you have signal" banner in the original bug report. One root
+  cause, both symptoms.
+- **Trade-off:** If a previously-synced defect loses BOTH its uuid and its
+  snapshot baseline (e.g. `healStaleBaseline()` clears a poisoned baseline), a
+  genuinely deleted defect could be re-created instead of purged. Accepted
+  deliberately: resurrecting a deleted defect is visible and recoverable,
+  silently deleting a just-logged one is neither. The uuid match still covers the
+  normal case.
+
 ## 2026-07-27
 - **Decision:** A supplier name **typed in full** is now accepted on the Add
   Defects screens, not only one tapped from the suggestion list. If the name

@@ -1968,7 +1968,20 @@
   }
   function isTombstoned(d) {
     const uuid = idMap.defects[d.id];
-    return (uuid && defectTombstones.uuids.has(String(uuid))) || defectTombstones.legacies.has(Number(d.id));
+    // A uuid match is unambiguous — that exact cloud row was deleted.
+    if (uuid && defectTombstones.uuids.has(String(uuid))) return true;
+    // A legacy-id match is NOT, because local ids get recycled: addDefect()
+    // allocates max(existing)+1, so deleting the highest defect hands its id to
+    // the next brand-new one. That new defect then matched a 60-day-old
+    // tombstone and was purged milliseconds after "saved successfully" — the
+    // defect saved, then vanished, and its photo queued forever because the
+    // defect never reached the cloud.
+    //
+    // Only trust the legacy-id match for a defect that actually came FROM the
+    // cloud (has a uuid, or a baseline entry from when it last synced). A
+    // never-synced local defect cannot be the row that was deleted.
+    const everSynced = uuid != null || !!(snapshot.defects && snapshot.defects[d.id]);
+    return everSynced && defectTombstones.legacies.has(Number(d.id));
   }
 
   // Write ONE defect straight to dm_defects (upsert by legacy_id). Advances the

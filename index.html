@@ -1508,9 +1508,24 @@
                 if (stored) {
                     this.data = JSON.parse(stored);
                 }
+                this.raiseDefectIdWatermark();
+            }
+
+            // Push the id high-water mark up to the highest defect id we currently
+            // hold. Called on load and on every save, so the mark is already ahead
+            // of a defect BEFORE it can be deleted — otherwise deleting the highest
+            // one lets max(existing)+1 hand its id straight to the next new defect.
+            raiseDefectIdWatermark() {
+                try {
+                    const maxId = (this.data.defects || []).reduce(
+                        (m, d) => (Number(d.id) > m ? Number(d.id) : m), 0);
+                    const hw = Number(localStorage.getItem('dm_defect_id_hw')) || 0;
+                    if (maxId > hw) localStorage.setItem('dm_defect_id_hw', String(maxId));
+                } catch (e) { /* storage unavailable — fall back to max+1 */ }
             }
 
             save() {
+                this.raiseDefectIdWatermark();
                 try {
                     localStorage.setItem('defectTrackerDB', JSON.stringify(this.data));
                     this.lastSaveFailed = false;
@@ -1997,6 +2012,27 @@
                 );
             }
 
+            // Allocate a defect id that is NEVER reused on this device.
+            //
+            // This used to be max(existing id) + 1, which recycles: delete the
+            // highest defect and the next new one inherits its id. That is not a
+            // cosmetic problem — the id is the `legacy_id` the cloud upserts on,
+            // so a recycled id could (a) match a 60-day delete tombstone and get
+            // the brand-new defect purged seconds after it saved, and (b) collide
+            // with an existing cloud row and overwrite it.
+            //
+            // A persisted high-water mark keeps ids moving forward even after
+            // deletions. Falls back to the old behaviour if storage is unusable.
+            nextDefectId() {
+                const maxExisting = (this.data.defects || []).reduce(
+                    (m, d) => (Number(d.id) > m ? Number(d.id) : m), 0);
+                let hw = 0;
+                try { hw = Number(localStorage.getItem('dm_defect_id_hw')) || 0; } catch (e) {}
+                const id = Math.max(maxExisting, hw) + 1;
+                try { localStorage.setItem('dm_defect_id_hw', String(id)); } catch (e) {}
+                return id;
+            }
+
             addDefect(defect) {
                 // Duplicate guard (root-cause fix for items "reappearing"): if a
                 // NON-completed defect with the same address + description already
@@ -2039,7 +2075,7 @@
                     try { if (typeof showToast === 'function') showToast('Already on the list — duplicate skipped'); } catch (e) {}
                     return dup;
                 }
-                const id = Math.max(0, ...this.data.defects.map(d => d.id)) + 1;
+                const id = this.nextDefectId();
                 const newDefect = { id, status: 'open', ...defect, completed: false };
                 this.data.defects.push(newDefect);
                 this.save();
@@ -9173,7 +9209,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-27a';
+        const APP_VERSION = '2026-07-27b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -9247,7 +9283,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-27a"></script>
+    <script src="cloud-sync.js?v=2026-07-27b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
