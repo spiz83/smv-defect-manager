@@ -32,31 +32,47 @@ of discarding the entry silently. sw.js CACHE + APP_VERSION bumped to
 Verification: 17/17 targeted assertions pass, 9/9 view smoke checks pass, no
 page errors. Harness in the session scratchpad (`t6-verify.mjs`, `t7-smoke.mjs`).
 
-## Deploy status — LIVE
-Deployed to Vercel production on 2026-07-27 (manual `vercel deploy --prod` from
-Spiro's machine; the sandbox can't reach `*.vercel.com`/`*.vercel.app`).
-Verified live: `https://smv-defect-manager.vercel.app/sw.js` serves
-`deffixer-shell-2026-07-27a`.
+## Deploy status — LIVE (2026-07-27c)
+All three fixes deployed to Vercel production and verified:
+`https://smv-defect-manager.vercel.app/sw.js` serves `deffixer-shell-2026-07-27c`.
+`main` is at `aaa1623`. (Deploys are manual — the sandbox cannot reach
+`*.vercel.com`/`*.vercel.app`; Spiro runs `npx vercel deploy --prod`.)
 
-`main` is at `29cdfae` and carries the same code, so a git-triggered deploy
-can no longer ship an older build over the top of it.
+Three separate faults were found and fixed today, in order of discovery:
+1. **`a`** — Add Defects silently discarded a supplier block when the name was
+   typed but not tapped; dead `initializeAddressDefectForm()` threw on every
+   "+ Add defects"; duplicate guard ignored the supplier.
+2. **`b` — the reported bug.** Defect ids were recycled (`max+1` after a
+   delete), so a new defect could inherit a deleted one's id, match its 60-day
+   delete-archive tombstone in `commitDefect()`, and be purged milliseconds
+   after "saved successfully". Its photo then queued forever — the original
+   screenshot's banner. Fixed by a persisted id high-water mark plus an
+   `isTombstoned()` that only trusts a legacy-id match for cloud-originated rows.
+3. **`c`** — `pullAll()` aborted whenever the outbox was non-empty, and an entry
+   whose job was unmapped could never commit → the device stopped pulling
+   permanently and drifted from CH Tracker with no error. The pull now carries
+   un-pushed rows across the rebuild instead of blocking.
+
+## Verify after any further change
+Harness lives in the session scratchpad; re-create if needed. Serve the repo on
+:8099 and run against a real Chromium (service workers MUST be blocked, and any
+localStorage seed MUST be idempotent or a reload fakes a "data disappeared"
+result):
+- `t6-verify` 17 save assertions, `t7-smoke` 9 view checks,
+  `t8-visible` save→view→reload visibility, `t9-idreuse` id-recycling regression.
 
 ## Immediate next actions
-1. Ask the reporting supervisor **which** symptom they hit — the wording of the
-   toast they saw tells us whether it was the silent block-drop (fixed here) or
-   the stuck-photo path below. Quickest discriminator: log a defect + photo, then
-   check another device — if the *defect* doesn't appear either, it's the
-   stuck-photo/commit path, not the save bug.
-2. Supervisors with the app already open may need one force-close/reopen: the
-   service worker defers the swap while `isBusyEditing()` is true.
-3. **Vercel git auto-deploy is unresolved.** CLI deploys work; git-triggered ones
-   reportedly stopped. Ruled out: GitHub app access (installed, All repositories,
-   not suspended) and the project's Git link (`spiz83/smv-defect-manager`,
-   connected Jan 18, Commit Status + deployment_status events on). Still to
-   check in Vercel: `Environments → Production → Branch Tracking` must be `main`,
-   and `Build and Deployment → Ignored Build Step` must be empty. The push of
-   `29cdfae` to `main` is a live test — if no Production deployment appeared for
-   it, the webhook is stale (Disconnect + reconnect on Settings → Git).
+1. **Confirm the repair on a real phone.** Lot 1143 (27) Fuchsia St, 306645 was
+   the evidence: CH Tracker 26 active / 51 total, phone only 7. After `c`, that
+   phone should return to 26 active on its next launch. Not yet confirmed.
+2. Tell supervisors: saving is now all-or-nothing per tap — an unrecognised
+   supplier refuses the whole save and names the block (text is kept on screen).
+   Without warning this reads as a new fault.
+3. Leftover orphan photos: a phone may still show "photo saved on this phone"
+   for a photo whose defect was destroyed by bug 2. The photo is safe but has
+   nothing to attach to; re-log the defect and re-attach. No automatic cleanup
+   was written — deleting photos on a "missing defect" heuristic is unsafe,
+   since a defect can also just not have synced down yet.
 
 ## Blockers / questions for human
 - **Not reproducible in this sandbox: the stuck-photo path.** The screenshot
