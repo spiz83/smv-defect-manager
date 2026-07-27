@@ -72,6 +72,9 @@
   let realtimeChannel = null;
   let suppressPush = false;       // true while we apply a remote pull locally
   let dirty = false;             // local edits made but not yet confirmed-pushed to cloud
+  let pushFailures = 0;          // consecutive push failures; 3+ means stuck, so
+                                 // pullAll stops treating `dirty` as a hard block
+                                 // and the device can receive cloud data again
 
   // Photos (#4)
   const PHOTO_BUCKET = 'defect-photos';
@@ -422,7 +425,25 @@
     // Land any queued direct defect writes FIRST — even if `dirty` (legacy diff)
     // is still set — since these are push-only and recover stranded work.
     await flushDefectOutbox();
-    if (dirty) return;
+    // A `dirty` flag blocks the pull so it can't clobber an un-pushed edit. That
+    // is right for a TRANSIENT failure — but `dirty` is only ever cleared by a
+    // successful push, is persisted to localStorage, and survives restarts. So a
+    // push that fails PERMANENTLY (a rejected row, a constraint, a poisoned
+    // diff) stops that device pulling for good: it keeps whatever it had and
+    // never sees another cloud change, with nothing surfaced to the user. This
+    // is the same freeze as the outbox guard below, which is why fixing that one
+    // alone didn't release stuck devices.
+    //
+    // After 3 consecutive push failures the device is stuck, not busy. Being
+    // permanently blind to the cloud is worse than the (already-mitigated) risk
+    // of the pull overwriting a local edit, so let it through — the defect
+    // carry-over below preserves the un-pushed rows either way.
+    const pushStuck = dirty && pushFailures >= 3;
+    if (dirty && !pushStuck) return;
+    if (pushStuck) console.warn('[CloudSync] push stuck after ' + pushFailures + ' failures — pulling anyway to un-freeze this device');
+    // Whether a NEW edit lands mid-fetch is a different question from whether we
+    // started dirty; the apply step re-checks against this.
+    const wasDirtyAtStart = dirty;
     // Un-pushed local defects must survive the wholesale `db.data = newData`
     // below. This USED to abort the pull entirely whenever the outbox was
     // non-empty — but an entry that can never commit (commitDefect returns early
@@ -605,9 +626,11 @@
       });
     });
 
-    // A local edit may have landed while we were fetching — don't overwrite it.
-    // Abort the apply; that edit's own push + the next pull will reconcile.
-    if (dirty) return;
+    // A local edit may have landed WHILE we were fetching — don't overwrite it.
+    // Compared against the state at entry, so a device that was already stuck
+    // dirty still applies the pull (otherwise the un-freeze above is undone
+    // here); only a genuinely new mid-fetch edit aborts.
+    if (dirty && !wasDirtyAtStart) return;
 
     // Apply to the running app, without echoing it back as a push.
     suppressPush = true;
@@ -883,6 +906,7 @@
     setStatus('Saving…', 'syncing');
     syncing = syncing.then(pushDiff).then(reconcilePhotos).then(
       () => {
+        pushFailures = 0;
         dirty = false; persistSyncState(); setStatus('Synced');
         // If we'd been showing an offline/uploading banner, confirm & clear it.
         const b = document.getElementById('cs-banner');
@@ -891,7 +915,8 @@
         }
       },
       (err) => {
-        console.error('[CloudSync] push failed', err);
+        pushFailures++;   // 3 in a row = stuck, not busy; pullAll stops blocking
+        console.error('[CloudSync] push failed (' + pushFailures + ' in a row)', err);
         setStatus('Sync error — will retry', 'offline');
         // Reassure the user their data is safe — this is the "poor reception"
         // path where the request failed even though the browser thinks it's
