@@ -13,13 +13,13 @@
  *
  * Bump CACHE (and the cloud-sync ?v= below) whenever the shell changes.
  */
-const CACHE = 'deffixer-shell-2026-07-27e';
+const CACHE = 'deffixer-shell-2026-07-27f';
 
 // Same-origin shell. All of these must exist or install precache will fail.
 const CORE = [
   './',
   './index.html',
-  './cloud-sync.js?v=2026-07-27e',
+  './cloud-sync.js?v=2026-07-27f',
   './manifest.webmanifest',
   './icon.svg',
   './favicon-48.png',
@@ -30,6 +30,12 @@ const CORE = [
 // Cross-origin, needed to boot cloud sync offline. Best-effort (don't fail install).
 const EXTRA = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+  // The PDF reader, used by BPI report import. Previously fetched live at import
+  // time, so importing a report in a poor-reception area failed outright — and
+  // the app cached the failure, so trying again in good signal ALSO failed until
+  // a force-close. Precached here so import works in a dead spot.
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
 ];
 
 self.addEventListener('install', (event) => {

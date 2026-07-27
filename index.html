@@ -7611,21 +7611,43 @@
         }
 
         // ---- Text extraction ----
+        // The PDF reader is fetched from a CDN on first use. Both URLs are also
+        // precached by the service worker (sw.js EXTRA) so a report can be
+        // imported in a dead spot once the app has been opened online at least
+        // once.
+        const PDFJS_SRC    = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        const PDFJS_WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         let _pdfjsReady = null;
         function ensurePdfJs() {
             if (window.pdfjsLib) return Promise.resolve();
             if (_pdfjsReady) return _pdfjsReady;
             _pdfjsReady = new Promise((res, rej) => {
                 const s = document.createElement('script');
-                s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+                s.src = PDFJS_SRC;
+                let settled = false;
+                const finish = (fn, arg) => { if (settled) return; settled = true; clearTimeout(timer); fn(arg); };
+                // A stalled request never fires onerror, so without this the whole
+                // import hung forever on a weak connection with nothing on screen.
+                const timer = setTimeout(() => {
+                    try { s.remove(); } catch (e) {}
+                    finish(rej, new Error('The PDF reader is taking too long to download — check your signal and try again.'));
+                }, 20000);
                 s.onload = () => {
-                    try { window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-                        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
-                    res();
+                    try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; } catch (e) {}
+                    finish(res);
                 };
-                s.onerror = () => rej(new Error('Could not load the PDF reader'));
+                s.onerror = () => {
+                    try { s.remove(); } catch (e) {}
+                    finish(rej, new Error('Could not load the PDF reader — check your signal and try again.'));
+                };
                 document.head.appendChild(s);
             });
+            // NEVER keep a rejected promise here. Caching the failure meant that
+            // once an import failed in a dead spot, EVERY later attempt returned
+            // that same stale rejection — so walking into good signal and trying
+            // again still failed, until the app was fully force-closed. Dropping
+            // the handle on failure makes the next attempt a real one.
+            _pdfjsReady = _pdfjsReady.catch((e) => { _pdfjsReady = null; throw e; });
             return _pdfjsReady;
         }
         async function extractReportText(file) {
@@ -9209,7 +9231,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-27e';
+        const APP_VERSION = '2026-07-27f';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -9283,7 +9305,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-27e"></script>
+    <script src="cloud-sync.js?v=2026-07-27f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
