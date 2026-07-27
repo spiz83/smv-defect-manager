@@ -2,6 +2,43 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-07-27
+- **Decision:** A supplier name **typed in full** is now accepted on the Add
+  Defects screens, not only one tapped from the suggestion list. If the name
+  can't be resolved (unknown, or ambiguous across two suppliers) the save is
+  **refused with a message naming the block**, and nothing is written.
+- **Why:** `saveAddDefectsAddress()` only ever read the id set by tapping a
+  suggestion. Typing the name in full and going straight to the defect rows —
+  normal on a phone, where the keyboard covers the dropdown — left that id
+  unset, so the whole block was skipped. If another block *did* save, the
+  supervisor got "✓ 1 defect(s) added successfully" while the other supplier's
+  defects were silently discarded. This is the "can't save defects" report.
+- **Trade-off:** Saving is now all-or-nothing per tap: one unresolvable block
+  blocks the whole save rather than partially writing. Chosen deliberately —
+  the typed text stays on screen to correct, and a partial save that looks
+  complete is what caused the lost work in the first place.
+
+- **Decision:** The duplicate guard in `db.addDefect()` now matches on
+  **address + description + supplier**, instead of address + description.
+- **Why:** The same wording legitimately applies to two trades on one job
+  ("Touch up paint to hallway" for the painter and the plasterer). The old
+  guard swallowed the second one and handed back the first supplier's defect,
+  so that work never reached the trade it was raised against.
+- **Trade-off:** Two suppliers can now hold identically-worded defects on one
+  job. The double-tap protection still holds because the supervisor fallback
+  now resolves *before* the comparison, so both sides carry the same supplier.
+
+- **Decision:** `initializeAddressDefectForm()` / `initializeContractorDefectForm()`
+  now return early when their container is absent; `db.save()` catches a failed
+  `localStorage` write and warns instead of throwing silently.
+- **Why:** Both containers were deleted when the five-block form landed, so
+  every "＋ Add defects" tap threw a TypeError. A full/blocked localStorage
+  (private browsing, iOS evicting the origin) discarded the write with no
+  indication — indistinguishable from "I saved it and it disappeared".
+- **Trade-off:** The two legacy functions are left in place behind the guard
+  rather than deleted, to keep this change small; they are dead code and can go
+  in a separate tidy-up.
+
 ## 2026-07-23
 - **Decision:** Added a multi-select **status filter** (Open / Pending / Completed)
   to the View Defects toolbar on both the address and contractor screens. A pill

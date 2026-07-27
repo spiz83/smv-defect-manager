@@ -1511,7 +1511,23 @@
             }
 
             save() {
-                localStorage.setItem('defectTrackerDB', JSON.stringify(this.data));
+                try {
+                    localStorage.setItem('defectTrackerDB', JSON.stringify(this.data));
+                    this.lastSaveFailed = false;
+                } catch (e) {
+                    // Storage full / blocked (private browsing, iOS evicting the
+                    // origin). The defect is still in memory and the cloud push may
+                    // well succeed, but it will NOT survive a reload — so say so
+                    // loudly instead of failing silently, which is what "I saved it
+                    // and it disappeared" looks like from the site.
+                    this.lastSaveFailed = true;
+                    console.error('[db.save] localStorage write failed', e);
+                    try {
+                        if (typeof showToast === 'function') {
+                            showToast('⚠️ This phone is out of storage — your last entry may not survive a restart. Check you have signal so it uploads.', true);
+                        }
+                    } catch (e2) {}
+                }
             }
 
             initializeSampleData() {
@@ -1990,21 +2006,38 @@
                 // legacy id, the cloud's legacy-id upsert never merged them, so the
                 // list doubled up. Completed defects are NOT matched, so a genuine
                 // re-occurrence of a closed item can still be raised again.
-                const norm = (s) => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
-                const dup = (this.data.defects || []).find(d =>
-                    d.addressId === defect.addressId &&
-                    norm(d.description) === norm(defect.description) &&
-                    d.status !== 'completed' && !d.completed
-                );
-                if (dup) {
-                    try { if (typeof showToast === 'function') showToast('Already on the list — duplicate skipped'); } catch (e) {}
-                    return dup;
-                }
+                // The match is scoped to the SUPPLIER as well as the address: the
+                // same wording routinely applies to two different trades on one job
+                // ("Touch up paint to hallway" for the painter AND the plasterer).
+                // Matching on address+description alone swallowed the second one and
+                // handed back the first supplier's defect, so the work never reached
+                // the trade it was raised against.
                 // No supplier picked → file it under the job's current supervisor
                 // (their contractor row) rather than leaving it "Unassigned".
+                // Resolved BEFORE the duplicate check so both sides of the
+                // comparison carry the same contractor — otherwise a double-tap on
+                // an unassigned entry would compare null against the supervisor id
+                // and slip through as a second copy.
                 if (defect.contractorId == null) {
                     const supId = this.supervisorContractorIdFor(defect.addressId);
                     if (supId != null) { defect.contractorId = supId; defect.unassigned = false; }
+                }
+                const norm = (s) => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+                const sameContractor = (a, b) =>
+                    (a == null ? '' : String(a)) === (b == null ? '' : String(b));
+                const dup = (this.data.defects || []).find(d =>
+                    d.addressId === defect.addressId &&
+                    norm(d.description) === norm(defect.description) &&
+                    sameContractor(d.contractorId, defect.contractorId) &&
+                    d.status !== 'completed' && !d.completed
+                );
+                // Transient flag on the manager (NOT on the defect row) so callers can
+                // report "skipped" accurately without it reaching localStorage or the
+                // cloud sync diff.
+                this.lastAddWasDuplicate = !!dup;
+                if (dup) {
+                    try { if (typeof showToast === 'function') showToast('Already on the list — duplicate skipped'); } catch (e) {}
+                    return dup;
                 }
                 const id = Math.max(0, ...this.data.defects.map(d => d.id)) + 1;
                 const newDefect = { id, status: 'open', ...defect, completed: false };
@@ -3807,6 +3840,45 @@
             }
         }
 
+        // Resolve the supplier for an Add-Defects block from what is ON SCREEN.
+        //
+        // The tapped-from-the-dropdown id was previously the ONLY thing consulted,
+        // so a supervisor who typed the supplier's full name and went straight to
+        // the defect rows (the keyboard usually covers the suggestion list) had
+        // their whole block dropped on Save — silently, if any other block did
+        // save. This resolves the typed text as well, and deliberately re-checks
+        // the tapped id against the text so an edited name can't keep a stale id.
+        //
+        // Returns { id } on success, or { error } describing why not — never a
+        // silent null.
+        function resolveTypedContractor(typedRaw) {
+            const typed = (typedRaw || '').trim();
+            if (!typed) return { error: 'empty' };
+            const contractors = db.getContractors();
+            const norm = s => (s || '').trim().toLowerCase();
+            const exact = contractors.filter(c => norm(c.name) === norm(typed));
+            if (exact.length === 1) return { id: exact[0].id };
+            if (exact.length > 1) return { id: exact[0].id };   // same name twice — first wins, as before
+            const partial = contractors.filter(c => norm(c.name).includes(norm(typed)));
+            if (partial.length === 1) return { id: partial[0].id };
+            if (partial.length > 1) return { error: 'ambiguous', typed };
+            return { error: 'unknown', typed };
+        }
+
+        // Resolve block `i` of the address form: prefer the tapped id, but only if
+        // it still matches the text in the box.
+        function resolveAddDefectsContractor(i) {
+            const input = document.getElementById(`add-contractor-${i}-input`);
+            const typed = (input && input.value || '').trim();
+            if (!typed) return { error: 'empty' };
+            const picked = state.selectedAddDefectsContractors && state.selectedAddDefectsContractors[i];
+            if (picked != null) {
+                const c = db.getContractor(picked);
+                if (c && (c.name || '').trim().toLowerCase() === typed.toLowerCase()) return { id: picked };
+            }
+            return resolveTypedContractor(typed);
+        }
+
         // Close dropdowns when clicking outside
         document.addEventListener('click', function(e) {
             if (!e.target.matches('input[type="text"]')) {
@@ -3872,10 +3944,20 @@
             const contractorInput = document.getElementById('quick-contractor-input');
             const defectInputs = document.querySelectorAll('.quick-defect-input-address');
             
-            const contractorId = state.selectedQuickContractor;
-            if (!contractorId || !contractorInput.value.trim()) {
-                showToast('Please select a contractor', true);
-                return;
+            // Accept a fully-typed supplier name, not just a tapped suggestion —
+            // the on-screen keyboard usually hides the dropdown on a phone.
+            const typedContractor = (contractorInput && contractorInput.value || '').trim();
+            let contractorId = state.selectedQuickContractor;
+            if (contractorId != null) {
+                const c = db.getContractor(contractorId);
+                if (!c || (c.name || '').trim().toLowerCase() !== typedContractor.toLowerCase()) contractorId = null;
+            }
+            if (contractorId == null) {
+                const res = resolveTypedContractor(typedContractor);
+                if (res.error === 'empty')     { showToast('Please select a contractor', true); return; }
+                if (res.error === 'ambiguous') { showToast(`“${typedContractor}” matches more than one supplier — tap the right one.`, true); return; }
+                if (res.error)                 { showToast(`“${typedContractor}” isn’t a known supplier — tap one from the list.`, true); return; }
+                contractorId = res.id;
             }
 
             let savedCount = 0;
@@ -3949,32 +4031,60 @@
         function saveAddDefectsAddress() {
             const addressId = state.filters.addressId;
             let totalSaved = 0;
-            
-            // Process each contractor group
+            const problems = [];         // one message per unusable block
+
+            // PASS 1 — resolve every block that has defects typed in it BEFORE
+            // writing anything. A block whose supplier can't be resolved must stop
+            // the save outright: silently dropping it (the old behaviour) meant a
+            // supervisor saw "✓ 1 defect(s) added successfully" while a second
+            // supplier's defects went in the bin.
+            const blocks = [];
             for (let i = 1; i <= 5; i++) {
                 const contractorInput = document.getElementById(`add-contractor-${i}-input`);
-                if (!contractorInput || !contractorInput.value.trim()) continue;
-                
-                const contractorId = state.selectedAddDefectsContractors && state.selectedAddDefectsContractors[i];
-                if (!contractorId) continue;
-                
-                // Get defects for this contractor
-                const defectInputs = document.querySelectorAll(`.add-defect-${i}`);
-                defectInputs.forEach(input => {
-                    if (input.value.trim()) {
-                        const d = db.addDefect({
-                            addressId,
-                            contractorId,
-                            description: input.value.trim()
-                        });
-                        applyRowExtras(input.closest('.defect-input-row'), d.id);
-                        totalSaved++;
-                    }
-                });
+                const typed = (contractorInput && contractorInput.value || '').trim();
+                const rows = [...document.querySelectorAll(`.add-defect-${i}`)].filter(r => r.value.trim());
+                if (!rows.length) continue;              // nothing typed in this block
+
+                if (!typed) {
+                    problems.push(`Block ${i}: ${rows.length} defect(s) have no supplier — pick one.`);
+                    continue;
+                }
+                const res = resolveAddDefectsContractor(i);
+                if (res.error) {
+                    problems.push(
+                        res.error === 'ambiguous'
+                            ? `Block ${i}: “${typed}” matches more than one supplier — tap the right one.`
+                            : `Block ${i}: “${typed}” isn’t a known supplier — tap one from the list.`
+                    );
+                    continue;
+                }
+                blocks.push({ contractorId: res.id, rows });
             }
 
+            // Nothing usable, or something would be lost → tell the user exactly
+            // what is wrong and save NOTHING, so the typed text stays on screen.
+            if (problems.length) {
+                showToast(problems.join('\n'), true);
+                return;
+            }
+
+            // PASS 2 — everything resolved; write it.
+            let dupes = 0;
+            blocks.forEach(({ contractorId, rows }) => {
+                rows.forEach(input => {
+                    const d = db.addDefect({
+                        addressId,
+                        contractorId,
+                        description: input.value.trim()
+                    });
+                    applyRowExtras(input.closest('.defect-input-row'), d.id);
+                    if (db.lastAddWasDuplicate) dupes++; else totalSaved++;
+                });
+            });
+
             if (totalSaved > 0) {
-                showToast(`✓ ${totalSaved} defect(s) added successfully`);
+                showToast(`✓ ${totalSaved} defect(s) added successfully` +
+                          (dupes ? ` · ${dupes} already on the list` : ''));
                 
                 // Clear all inputs
                 for (let i = 1; i <= 5; i++) {
@@ -3988,6 +4098,11 @@
                 state.selectedAddDefectsContractors = {};
                 
                 // Stay on page for more entries
+                render();
+            } else if (dupes > 0) {
+                // Everything typed was already on the list — say so, rather than
+                // claiming nothing was entered.
+                showToast(`${dupes} defect(s) already on the list — nothing new added`, true);
                 render();
             } else {
                 showToast('Please select at least one contractor and enter at least one defect', true);
@@ -5476,7 +5591,12 @@
         }
 
         function initializeAddressDefectForm() {
+            // Legacy single-group form. The add-defects-address screen now renders
+            // its own five contractor blocks (#add-contractor-1-input …), so this
+            // container no longer exists in the markup and the lookup returns null.
+            // Without this guard every "＋ Add defects" tap threw a TypeError.
             const container = document.getElementById('contractor-groups-container');
+            if (!container) return;
             container.innerHTML = `
                 <div class="contractor-group" id="group-0">
                     <div class="autocomplete-container" style="margin-bottom: 15px;">
@@ -5566,7 +5686,10 @@
         }
 
         function initializeContractorDefectForm() {
+            // Same as initializeAddressDefectForm: the container was removed from the
+            // markup when the multi-block form landed. Guard instead of throwing.
             const container = document.getElementById('address-groups-container');
+            if (!container) return;
             container.innerHTML = `
                 <div class="contractor-group" id="address-group-0">
                     <div class="autocomplete-container" style="margin-bottom: 15px;">
@@ -9050,7 +9173,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-23b';
+        const APP_VERSION = '2026-07-27a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -9124,7 +9247,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-23b"></script>
+    <script src="cloud-sync.js?v=2026-07-27a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
