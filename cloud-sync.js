@@ -417,6 +417,32 @@
   // ===========================================================================
   //  3. Pull (cloud -> app)   |   the cloud is the source of truth
   // ===========================================================================
+  // Read an ENTIRE table, paging past PostgREST's row cap.
+  //
+  // `sb.from(t).select('*')` returns at most db-max-rows (1000 by default) and
+  // reports no error when it truncates — the caller cannot tell a complete
+  // 400-row answer from a clipped 1000-row one. Every table that can outgrow
+  // that cap must be read through here.
+  //
+  // `orderBy` matters: without a stable sort, two pages can overlap or skip
+  // rows. Returns the same { data, error } shape as a plain select so callers
+  // are unchanged; the first failing page aborts and surfaces its error.
+  const PULL_PAGE = 1000;
+  async function selectAllRows(table, columns, orderBy, tweak) {
+    const rows = [];
+    for (let from = 0; ; from += PULL_PAGE) {
+      let q = sb.from(table).select(columns).range(from, from + PULL_PAGE - 1);
+      if (orderBy) q = q.order(orderBy, { ascending: true });
+      if (tweak) q = tweak(q);
+      const { data, error } = await q;
+      if (error) return { data: null, error };
+      rows.push(...(data || []));
+      if (!data || data.length < PULL_PAGE) break;   // short page = last page
+      if (from > 500000) { console.warn('[CloudSync] ' + table + ': stopping at 500k rows'); break; }
+    }
+    return { data: rows, error: null };
+  }
+
   async function pullAll() {
     // Never let a pull clobber an un-pushed local edit. Flush any pending push
     // to the cloud first; if it still hasn't landed (offline / push error),
@@ -463,23 +489,34 @@
 
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
+    //
+    // EVERY table below is read through selectAllRows(), NOT a bare select().
+    // PostgREST caps a response at db-max-rows (1000 by default) and returns the
+    // truncated set WITHOUT an error, so a plain select() on a growing table
+    // silently loses rows. That is exactly what happened once dm_defects passed
+    // 1000: each device received an arbitrary 1000-row slice, jobs showed
+    // partial defect lists, and the status bar still read "Synced" because
+    // nothing had failed. It compounded, too — ids outside the slice were absent
+    // from idMap.defects, so reconcileLocalDefectsUp read ~1000 cloud rows as
+    // un-synced local work and re-uploaded them on every boot ("Uploaded 1000
+    // change(s) from this phone").
     const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet] = await Promise.all([
-      sb.from('dm_trades').select('*'),
-      sb.from('dm_contractors').select('*'),
-      sb.from('dm_contractor_trades').select('contractor_id, trade_id'),
-      sb.from('jobs').select('id, job_number, lot, street, suburb, active'),
-      sb.from('dm_defects').select('*'),
-      sb.from('job_call_up_archive').select('job_id, cost_centre, supplier_name'),   // Framework call-up archive (accumulates across uploads); best-effort
-      sb.from('job_called_for_archive').select('job_id, activity, supplier_name, called_actual, last_seen_at'),   // Called For archive (who actually did each trade activity, with recency); best-effort
-      sb.from('dm_trade_learning').select('phrase_key, trade, n, w'),   // learned trades (weighted); best-effort
+      selectAllRows('dm_trades', '*', 'id'),
+      selectAllRows('dm_contractors', '*', 'id'),
+      selectAllRows('dm_contractor_trades', 'contractor_id, trade_id', 'contractor_id'),
+      selectAllRows('jobs', 'id, job_number, lot, street, suburb, active', 'id'),
+      selectAllRows('dm_defects', '*', 'id'),
+      selectAllRows('job_call_up_archive', 'job_id, cost_centre, supplier_name', 'job_id'),   // Framework call-up archive (accumulates across uploads); best-effort
+      selectAllRows('job_called_for_archive', 'job_id, activity, supplier_name, called_actual, last_seen_at', 'job_id'),   // Called For archive (who actually did each trade activity, with recency); best-effort
+      selectAllRows('dm_trade_learning', 'phrase_key, trade, n, w', 'phrase_key'),   // learned trades (weighted); best-effort
       // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
       // view is readable by authenticated users; an error just means no My Jobs.
-      sb.from('v_jobs_with_current_supervisor').select('id, current_supervisor_id, current_supervisor_name, status'),
+      selectAllRows('v_jobs_with_current_supervisor', 'id, current_supervisor_id, current_supervisor_name, status', 'id'),
       // Manager-editable keyword rules + AI settings (Admin → BPI AI in CH
       // Tracker). Pulled here so a rule edit reaches the phone on next sync —
       // without this the DB rule engine only ever applied to Tracker imports.
-      sb.from('bpi_trade_rules').select('keyword, trade, priority').eq('enabled', true),
-      sb.from('bpi_ai_settings').select('*').eq('id', 1)
+      selectAllRows('bpi_trade_rules', 'keyword, trade, priority', 'keyword', (q) => q.eq('enabled', true)),
+      sb.from('bpi_ai_settings').select('*').eq('id', 1)   // single row by pk — no paging needed
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -1994,8 +2031,11 @@
     if (!force && Date.now() - defectTombstones.loadedAt < 5 * 60 * 1000) return true;
     try {
       const since = new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString();
-      const { data, error } = await sb.from('deleted_rows_archive')
-        .select('row_id, row_data').eq('table_name', 'dm_defects').gt('deleted_at', since);
+      // Paged: a truncated tombstone list is worse than none — a deleted defect
+      // whose tombstone fell outside the first 1000 rows would be resurrected.
+      const { data, error } = await selectAllRows(
+        'deleted_rows_archive', 'row_id, row_data', 'row_id',
+        (q) => q.eq('table_name', 'dm_defects').gt('deleted_at', since));
       if (error) throw error;
       defectTombstones.uuids = new Set((data || []).map((r) => String(r.row_id)));
       defectTombstones.legacies = new Set((data || [])
@@ -2123,7 +2163,7 @@
     // job_id; if it's empty (cold boot), fetch the jobs to build it.
     if (!Object.keys(idMap.addresses).length) {
       try {
-        const { data: jobs } = await sb.from('jobs').select('id, active');
+        const { data: jobs } = await selectAllRows('jobs', 'id, active', 'id');
         (jobs || []).forEach((j) => { if (showInactiveJobs || j.active !== false) idMap.addresses[hashId(j.id)] = j.id; });
       } catch (e) { /* offline — try again next boot */ }
     }
@@ -2131,7 +2171,7 @@
     // resolve assigned contractors and the data-loss guard would defer them all.
     if (!Object.keys(idMap.contractors).length) {
       try {
-        const { data: cons } = await sb.from('dm_contractors').select('id, legacy_id');
+        const { data: cons } = await selectAllRows('dm_contractors', 'id, legacy_id', 'id');
         (cons || []).forEach((c) => { idMap.contractors[c.legacy_id != null ? c.legacy_id : hashId(c.id)] = c.id; });
       } catch (e) { /* offline — guard will defer assigned defects to the outbox */ }
     }
