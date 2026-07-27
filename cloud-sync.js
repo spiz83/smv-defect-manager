@@ -423,9 +423,22 @@
     // is still set — since these are push-only and recover stranded work.
     await flushDefectOutbox();
     if (dirty) return;
-    // If some writes still won't go (offline), skip the pull so it can't clobber
-    // the un-uploaded local rows.
-    if (defectOutbox.length) return;
+    // Un-pushed local defects must survive the wholesale `db.data = newData`
+    // below. This USED to abort the pull entirely whenever the outbox was
+    // non-empty — but an entry that can never commit (commitDefect returns early
+    // while `idMap.addresses[d.addressId]` is unmapped, e.g. a defect on a job
+    // that isn't in the map) stays queued forever. One such defect silently
+    // froze ALL incoming sync on that device: the phone kept whatever it already
+    // had and never saw another cloud change again, so CH Tracker and the phone
+    // drifted apart with no error anywhere.
+    //
+    // Carry the un-pushed rows across the rebuild instead of blocking. Nothing
+    // local is lost, and the phone keeps receiving cloud updates.
+    const carryOver = defectOutbox.length
+      ? (db.data.defects || [])
+          .filter((d) => defectOutbox.includes(Number(d.id)))
+          .map((d) => ({ ...d }))
+      : [];
 
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
@@ -599,10 +612,21 @@
     // Apply to the running app, without echoing it back as a push.
     suppressPush = true;
     db.data = newData;
+    // Baseline = the CLOUD state, taken BEFORE re-adding un-pushed rows, so the
+    // diff engine still sees those as un-synced and keeps trying to push them.
+    snapshot = cloneSnap(db.data);
+    if (carryOver.length) {
+      const have = new Set((db.data.defects || []).map((d) => String(d.id)));
+      let restored = 0;
+      carryOver.forEach((d) => { if (!have.has(String(d.id))) { db.data.defects.push(d); restored++; } });
+      if (restored) console.info('[CloudSync] carried ' + restored + ' un-pushed defect(s) across the pull');
+    }
     db.save();                 // writes local cache; push suppressed
     suppressPush = false;
-    snapshot = cloneSnap(db.data);
-    dirty = false; persistSyncState();   // we're now in sync with the cloud
+    // `dirty` stays false deliberately: the outbox + reconcileLocalDefectsUp
+    // retry the carried rows. Re-arming `dirty` here would block the next pull
+    // and recreate the freeze this fix removes.
+    dirty = false; persistSyncState();
     // Don't re-render over a form the user is filling in (would lose input).
     if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     refreshPhotoCounts();      // load photo badges (async, re-renders when ready)
