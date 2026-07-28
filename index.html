@@ -8164,11 +8164,25 @@
             return text;
         }
         // Parse the "Report With Supporting Photos" section into structured defects.
+        // Every BPI report ends with a fixed management / handover checklist:
+        // "as requested by Management…", "Items not to pick:", "Materials to be
+        // left on site", "Minimum of N ridge tiles", "Is this House/Unit ready for
+        // Practical Completion". None of it is a defect — but it is UNNUMBERED,
+        // and the parser below appends any unnumbered line to the current item, so
+        // the entire block was swallowed into whichever defect happened to be last.
+        // That is why the final item of every imported report carried a wall of
+        // boilerplate. Fragments inside it ("12 roof tiles") can also match the
+        // item pattern and fabricate phantom defects, so the parse stops dead at
+        // the first marker rather than trying to filter the block line by line.
+        const BPI_TAIL = /as requested by management|items not to pick|materials to be left on site|ready for a?\s*practical completion|is this (house|unit)\s*\/?\s*(house|unit)?\s*ready|minimum of \d+\s*(ridge|roof|flooring)\s*tiles|barrel code to key locks|grout samples? in plastic|caulking\s*\/?\s*gapping to shelves|marked with blue tape|touch up paint one of each colour/i;
+
         function parseBpiDefects(pagedText) {
             const pages = (pagedText || '').split('\f');
             const raw = [];
             let inPhotos = false;
+            let tailReached = false;
             pages.forEach((pageText, pi) => {
+                if (tailReached) return;                 // everything after the checklist is boilerplate
                 const pageNo = pi + 1;
                 if (/Report With Supporting Photos/i.test(pageText)) inPhotos = true;
                 if (!inPhotos) return;
@@ -8176,6 +8190,15 @@
                 for (const lineRaw of pageText.split('\n')) {
                     const line = lineRaw.replace(/\s+$/, '');
                     if (!line.trim()) continue;
+                    // The checklist can begin part-way through a line. Keep whatever
+                    // real defect text precedes it, then stop.
+                    const tailAt = line.search(BPI_TAIL);
+                    if (tailAt >= 0) {
+                        const keep = line.slice(0, tailAt).trim();
+                        if (keep && cur) cur.observation += ' ' + keep;
+                        tailReached = true;
+                        break;
+                    }
                     if (/Email:|bookings@|www\.|Id\s+Location|Report With Supporting|^\s*Rectified\s*$/i.test(line)) continue;
                     const m = line.match(/^\s*(\d{1,3})\s+(.+)$/);
                     if (m) { if (cur) raw.push(cur); const s = splitLocObs(m[2]); cur = { id: +m[1], location: s.location, observation: s.observation, page: pageNo }; }
@@ -8186,7 +8209,12 @@
             const seen = new Set(), items = [];
             for (const d of raw) {
                 if (seen.has(d.id)) continue; seen.add(d.id);
-                const obs = (d.observation || '').replace(/\s+/g, ' ').trim();
+                let obs = (d.observation || '').replace(/\s+/g, ' ').trim();
+                // Second line of defence: if a checklist phrase still reached an
+                // observation (pdf.js can reflow the block onto a defect's line),
+                // truncate there rather than shipping it to the supplier.
+                const cut = obs.search(BPI_TAIL);
+                if (cut >= 0) obs = obs.slice(0, cut).trim();
                 if (!obs || obs.length < 3) continue;
                 items.push({ description: obs, location: d.location || '', page: d.page, itemNo: d.id, trade: classifyBpiTrade((d.location || '') + ' ' + obs) });
             }
@@ -9231,7 +9259,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-27f';
+        const APP_VERSION = '2026-07-27g';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -9305,7 +9333,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-27f"></script>
+    <script src="cloud-sync.js?v=2026-07-27g"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
