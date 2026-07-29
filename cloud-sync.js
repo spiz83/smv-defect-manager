@@ -676,10 +676,27 @@
     // diff engine still sees those as un-synced and keeps trying to push them.
     snapshot = cloneSnap(db.data);
     if (carryOver.length) {
-      const have = new Set((db.data.defects || []).map((d) => String(d.id)));
-      let restored = 0;
-      carryOver.forEach((d) => { if (!have.has(String(d.id))) { db.data.defects.push(d); restored++; } });
-      if (restored) console.info('[CloudSync] carried ' + restored + ' un-pushed defect(s) across the pull');
+      // These rows have a local edit that has NOT reached the cloud yet, so the
+      // local copy is the newer truth and must OVERLAY what the pull returned —
+      // not merely fill in rows the cloud happened to omit.
+      //
+      // Only-fill-the-gaps was wrong and caused a nasty regression: completing a
+      // defect marked it done locally (it vanished from the list), then a pull
+      // fired ~800ms later on the realtime nudge, the cloud still had it OPEN
+      // because the push hadn't landed, the cloud row won, and the item snapped
+      // straight back. Worst on a job whose push is deferred (commitDefect bails
+      // while the job is unmapped), because then the push never lands at all and
+      // every pull reinstates it — which is why it looked job-specific.
+      const pending = new Map(carryOver.map((d) => [String(d.id), d]));
+      const rows = db.data.defects || [];
+      const applied = new Set();
+      for (let i = 0; i < rows.length; i++) {
+        const key = String(rows[i].id);
+        if (pending.has(key)) { rows[i] = pending.get(key); applied.add(key); }
+      }
+      pending.forEach((d, key) => { if (!applied.has(key)) { rows.push(d); applied.add(key); } });
+      db.data.defects = rows;
+      console.info('[CloudSync] kept ' + applied.size + ' un-pushed local edit(s) across the pull');
     }
     db.save();                 // writes local cache; push suppressed
     suppressPush = false;
