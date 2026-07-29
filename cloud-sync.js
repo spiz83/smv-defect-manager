@@ -2011,6 +2011,12 @@
     };
   }
 
+  // Defect ids whose status the USER just changed on purpose (tapped the status
+  // tab, or completed/reopened it). Only these may move a defect out of
+  // `completed` in the cloud — see the completion guard in commitDefect. Every
+  // other write carries a status merely because the row is sent whole, and must
+  // never be allowed to undo someone else's completion.
+  const statusIntent = new Set();
   // Persistent outbox of legacy ids whose direct write hasn't landed yet.
   let defectOutbox = [];
   function loadDefectOutbox() { try { defectOutbox = JSON.parse(localStorage.getItem('cs_defect_outbox') || '[]'); } catch (e) { defectOutbox = []; } }
@@ -2104,8 +2110,37 @@
       let data, error;
       if (knownUuid) {
         const patch = defectRow(d); delete patch.legacy_id;
+        // COMPLETION GUARD — the other half of "completed items come back".
+        //
+        // Every write sends the WHOLE row, status included. So editing anything
+        // at all on a defect — its location, supplier, description, a photo —
+        // pushes this phone's idea of the status too. If the phone holds a stale
+        // copy (it says `open` because the defect was completed in CH Tracker or
+        // on another device since this phone last pulled), that unrelated edit
+        // silently reopens a completed defect.
+        //
+        // Only an explicit tap on the status control may move a defect OUT of
+        // completed. For every other write, check the cloud first and keep its
+        // completion — then heal the local copy so the list stops showing it as
+        // outstanding.
+        const explicit = statusIntent.has(Number(d.id));
+        if (!explicit && patch.status !== 'completed') {
+          const { data: cur } = await sb.from('dm_defects')
+            .select('status, completed_at').eq('id', knownUuid).maybeSingle();
+          if (cur && cur.status === 'completed') {
+            patch.status = 'completed';
+            patch.completed_at = cur.completed_at || patch.completed_at;
+            d.status = 'completed'; d.completed = true;          // heal this device
+            if (snapshot.defects && snapshot.defects[d.id]) {
+              snapshot.defects[d.id].status = 'completed';
+              snapshot.defects[d.id].completed = true;
+            }
+            console.info('[CloudSync] kept defect #' + d.id + ' completed — an unrelated edit would have reopened it');
+          }
+        }
         const res = await sb.from('dm_defects').update(patch).eq('id', knownUuid).select('id, legacy_id').maybeSingle();
         data = res.data; error = res.error;
+        statusIntent.delete(Number(d.id));
       }
       // Brand-new local defect (no known cloud row), or the known row has since
       // been deleted in the cloud → (re)create it, upserting by legacy_id.
@@ -2243,7 +2278,10 @@
       };
     };
     wrap('addDefect', (a, r) => (r && r.id != null ? [r.id] : []));
-    wrap('setDefectStatus', (a) => [a[0]]);
+    // A deliberate status change — the ONLY thing permitted to take a defect out
+    // of `completed` in the cloud. Recorded before the commit so the guard in
+    // commitDefect lets this one through.
+    wrap('setDefectStatus', (a) => { statusIntent.add(Number(a[0])); return [a[0]]; });
     wrap('setDefectLocation', (a) => [a[0]]);
     wrap('updateDefect', (a) => [a[0]]);
     wrap('setContractorBooking', (a) => (db.data.defects || [])
