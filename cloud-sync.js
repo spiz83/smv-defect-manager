@@ -2167,6 +2167,26 @@
       // a previously-synced row (knownUuid) stays QUEUED rather than being
       // blindly re-created — genuinely new local defects still push normally.
       if (!error && !data) {
+        // DUPLICATE GUARD — the "two copies / completed item won't go away" bug.
+        //
+        // A defect that is present in the sync baseline CAME FROM THE CLOUD. If
+        // we've reached here we've lost its uuid, and the branch below would
+        // upsert by legacy_id — which cannot match a CH Tracker row, because
+        // those carry legacy_id = NULL. So it INSERTS A SECOND ROW instead of
+        // updating, stamped with this device's hashed local id.
+        //
+        // The next pull then maps both rows to the same local id (the original
+        // hashes to it; the copy carries it literally), so one list item is
+        // backed by two rows: completing it marks one and leaves the other open,
+        // and the item never disappears no matter how many times it is tapped.
+        //
+        // Never insert for a row we know the cloud already has. Re-queue and let
+        // the next pull restore the uuid.
+        if (!knownUuid && snapshot.defects && snapshot.defects[d.id]) {
+          outboxAdd(legacyId);
+          console.warn('[CloudSync] defect #' + d.id + ' lost its cloud id — deferring rather than inserting a duplicate');
+          return;
+        }
         const tombsOk = await ensureTombstones(!!knownUuid);
         if (isTombstoned(d)) { purgeLocalDefect(legacyId); persistSyncState(); return; }
         if (knownUuid && !tombsOk) { return; }   // can't verify — retry via outbox later
