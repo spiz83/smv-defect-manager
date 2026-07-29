@@ -13,13 +13,13 @@
  *
  * Bump CACHE (and the cloud-sync ?v= below) whenever the shell changes.
  */
-const CACHE = 'deffixer-shell-2026-07-27g';
+const CACHE = 'deffixer-shell-2026-07-27h';
 
 // Same-origin shell. All of these must exist or install precache will fail.
 const CORE = [
   './',
   './index.html',
-  './cloud-sync.js?v=2026-07-27g',
+  './cloud-sync.js?v=2026-07-27h',
   './manifest.webmanifest',
   './icon.svg',
   './favicon-48.png',

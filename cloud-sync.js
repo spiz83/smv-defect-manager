@@ -2175,6 +2175,49 @@
         (cons || []).forEach((c) => { idMap.contractors[c.legacy_id != null ? c.legacy_id : hashId(c.id)] = c.id; });
       } catch (e) { /* offline — guard will defer assigned defects to the outbox */ }
     }
+    // THE "COMPLETED ITEM COMES BACK" FIX.
+    //
+    // Everything above decides a defect is "stranded" purely from it being absent
+    // from idMap.defects. That map is built by the pull — so anything the pull
+    // hasn't mapped (a truncated pull, a pull that never ran, a cold boot) looks
+    // stranded even when the cloud has held that row all along.
+    //
+    // Pushing one of those is NOT harmless: commitDefect has no uuid for it, so
+    // it takes the upsert-by-legacy_id branch, and an upsert OVERWRITES the cloud
+    // row with this phone's copy. If the phone's copy is stale — it says `open`
+    // because someone completed the defect in CH Tracker or on another device —
+    // the completed row is overwritten back to open. That is exactly the
+    // "I mark it Complete and it comes back as a fresh item" report, and the
+    // 1000-row truncation put roughly a thousand rows into this bucket on every
+    // single boot.
+    //
+    // So: ask the cloud which of these legacy_ids it already has. Those are not
+    // stranded, they are stale local cache. Adopt their uuids (so the pull maps
+    // them properly and the cloud state flows DOWN) and push none of them. Only
+    // rows the cloud genuinely lacks are real stranded work.
+    try {
+      const wanted = locals.map((d) => Number(d.id)).filter((n) => Number.isFinite(n));
+      const known = new Map();
+      for (let i = 0; i < wanted.length; i += 200) {   // chunked: a huge .in() list overflows the URL
+        const { data, error } = await sb.from('dm_defects')
+          .select('id, legacy_id').in('legacy_id', wanted.slice(i, i + 200));
+        if (error) throw error;
+        (data || []).forEach((r) => { if (r.legacy_id != null) known.set(Number(r.legacy_id), r.id); });
+      }
+      if (known.size) {
+        known.forEach((uuid, lid) => { idMap.defects[lid] = uuid; defectUuidToLegacy[uuid] = lid; });
+        locals = locals.filter((d) => !known.has(Number(d.id)));
+        console.info('[CloudSync] ' + known.size + ' local defect(s) already in the cloud — adopted, not re-pushed');
+        persistSyncState();
+      }
+    } catch (e) {
+      // Can't verify (offline / query failed). Do NOT fall back to pushing them:
+      // an unverified push is what resurrects completed defects. Genuinely
+      // stranded rows stay local and get another chance on the next boot.
+      console.warn('[CloudSync] could not verify local defects against the cloud — skipping the recovery push', e && e.message);
+      return;
+    }
+    if (!locals.length) return;
     setBanner('⬆️ Uploading ' + locals.length + ' change(s) saved on this phone…', 'syncing');
     let ok = 0;
     for (const d of locals) { await commitDefect(d.id); if (idMap.defects[d.id]) ok++; }
