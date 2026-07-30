@@ -734,15 +734,23 @@
   // Load the per-defect photo counts so the camera badge shows a number.
   async function refreshPhotoCounts() {
     try {
-      // Pull the defect's legacy id STRAIGHT from the DB via the FK join, so the
-      // badge count never depends on the (sometimes-stale) local uuid<->legacy
-      // map. This is what makes photos reliably show in every view.
-      const { data, error } = await sb.from('dm_defect_photos')
-        .select('defect:dm_defects!inner(legacy_id)');
+      // Count by defect_id (the uuid), NOT by the joined legacy_id.
+      //
+      // A defect created in CH Tracker has legacy_id = NULL, so the old join
+      // handed back null and the `lid != null` guard below threw those photos
+      // away — every BPI report imported on the desktop showed its defects on
+      // the phone with no camera badge and an empty gallery, which is exactly
+      // what Spiro hit (2026-07-30). The uuid is the only key both apps share.
+      //
+      // defectUuidToLegacy is rebuilt on every pull and covers BOTH origins
+      // (legacy_id when there is one, hashId(uuid) when there isn't), so this
+      // is not the "stale map" the old comment worried about — it is the same
+      // mapping the defect list itself is built from.
+      const { data, error } = await sb.from('dm_defect_photos').select('defect_id');
       if (error) throw error;
       const counts = {};
       (data || []).forEach(p => {
-        const lid = p.defect && p.defect.legacy_id;
+        const lid = defectUuidToLegacy[p.defect_id];
         if (lid != null) counts[lid] = (counts[lid] || 0) + 1;
       });
       // Only re-render when the numbers actually changed — render() re-triggers
@@ -1469,9 +1477,20 @@
     // 2) Photos confirmed in the cloud.
     let rows = null, cloudErr = null;
     try {
-      const res = await sb.from('dm_defect_photos')
-        .select('id, storage_path, created_at, expires_at, dm_defects!inner(legacy_id)')
-        .eq('dm_defects.legacy_id', legacyId).order('created_at', { ascending: false });
+      // Look up by the defect's uuid. Matching on legacy_id found NOTHING for a
+      // defect created in CH Tracker, because those rows carry legacy_id = NULL
+      // and this phone knows them by hashId(uuid) instead — so the gallery came
+      // back empty for every desktop-imported report even though the photos were
+      // sitting in the DB, correctly linked (Spiro 2026-07-30).
+      const uuid = idMap.defects[legacyId];
+      const res = uuid
+        ? await sb.from('dm_defect_photos')
+            .select('id, storage_path, created_at, expires_at')
+            .eq('defect_id', uuid).order('created_at', { ascending: false })
+        // Not pulled yet (brand-new local defect) — it can only have a legacy_id.
+        : await sb.from('dm_defect_photos')
+            .select('id, storage_path, created_at, expires_at, dm_defects!inner(legacy_id)')
+            .eq('dm_defects.legacy_id', legacyId).order('created_at', { ascending: false });
       rows = res.data; cloudErr = res.error;
     } catch (e) { cloudErr = e; }
     if (!cloudErr) photoCounts[legacyId] = (rows || []).length;
