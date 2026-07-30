@@ -5449,18 +5449,29 @@
                 if (changed) { render(); flushStatus(); showToast(changed + ' item' + (changed === 1 ? '' : 's') + ' marked pending'); }
             };
 
-            // ATTACH MODE (✉️) — a real file attachment, where the platform can do
-            // one. Desktop Chrome/Edge and Android hand the PDF to the mail app
-            // properly. iOS is deliberately excluded: Apple injects the blob: URL
-            // into the message body on every file share and refuses to set a
-            // Subject alongside an attachment, which is why this was abandoned
-            // before and why ✉️ had silently become a duplicate of 🔗.
-            // FIRST CHOICE in attach mode: let the SERVER send it, so the PDF is
-            // genuinely attached on every device including iPhone, where no
-            // browser route can attach at all (Spiro 2026-07-30). Needs the
-            // email-supplier-defects Edge Function deployed and RESEND_API_KEY
-            // set; until then this returns an error and we fall straight through
-            // to the behaviour that already worked, so nothing regresses.
+            // ATTACH MODE (📎) — hand Mail the actual file.
+            //
+            // This is tried BEFORE the server route now. The server route uploads
+            // the PDF first, and every second spent awaiting that pushed the
+            // share() call further outside iOS's activation window — so the
+            // "better" path was quietly destroying the one that works. It moves
+            // below, and only runs if sharing isn't possible at all.
+            if (!asLink && scopedPdf) {
+                const shared = await sharePdfOnTap(
+                    scopedPdf,
+                    'Attach to email',
+                    `Tap below, then pick <b>Mail</b>. The PDF attaches to the message.<br><br>`
+                    + `<span style="opacity:.75">You'll need to add <b>${String(c.email || 'the supplier').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</b> and the subject yourself — `
+                    + `iOS won't accept a subject line alongside an attachment. Use ✉️ instead for a ready-to-send `
+                    + `email with a link.</span>`,
+                );
+                if (shared) { markEmailedPending(); return; }
+            }
+
+            // SERVER SEND — a real attachment AND a filled-in subject, on any
+            // device. Needs the email-supplier-defects Edge Function deployed and
+            // RESEND_API_KEY set, plus a verified Resend domain; until then this
+            // errors and we fall through to the link, so nothing regresses.
             // Hoisted so the link path below reuses this upload instead of
             // sending the same PDF up a second time on mobile data.
             let hosted = null;
@@ -5490,36 +5501,6 @@
                 }
             }
 
-            // SECOND CHOICE: a real Web-Share file attachment. This now runs on
-            // iOS TOO (Spiro 2026-07-30 — "still doesn't attach... fix!").
-            //
-            // It was excluded because of an earlier on-device note saying Apple
-            // injects the blob: URL into the body on every file share. That is a
-            // reason for the body to look untidy — it is NOT a reason the file
-            // fails to attach, and attaching is the whole point of this button.
-            // mailto cannot ever attach (no attachment field exists in the URL
-            // scheme), and the server route needs a verified Resend domain that
-            // isn't in place. So this is the only thing on an iPhone that puts the
-            // PDF itself in the message.
-            //
-            // FILES ONLY — no title, no text. Pairing text with a file is what
-            // provokes the worst of Apple's behaviour, and it means the share
-            // sheet hands Mail a clean attachment. The trade is real and worth
-            // stating: you pick Mail from the sheet and fill in the recipient and
-            // subject yourself. 🔗 remains the one-tap pre-composed email for when
-            // a link will do — that is now the actual difference between the two
-            // buttons.
-            if (!asLink && scopedPdf && navigator.canShare && navigator.canShare({ files: [scopedPdf] })) {
-                try {
-                    await navigator.share({ files: [scopedPdf] });
-                    markEmailedPending();
-                    showToast('PDF ready to attach — pick Mail, then add ' + (c.email || 'the supplier'));
-                    return;
-                } catch (e) {
-                    if (e && e.name === 'AbortError') return;   // user backed out
-                    console.error('supplier email attach', e);  // fall through to the link
-                }
-            }
 
             // LINK MODE (🔗), and iOS's only working route. mailto gets a REAL
             // Subject + body — the only way iOS fills the Subject field — and the
@@ -7652,6 +7633,43 @@
               .imp-del{background:#FF3B30;color:#fff;border:0;border-radius:8px;padding:7px 12px;cursor:pointer;}
             `;
             document.head.appendChild(s);
+        }
+
+        // Share a File from a FRESH tap.
+        //
+        // navigator.share() only works inside a live user gesture. Building the
+        // PDF (and embedding its photos) takes far longer than iOS's activation
+        // window, so calling share() after that await throws NotAllowedError —
+        // which is why every attempt at "attach the PDF" fell through to the
+        // mailto fallback and Spiro kept seeing a link instead of a file
+        // (2026-07-30). No amount of reordering fixes it: the file cannot exist
+        // before the tap that asks for it.
+        //
+        // So the work happens first, then this asks for one more tap, and THAT
+        // tap calls share() with the gesture still alive. Resolves true if the
+        // sheet opened, false if it couldn't be used at all (caller falls back).
+        function sharePdfOnTap(file, headline, note) {
+            return new Promise((resolve) => {
+                if (!(navigator.canShare && navigator.canShare({ files: [file] }))) { resolve(false); return; }
+                impOverlay(`
+                    <div id="imp-head"><strong>📎 ${headline}</strong><button id="imp-close">✕</button></div>
+                    <div id="imp-body">
+                        <div style="font-size:14px;line-height:1.5;margin-bottom:14px">${note}</div>
+                        <button class="imp-btn" id="sh-go" style="width:100%">📎 Attach ${file.name}</button>
+                    </div>`);
+                let done = false;
+                const finish = (v) => { if (done) return; done = true; impClose(); resolve(v); };
+                const x = document.getElementById('imp-close');
+                if (x) x.onclick = () => finish(false);
+                document.getElementById('sh-go').onclick = async () => {
+                    try { await navigator.share({ files: [file] }); finish(true); }
+                    catch (e) {
+                        if (e && e.name === 'AbortError') { finish(true); return; }  // user closed the sheet
+                        console.error('sharePdfOnTap', e);
+                        finish(false);
+                    }
+                };
+            });
         }
 
         function impClose() { const o = document.getElementById('imp-ov'); if (o) o.remove(); }
