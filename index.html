@@ -2600,8 +2600,8 @@
                                 <span class="supplier-actions">
                                     <button class="supplier-email-btn" onclick="openReassignGroup(${group.contractor.id != null ? group.contractor.id : 'null'}, ${addressId})" title="Reassign ALL of these defects to another contractor or trade">✏️</button>
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier — attaches the PDF where the device allows it (on iPhone/iPad Apple blocks file attachments from the browser, so it falls back to the link)">✉️</button>
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — tap-to-open link to the PDF (fills the subject in every mail app)">🔗</button>
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Attach the PDF — opens the share sheet, pick Mail. The file itself is attached, but you add the recipient and subject">📎</button>
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — ready to send, with a tap-to-open link to the PDF instead of an attachment">✉️</button>
                                     <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">📑</button>` : ''}
                                 </span>
                             </div>
@@ -5476,17 +5476,30 @@
                 }
             }
 
-            // SECOND CHOICE: a real Web-Share file attachment, where the platform
-            // can do one — desktop Chrome/Edge and Android. iOS is excluded
-            // deliberately: Apple injects the blob: URL into the message body on
-            // every file share and won't set a Subject alongside an attachment.
-            const iOSShare = /iPad|iPhone|iPod/.test(navigator.userAgent)
-                || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            if (!asLink && scopedPdf && !iOSShare
-                && navigator.canShare && navigator.canShare({ files: [scopedPdf] })) {
+            // SECOND CHOICE: a real Web-Share file attachment. This now runs on
+            // iOS TOO (Spiro 2026-07-30 — "still doesn't attach... fix!").
+            //
+            // It was excluded because of an earlier on-device note saying Apple
+            // injects the blob: URL into the body on every file share. That is a
+            // reason for the body to look untidy — it is NOT a reason the file
+            // fails to attach, and attaching is the whole point of this button.
+            // mailto cannot ever attach (no attachment field exists in the URL
+            // scheme), and the server route needs a verified Resend domain that
+            // isn't in place. So this is the only thing on an iPhone that puts the
+            // PDF itself in the message.
+            //
+            // FILES ONLY — no title, no text. Pairing text with a file is what
+            // provokes the worst of Apple's behaviour, and it means the share
+            // sheet hands Mail a clean attachment. The trade is real and worth
+            // stating: you pick Mail from the sheet and fill in the recipient and
+            // subject yourself. 🔗 remains the one-tap pre-composed email for when
+            // a link will do — that is now the actual difference between the two
+            // buttons.
+            if (!asLink && scopedPdf && navigator.canShare && navigator.canShare({ files: [scopedPdf] })) {
                 try {
-                    await navigator.share({ files: [scopedPdf], title: subject, text: subject });
+                    await navigator.share({ files: [scopedPdf] });
                     markEmailedPending();
+                    showToast('PDF ready to attach — pick Mail, then add ' + (c.email || 'the supplier'));
                     return;
                 } catch (e) {
                     if (e && e.name === 'AbortError') return;   // user backed out
