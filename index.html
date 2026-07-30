@@ -8222,6 +8222,140 @@
             if (!items.length) return parseReportDefects(pagedText).map(s => ({ description: s, location: '', page: null, trade: classifyBpiTrade(s) }));
             return items;
         }
+
+        // ===== BPI supporting-photo extraction =======================================
+        // Port of CH Tracker's src/lib/bpiPhotos.ts (Spiro 2026-07-30) — the phone
+        // and desktop imports must behave the same, so a report dropped here gets
+        // its photos attached exactly as it would on the tracker.
+        //
+        // Every defect in the "Report With Supporting Photos" section has its photo
+        // printed beside it, already inside the PDF being imported. We cut them out
+        // locally: no AI call, no extra upload, nothing leaves the phone that wasn't
+        // going to Supabase anyway.
+        //
+        // Layout in a real report (12 defects, 204/9 Grass Tree Rd): four defects
+        // per page, each Tag line at y with its photo to the RIGHT, ~66pt below the
+        // baseline. Photos are 600x450 natively, so the page is rendered just fine
+        // enough to hit that and no finer.
+        const BPI_PHOTO_TARGET_PX = 620;   // native width of a BPI report photo
+        const BPI_PHOTO_MIN_PT = 40;       // smaller than this is an icon, not a photo
+
+        // A photo belongs to the nearest Tag line at or ABOVE its vertical centre —
+        // the report's reading order. Ascending sort matters: sorted the other way,
+        // find() returns the TOPMOST tag and every photo on the page piles onto the
+        // first defect.
+        function bpiPairPhotosToTags(tags, photos) {
+            const out = new Map();
+            if (!tags.length) return out;
+            const byY = tags.slice().sort((a, b) => a.y - b.y);
+            for (const p of photos.slice().sort((a, b) => b.yBottom - a.yBottom)) {
+                const centre = p.yBottom + p.h / 2;
+                const owner = byY.find(t => t.y >= centre);
+                if (!owner) continue;
+                const arr = out.get(owner.itemNo);
+                if (arr) arr.push(p); else out.set(owner.itemNo, [p]);
+            }
+            return out;
+        }
+
+        // Tag lines on one page. Mirrors parseBpiDefects's `<Id> <rest>` line rule
+        // so the two agree on what counts as a Tag.
+        function bpiTagPositions(items) {
+            const byY = new Map();
+            for (const it of items) {
+                const y = Math.round(it.transform[5]);
+                const row = byY.get(y);
+                if (row) row.push({ x: it.transform[4], s: it.str });
+                else byY.set(y, [{ x: it.transform[4], s: it.str }]);
+            }
+            const out = [];
+            for (const [y, arr] of byY) {
+                const line = arr.sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ').trim();
+                const m = line.match(/^(\d{1,3})\s+\S/);
+                if (m) out.push({ itemNo: +m[1], y });
+            }
+            return out;
+        }
+
+        // Image placements from the operator list. pdf.js gives placements as a
+        // running transform, so the CTM has to be tracked through save/restore.
+        function bpiPhotoRects(ops, OPS) {
+            const mul = (a, b) => [
+                a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1],
+                a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3],
+                a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5],
+            ];
+            let ctm = [1, 0, 0, 1, 0, 0];
+            const stack = [], out = [];
+            for (let i = 0; i < ops.fnArray.length; i++) {
+                const fn = ops.fnArray[i];
+                if (fn === OPS.save) stack.push(ctm.slice());
+                else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+                else if (fn === OPS.transform) ctm = mul(ctm, ops.argsArray[i]);
+                else if (fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject || fn === OPS.paintInlineImageXObject) {
+                    const w = Math.abs(ctm[0]), h = Math.abs(ctm[3]);
+                    if (w >= BPI_PHOTO_MIN_PT && h >= BPI_PHOTO_MIN_PT) out.push({ x: ctm[4], yBottom: ctm[5], w: w, h: h });
+                }
+            }
+            return out;
+        }
+
+        // Cut every supporting photo out of the report, keyed by Tag number.
+        // Only pages the parser placed a defect on are considered, so the cover
+        // logo can't produce a stray match. Resolves to Map<itemNo, [Blob]>.
+        async function extractBpiPhotos(file, defects, onProgress) {
+            const out = new Map();
+            if (!window.pdfjsLib) return out;
+            const OPS = window.pdfjsLib.OPS;
+            const wantByPage = new Map();
+            for (const d of defects) {
+                if (!d || d.page == null || d.itemNo == null) continue;
+                const s = wantByPage.get(d.page);
+                if (s) s.add(d.itemNo); else wantByPage.set(d.page, new Set([d.itemNo]));
+            }
+            if (!wantByPage.size) return out;
+            const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+            for (let p = 1; p <= pdf.numPages; p++) {
+                if (onProgress) { try { onProgress(p, pdf.numPages); } catch (e) {} }
+                const want = wantByPage.get(p);
+                if (!want || !want.size) continue;
+                const page = await pdf.getPage(p);
+                const tags = bpiTagPositions((await page.getTextContent()).items).filter(t => want.has(t.itemNo));
+                if (!tags.length) continue;
+                const rects = bpiPhotoRects(await page.getOperatorList(), OPS);
+                if (!rects.length) continue;
+                const pairs = bpiPairPhotosToTags(tags, rects);
+                if (!pairs.size) continue;
+                const widest = Math.max.apply(null, rects.map(r => r.w));
+                const scale = Math.min(6, Math.max(1.5, BPI_PHOTO_TARGET_PX / widest));
+                const viewport = page.getViewport({ scale: scale });
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.ceil(viewport.width);
+                canvas.height = Math.ceil(viewport.height);
+                const ctx = canvas.getContext('2d');
+                if (!ctx) continue;
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                for (const [itemNo, list] of pairs) {
+                    for (const r of list) {
+                        // PDF y counts up from the bottom; canvas y counts down.
+                        const sx = Math.max(0, Math.round(r.x * scale));
+                        const sy = Math.max(0, Math.round((viewport.height / scale - (r.yBottom + r.h)) * scale));
+                        const sw = Math.min(canvas.width - sx, Math.round(r.w * scale));
+                        const sh = Math.min(canvas.height - sy, Math.round(r.h * scale));
+                        if (sw < 8 || sh < 8) continue;
+                        const crop = document.createElement('canvas');
+                        crop.width = sw; crop.height = sh;
+                        crop.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+                        const blob = await new Promise(res => crop.toBlob(res, 'image/jpeg', 0.82));
+                        if (!blob) continue;
+                        const arr = out.get(itemNo);
+                        if (arr) arr.push(blob); else out.set(itemNo, [blob]);
+                    }
+                }
+                canvas.width = 0; canvas.height = 0;   // release before the next page
+            }
+            return out;
+        }
         // Find the matching property from the report header "Lot N - Street Suburb"
         // and/or the PDF filename (BPI names embed lot + street, e.g.
         // "(1st_Inspection)_1403_20_Kobi_Street_Tarneit.pdf"), which survives even
@@ -8272,9 +8406,49 @@
         // ---- Step 2: review & assign each item ----
         let _review = null;
         function startReportReview(items, reportName, reportType, matchedAddressId, reportFile) {
-            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: matchedAddressId || null, reportFile: reportFile || null };
+            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: matchedAddressId || null, reportFile: reportFile || null, photos: new Map(), photoNote: '' };
             buildBpiLearning();   // learn from assignment history before suggesting
             renderReviewItem();
+            // Pull each defect's supporting photo out of the report in the
+            // background — the review is usable immediately and photos appear as
+            // they land. Best-effort: a report we can't read photos from still
+            // imports its defects (Spiro 2026-07-30, parity with CH Tracker).
+            if (reportFile) {
+                const forReview = _review;
+                (async () => {
+                    try {
+                        forReview.photoNote = 'reading photos…';
+                        if (_review === forReview) renderReviewItem();
+                        const map = await extractBpiPhotos(reportFile, items, (p, of) => {
+                            forReview.photoNote = 'reading photos… page ' + p + '/' + of;
+                            if (_review === forReview && !_rvIsBusyEditing()) renderReviewItem();
+                        });
+                        forReview.photos = map;
+                        let n = 0; for (const [, v] of map) n += v.length;
+                        forReview.photoNote = n ? (n + ' report photo' + (n === 1 ? '' : 's') + ' found') : '';
+                        if (_review === forReview && !_rvIsBusyEditing()) renderReviewItem();
+                    } catch (e) {
+                        forReview.photoNote = '';
+                        console.warn('[BPI] photo extraction failed', e);
+                    }
+                })();
+            }
+        }
+        // Re-rendering the review screen mid-edit would blow away whatever is
+        // half-typed in the description / contractor boxes, so the photo pass
+        // holds off while a field has focus. The final render still lands when
+        // the item is saved and the next one is drawn.
+        function _rvIsBusyEditing() {
+            const a = document.activeElement;
+            return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'));
+        }
+        // Blob URLs for the review screen's photo previews. A long report
+        // re-renders per item, so each pass releases the previous item's URLs
+        // rather than leaking one per defect.
+        let _rvPhotoUrls = [];
+        function _rvRevokePhotoUrls() {
+            for (const u of _rvPhotoUrls) { try { URL.revokeObjectURL(u); } catch (e) {} }
+            _rvPhotoUrls = [];
         }
         // Searchable combobox for the review screen's Address / Contractor pickers.
         // Writes the chosen id into the hidden #rv-<kind> input that save reads.
@@ -8494,12 +8668,25 @@
             const suggestNote = autoCand ? autoCand.note : '';
             const refLbl = item.itemNo != null ? ('BPI #' + item.itemNo + (item.page ? ', p.' + item.page : '')) : (item.page ? 'Page ' + item.page : '');
             const meta = [refLbl, effTrade ? 'Trade: ' + effTrade + tradeTag : '', suggestNote].filter(Boolean).join(' · ');
+            // This item's photo out of the report, shown BEFORE saving so a
+            // mis-pairing is obvious while it's still fixable. Object URLs are
+            // revoked on the next render (see _rvPhotoUrls below).
+            _rvRevokePhotoUrls();
+            const myShots = (item.itemNo != null && r.photos) ? (r.photos.get(item.itemNo) || []) : [];
+            const shotHtml = myShots.map(b => {
+                const u = URL.createObjectURL(b); _rvPhotoUrls.push(u);
+                return `<img src="${u}" alt="report photo" style="max-height:150px;border-radius:6px;border:1px solid var(--border-color,#ccc)">`;
+            }).join('');
+            const photoBlock = shotHtml
+                ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${shotHtml}</div>`
+                : (r.photoNote ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">📷 ${r.photoNote}</div>` : '');
             impOverlay(`
                 <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-progress">${r.saved} saved · ${r.items.length - r.index} to review</div>
                     <div class="imp-bar"><i style="width:${pct}%"></i></div>
                     ${meta ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">📄 ${meta}</div>` : ''}
+                    ${photoBlock}
                     <div class="imp-field">
                         <label>Defect description</label>
                         <textarea id="rv-desc">${(item.description || '').replace(/</g, '&lt;')}</textarea>
@@ -8586,7 +8773,19 @@
                 const cur = r.items[r.index];
                 const ref = (cur && typeof cur === 'object' && cur.itemNo != null)
                     ? `BPI #${cur.itemNo}${cur.page ? ' (p.' + cur.page + ')' : ''} — ` : '';
-                db.addDefect({ addressId, contractorId: contractorId || null, description: ref + desc, location, status: 'open', unassigned: !contractorId });
+                const savedDefect = db.addDefect({ addressId, contractorId: contractorId || null, description: ref + desc, location, status: 'open', unassigned: !contractorId });
+                // Attach this item's supporting photo, cut out of the report PDF.
+                // Goes through CloudPhotos.savePhoto — the durable path that keeps
+                // the blob on the phone first and retries until it uploads, so an
+                // import with no reception still lands its photos later.
+                try {
+                    const shots = (cur && cur.itemNo != null && r.photos) ? r.photos.get(cur.itemNo) : null;
+                    if (shots && shots.length && savedDefect && savedDefect.id != null) {
+                        const cp = window.CloudPhotos;
+                        const put = cp && (cp.savePhoto || cp.queueRowPhoto || cp.uploadWhenReady);
+                        if (put) shots.forEach(b => put.call(cp, savedDefect.id, b));
+                    }
+                } catch (e) { console.warn('[BPI] attach photo', e); }
                 if (contractorId) {
                     learnFromAssignment((location || '') + ' ' + desc, contractorId);            // local: phrase → contractor
                     const learnedTrade = contractorToBpiTrade(db.getContractor(contractorId));   // shared: phrase → trade

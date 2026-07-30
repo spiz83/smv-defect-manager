@@ -92,6 +92,32 @@ id-recycling regression, 11 paging boundary checks, BPI checklist stripping.
 6. Supervisors must be told: saving is now all-or-nothing per tap. An
    unrecognised supplier refuses the whole save and names the block
 
+## BPI supporting photos (2026-07-30) — awaiting deploy approval
+
+Ported from CH Tracker (`src/lib/bpiPhotos.ts`) so the phone and desktop
+imports behave identically: a BPI PDF dropped here now has each defect's
+supporting photo cut out of the report and attached to that defect.
+
+- Extraction is local — pdf.js placement rectangles + a canvas crop. No AI
+  call, no cost, nothing extra leaves the phone.
+- A photo belongs to the nearest Tag line at or ABOVE its centre. Only pages
+  the parser placed a defect on are searched, so the cover logo is ignored.
+- Photos go through `CloudPhotos.savePhoto`, the durable path, so an import
+  with no reception still lands them once back online.
+- The current item's photo shows on the review screen before you save it, so
+  a mis-pairing is visible while it's still fixable.
+- Verified against 204/9 Grass Tree Road: pairing is byte-identical to the
+  tracker's on all 3 photo pages, 12/12 defects.
+
+Not deployed — `AGENT_INSTRUCTIONS.md` says stop and ask before anything goes
+live. On branch `claude/bpi-photo-extraction`.
+
+**Known divergence to settle:** CH Tracker stamps BPI photos with a ~2-year
+`expires_at`; here they take the 42-day default, so the phone's copies get
+swept first. `sweepExpiredPhotos()` honours `expires_at` either way, so
+nothing breaks — but the two apps currently disagree on how long report
+evidence lives. Pick one policy and apply it to both.
+
 ## Backups
 Free plan has no automatic backups. A `backup.snapshot_defects()` function +
 pg_cron daily snapshot (14-day retention) was drafted — confirm it exists via
