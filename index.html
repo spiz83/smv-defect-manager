@@ -1334,8 +1334,17 @@
         body.design-f1 .contractor-section {
             background: var(--sur) !important; border: 1px solid var(--brd) !important; box-shadow: none !important;
         }
+        /* Supplier headings sit in the SAME family as the job rows on the index
+           (Spiro 2026-07-30 — the defects page "seemed like a different font").
+           It was Bebas Neue, a condensed all-caps face used nowhere on the index,
+           which is what read as a font change on the way into a job.
+           text-transform keeps the shouty look Bebas gave for free (it has no
+           lowercase glyphs), and the size drops a touch because Titillium is the
+           wider face — same footprint, so the compact rows don't grow. */
         body.design-f1 .contractor-name, body.design-f1 .sg-name {
-            font-family: 'Bebas Neue', sans-serif !important; letter-spacing: .06em; color: var(--acc) !important;
+            font-family: 'Titillium Web', sans-serif !important;
+            font-weight: 700 !important; text-transform: uppercase;
+            font-size: 15px; letter-spacing: .02em; color: var(--acc) !important;
         }
 
         /* Status pills / badges → telemetry flags (mono, glow-less) */
@@ -1431,7 +1440,10 @@
         .defect-loc.has-loc { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
         .comms-btn, .photo-btn { padding: 1px 4px !important; font-size: 11px !important; }
         .photo-count { margin-left: 1px !important; font-size: 9px !important; }
-        body.design-f1 .defect-loc { font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .04em; border-radius: 3px; }
+        /* Location pill: same family as the description it sits beside, so the row
+           reads as one thing. Was JetBrains Mono. Size/padding untouched — this is
+           a family swap only, the row stays as compact as it was. */
+        body.design-f1 .defect-loc { font-family: 'Titillium Web', sans-serif; text-transform: uppercase; letter-spacing: .04em; border-radius: 3px; }
 
         /* Per-supplier email button on the contractor header */
         .contractor-name.contractor-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
