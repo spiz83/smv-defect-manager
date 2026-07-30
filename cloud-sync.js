@@ -2268,8 +2268,33 @@
         const tombsOk = await ensureTombstones(!!knownUuid);
         if (isTombstoned(d)) { purgeLocalDefect(legacyId); persistSyncState(); return; }
         if (knownUuid && !tombsOk) { return; }   // can't verify — retry via outbox later
-        const res = await sb.from('dm_defects').upsert(defectRow(d), { onConflict: 'legacy_id' }).select('id, legacy_id').maybeSingle();
+        const row = defectRow(d);
+        const res = await sb.from('dm_defects').upsert(row, { onConflict: 'legacy_id' }).select('id, legacy_id').maybeSingle();
         data = res.data; error = res.error;
+        // ADOPT-ON-CONFLICT (mig 105). The DB now carries a unique index on
+        // (job_id, description, contractor_id), so the insert above no longer
+        // silently creates a second copy of a defect that already exists under a
+        // different legacy_id — it fails with 23505 instead.
+        //
+        // That error is the good outcome, but it must not be retried: the row it
+        // collides with is the SAME defect, so replaying forever would just wedge
+        // the outbox. Claim the existing row as this local defect's cloud row and
+        // carry on — which is what the upsert was trying to achieve anyway.
+        if (error && String(error.code) === '23505') {
+          // Match the index exactly: contractor_id NULL has to be looked up with
+          // `is`, not `eq` (eq null matches nothing in PostgREST).
+          let q = sb.from('dm_defects').select('id, legacy_id')
+            .eq('job_id', row.job_id)
+            .eq('description', row.description);
+          q = row.contractor_id == null
+            ? q.is('contractor_id', null)
+            : q.eq('contractor_id', row.contractor_id);
+          const { data: found } = await q.maybeSingle();
+          if (found) {
+            console.info('[CloudSync] defect #' + d.id + ' already exists in the cloud — adopting it instead of adding a duplicate');
+            data = found; error = null;
+          }
+        }
       }
       if (error) throw error;
       if (data) { idMap.defects[d.id] = data.id; defectUuidToLegacy[data.id] = d.id; }

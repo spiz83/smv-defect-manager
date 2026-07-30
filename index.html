@@ -2045,7 +2045,12 @@
                 return id;
             }
 
-            addDefect(defect) {
+            // opts.matchCompleted — also match COMPLETED defects in the duplicate
+            // check below. Off by default (a closed item genuinely can recur and
+            // must be re-raisable); on for re-importing a source document, where
+            // an identical line is never a new occurrence, only the same line
+            // read twice. See the call site in the BPI review save handler.
+            addDefect(defect, opts) {
                 // Duplicate guard (root-cause fix for items "reappearing"): if a
                 // NON-completed defect with the same address + description already
                 // exists, return it instead of creating a second copy. A double-
@@ -2073,11 +2078,20 @@
                 const norm = (s) => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
                 const sameContractor = (a, b) =>
                     (a == null ? '' : String(a)) === (b == null ? '' : String(b));
+                // Completed rows are skipped UNLESS the caller is re-reading a
+                // source document (opts.matchCompleted). That exemption is what
+                // doubled Band Street: its 32 items had all been marked complete,
+                // so on the next import of the same report NOTHING matched and 32
+                // fresh copies were created — each with its own legacy id, which
+                // the cloud's legacy-id upsert can never merge back. The guard was
+                // strongest exactly when it was needed least, and absent once a
+                // list had been worked through (Spiro 2026-07-30).
+                const matchCompleted = !!(opts && opts.matchCompleted);
                 const dup = (this.data.defects || []).find(d =>
                     d.addressId === defect.addressId &&
                     norm(d.description) === norm(defect.description) &&
                     sameContractor(d.contractorId, defect.contractorId) &&
-                    d.status !== 'completed' && !d.completed
+                    (matchCompleted || (d.status !== 'completed' && !d.completed))
                 );
                 // Transient flag on the manager (NOT on the defect row) so callers can
                 // report "skipped" accurately without it reaching localStorage or the
@@ -8925,7 +8939,14 @@
                 const cur = r.items[r.index];
                 const ref = (cur && typeof cur === 'object' && cur.itemNo != null)
                     ? `BPI #${cur.itemNo}${cur.page ? ' (p.' + cur.page + ')' : ''} — ` : '';
-                const savedDefect = db.addDefect({ addressId, contractorId: contractorId || null, description: ref + desc, location, status: 'open', unassigned: !contractorId });
+                // matchCompleted: this line came out of a report, and the saved
+                // description carries the report's own "BPI #N (p.X) — " reference,
+                // so an exact match IS the same report item — never a recurrence.
+                // Without this, re-importing a report whose items had all been
+                // ticked off sailed past the duplicate guard and doubled the list.
+                const savedDefect = db.addDefect(
+                    { addressId, contractorId: contractorId || null, description: ref + desc, location, status: 'open', unassigned: !contractorId },
+                    { matchCompleted: true });
                 // Attach this item's supporting photo, cut out of the report PDF.
                 // Goes through CloudPhotos.savePhoto — the durable path that keeps
                 // the blob on the phone first and retries until it uploads, so an
