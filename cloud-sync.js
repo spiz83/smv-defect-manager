@@ -1905,9 +1905,15 @@
   // /go.html?f=… redirect on our own domain — short enough that mail apps
   // auto-linkify it (so the trade taps it, no copy-paste). Unguessable name.
   const SHARE_BUCKET = 'shared-pdfs';
+  let _lastShareKey = null;   // object name of the most recent uploadTempPdf (for CloudMail)
   const SHARE_BASE = 'https://smv-defect-manager.vercel.app/go.html?f=';
   window.CloudShare = {
     uploadTempPdf: async (blob, filename) => {
+      // Cleared per call: the fallback branch below uploads to a DIFFERENT
+      // bucket, which CloudMail cannot attach from. Without this reset a failed
+      // upload would leave the PREVIOUS report's key in place and the mailer
+      // would cheerfully attach the wrong supplier's PDF.
+      _lastShareKey = null;
       try {
         const rand = (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).slice(-12);
         const name = rand + '.pdf';
@@ -1921,9 +1927,48 @@
           const { data } = await sb.storage.from(REPORT_BUCKET).createSignedUrl(path, 604800);
           return data ? data.signedUrl : null;
         }
+        _lastShareKey = name;
         return SHARE_BASE + name;
       } catch (e) { console.error('[CloudShare] uploadTempPdf', e); return null; }
-    }
+    },
+    // The object NAME of the last uploadTempPdf, for the server-side mailer:
+    // it takes the key, not a URL, so the browser can never point it at
+    // another host. Set by uploadTempPdf above.
+    lastKey: () => _lastShareKey,
+  };
+
+  // ----- Server-side supplier email (real PDF attachment) -----
+  // A browser CANNOT attach a file to an email on an iPhone: mailto has no
+  // attachment field at all, and iOS Web Share injects the blob: URL into the
+  // body and drops the Subject. So the send happens server-side, in the
+  // email-supplier-defects Edge Function, which is identical from either app
+  // and on any device (Spiro 2026-07-30).
+  //
+  // Returns { ok, ownerOnly } on success, or { error, code } — callers fall
+  // back to the mailto + hosted link so nothing regresses if it isn't
+  // deployed yet.
+  window.CloudMail = {
+    sendSupplierDefects: async ({ to, subject, bodyText, pdfKey, filename }) => {
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        if (!session) return { error: 'Not signed in' };
+        const r = await fetch(cfg.url + '/functions/v1/email-supplier-defects', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + session.access_token,
+            apikey: cfg.anonKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ to, subject, bodyText, pdfKey, filename }),
+        });
+        const j = await r.json().catch(() => null);
+        if (!r.ok) return { error: (j && j.error) || ('Send failed (' + r.status + ')'), code: j && j.code };
+        return j || { ok: true };
+      } catch (e) {
+        console.error('[CloudMail] sendSupplierDefects', e);
+        return { error: String((e && e.message) || e) };
+      }
+    },
   };
 
   // ----- Framework call-up (BPI import contractor suggestions) -----

@@ -2614,8 +2614,8 @@
                                 <span class="supplier-actions">
                                     <button class="supplier-email-btn" onclick="openReassignGroup(${group.contractor.id != null ? group.contractor.id : 'null'}, ${addressId})" title="Reassign ALL of these defects to another contractor or trade">✏️</button>
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier — attaches the PDF where the device allows it (on iPhone/iPad Apple blocks file attachments from the browser, so it falls back to the link)">✉️</button>
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — tap-to-open link to the PDF (fills the subject in every mail app)">🔗</button>
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Attach the PDF — opens the share sheet, pick Mail. The file itself is attached, but you add the recipient and subject">📎</button>
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — ready to send, with a tap-to-open link to the PDF instead of an attachment">✉️</button>
                                     <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">📑</button>` : ''}
                                 </span>
                             </div>
@@ -5455,13 +5455,65 @@
             // into the message body on every file share and refuses to set a
             // Subject alongside an attachment, which is why this was abandoned
             // before and why ✉️ had silently become a duplicate of 🔗.
-            const iOSShare = /iPad|iPhone|iPod/.test(navigator.userAgent)
-                || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            if (!asLink && scopedPdf && !iOSShare
-                && navigator.canShare && navigator.canShare({ files: [scopedPdf] })) {
+            // FIRST CHOICE in attach mode: let the SERVER send it, so the PDF is
+            // genuinely attached on every device including iPhone, where no
+            // browser route can attach at all (Spiro 2026-07-30). Needs the
+            // email-supplier-defects Edge Function deployed and RESEND_API_KEY
+            // set; until then this returns an error and we fall straight through
+            // to the behaviour that already worked, so nothing regresses.
+            // Hoisted so the link path below reuses this upload instead of
+            // sending the same PDF up a second time on mobile data.
+            let hosted = null;
+            if (!asLink && scopedPdf && window.CloudMail && window.CloudShare) {
+                hosted = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name).catch(() => null);
+                const pdfKey = window.CloudShare.lastKey && window.CloudShare.lastKey();
+                if (hosted && pdfKey) {
+                    const bl = booking
+                        ? 'Please see attached Defects list and booking for ' + fmtDateNice(booking) + '.'
+                        : 'Please see attached Defects list.';
+                    const sent = await window.CloudMail.sendSupplierDefects({
+                        to: c.email, subject,
+                        bodyText: 'RE: ' + addr + '\n\n' + bl + '\n\nPlease confirm booking.\n',
+                        pdfKey, filename: scopedPdf.name,
+                    });
+                    if (sent && sent.ok) {
+                        // ownerOnly: Resend's shared onboarding sender only ever
+                        // delivers to the account owner, so say so rather than
+                        // let it look like the supplier got it.
+                        showToast(sent.ownerOnly
+                            ? 'Sent — but the server has no verified sending domain, so only YOU will receive it'
+                            : 'Emailed ' + c.name + ' with the PDF attached', !!sent.ownerOnly);
+                        markEmailedPending();
+                        return;
+                    }
+                    console.warn('[email] server send unavailable, falling back to link:', sent && sent.error);
+                }
+            }
+
+            // SECOND CHOICE: a real Web-Share file attachment. This now runs on
+            // iOS TOO (Spiro 2026-07-30 — "still doesn't attach... fix!").
+            //
+            // It was excluded because of an earlier on-device note saying Apple
+            // injects the blob: URL into the body on every file share. That is a
+            // reason for the body to look untidy — it is NOT a reason the file
+            // fails to attach, and attaching is the whole point of this button.
+            // mailto cannot ever attach (no attachment field exists in the URL
+            // scheme), and the server route needs a verified Resend domain that
+            // isn't in place. So this is the only thing on an iPhone that puts the
+            // PDF itself in the message.
+            //
+            // FILES ONLY — no title, no text. Pairing text with a file is what
+            // provokes the worst of Apple's behaviour, and it means the share
+            // sheet hands Mail a clean attachment. The trade is real and worth
+            // stating: you pick Mail from the sheet and fill in the recipient and
+            // subject yourself. 🔗 remains the one-tap pre-composed email for when
+            // a link will do — that is now the actual difference between the two
+            // buttons.
+            if (!asLink && scopedPdf && navigator.canShare && navigator.canShare({ files: [scopedPdf] })) {
                 try {
-                    await navigator.share({ files: [scopedPdf], title: subject, text: subject });
+                    await navigator.share({ files: [scopedPdf] });
                     markEmailedPending();
+                    showToast('PDF ready to attach — pick Mail, then add ' + (c.email || 'the supplier'));
                     return;
                 } catch (e) {
                     if (e && e.name === 'AbortError') return;   // user backed out
@@ -5473,8 +5525,8 @@
             // Subject + body — the only way iOS fills the Subject field — and the
             // defect list + photos ride as a tap-to-open hosted PDF link, so
             // nothing is attached (= no blob, subject stays).
-            let url = null;
-            try { if (scopedPdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name); }
+            let url = hosted;
+            try { if (!url && scopedPdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name); }
             catch (e) { console.error('supplier PDF link', e); }
 
             const bookingLine = booking
