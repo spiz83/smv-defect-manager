@@ -2614,8 +2614,8 @@
                                 <span class="supplier-actions">
                                     <button class="supplier-email-btn" onclick="openReassignGroup(${group.contractor.id != null ? group.contractor.id : 'null'}, ${addressId})" title="Reassign ALL of these defects to another contractor or trade">✏️</button>
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Attach the PDF — opens the share sheet, pick Mail. The file itself is attached, but you add the recipient and subject">📎</button>
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — ready to send, with a tap-to-open link to the PDF instead of an attachment">✉️</button>
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier with the PDF ATTACHED — opens the share sheet, pick Mail">✉️</button>
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — ready to send, with a tap-to-open link instead of an attachment">🔗</button>
                                     <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">📑</button>` : ''}
                                 </span>
                             </div>
@@ -7650,7 +7650,21 @@
         // sheet opened, false if it couldn't be used at all (caller falls back).
         function sharePdfOnTap(file, headline, note) {
             return new Promise((resolve) => {
-                if (!(navigator.canShare && navigator.canShare({ files: [file] }))) { resolve(false); return; }
+                // canShare() only shipped in Safari 16.4. Requiring it meant that on
+                // an older iPhone the check failed, this returned false, no overlay
+                // ever appeared and the caller silently fell back to the mailto
+                // link — indistinguishable from the bug it was meant to fix
+                // (Spiro 2026-07-30, 5th report). So: if canShare exists, trust it;
+                // if it doesn't, try share() anyway and let it tell us.
+                const canFiles = navigator.canShare
+                    ? navigator.canShare({ files: [file] })
+                    : typeof navigator.share === 'function';
+                if (!canFiles) {
+                    // Say so rather than fall through quietly, so a failure here is
+                    // never mistaken for "the attachment didn't work".
+                    showToast('This device can\u2019t attach files from the browser \u2014 sending a link instead', true);
+                    resolve(false); return;
+                }
                 impOverlay(`
                     <div id="imp-head"><strong>📎 ${headline}</strong><button id="imp-close">✕</button></div>
                     <div id="imp-body">
@@ -7666,6 +7680,11 @@
                     catch (e) {
                         if (e && e.name === 'AbortError') { finish(true); return; }  // user closed the sheet
                         console.error('sharePdfOnTap', e);
+                        // Name the failure on screen. Four silent fall-throughs to
+                        // the mailto link made every cause look identical from the
+                        // outside; if this fails again the toast says why.
+                        showToast('Attach failed: ' + ((e && (e.name + (e.message ? ' \u2014 ' + e.message : ''))) || 'unknown')
+                            + ' \u2014 sending a link instead', true);
                         finish(false);
                     }
                 };
@@ -9649,7 +9668,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-27k';
+        const APP_VERSION = '2026-07-30a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -9723,7 +9742,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-27k"></script>
+    <script src="cloud-sync.js?v=2026-07-30a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
