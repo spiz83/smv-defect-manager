@@ -2600,9 +2600,9 @@
                                 <span class="supplier-actions">
                                     <button class="supplier-email-btn" onclick="openReassignGroup(${group.contractor.id != null ? group.contractor.id : 'null'}, ${addressId})" title="Reassign ALL of these defects to another contractor or trade">✏️</button>
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier — PDF attached (photos)">✉️</button>
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — link to the PDF (fills the subject in every mail app)">🔗</button>
-                                    <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Generate a PDF of this contractor's open + pending items for this job">📑</button>` : ''}
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier — attaches the PDF where the device allows it (on iPhone/iPad Apple blocks file attachments from the browser, so it falls back to the link)">✉️</button>
+                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — tap-to-open link to the PDF (fills the subject in every mail app)">🔗</button>
+                                    <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">📑</button>` : ''}
                                 </span>
                             </div>
                             ${group.defects.map(defect => `
@@ -5412,13 +5412,19 @@
             // the PDF (both); Apple Mail keeps the PDF (subject stays in the body —
             // iOS won't set a Subject alongside any attachment). `defects` above is
             // already this contractor's open + pending items.
-            const files = [];
+            // NOTE (Spiro 2026-07-30): there used to be a `files` array here that
+            // collected the PDF in "attach mode" and was then never used — nothing
+            // ever called navigator.share with it. That is why ✉️ and 🔗 behaved
+            // identically: both fall through to the mailto + hosted link below.
+            // Removed rather than wired up, because on iOS a Web-Share file
+            // attachment is broken at the platform level (see the note in
+            // generateDefectPDF: Apple injects the blob: URL into the body on every
+            // file share, and a Subject cannot be set alongside an attachment).
+            // The hosted https link is the mechanism that actually works.
             let scopedPdf = null;
             try {
                 scopedPdf = await generateDefectPDF(defects, { photos: true, asFile: true, statuses: ['open', 'pending'], addressIds: [addressId], contractorIds: [contractorId], groupBy: 'address' });
-                if (scopedPdf && !asLink) files.push(scopedPdf);   // attach mode only; link mode hosts it below
             } catch (e) { console.error('supplier email PDF', e); }
-            const reportAttached = false;
 
             // Once the email is sent, move every item we just emailed from
             // 'open' (red) to 'pending' (amber) — they're now ordered/booked
@@ -5429,11 +5435,30 @@
                 if (changed) { render(); flushStatus(); showToast(changed + ' item' + (changed === 1 ? '' : 's') + ' marked pending'); }
             };
 
-            // Open the Mail app via mailto so it gets a REAL Subject + body (the
-            // only way iOS fills the Subject field — a share-sheet attachment
-            // never does, and pairing text with a file leaks a blob: link).
-            // The defect list + photos ride as a tap-to-open PDF link, hosted
-            // in the cloud, so nothing is attached (= no blob, subject stays).
+            // ATTACH MODE (✉️) — a real file attachment, where the platform can do
+            // one. Desktop Chrome/Edge and Android hand the PDF to the mail app
+            // properly. iOS is deliberately excluded: Apple injects the blob: URL
+            // into the message body on every file share and refuses to set a
+            // Subject alongside an attachment, which is why this was abandoned
+            // before and why ✉️ had silently become a duplicate of 🔗.
+            const iOSShare = /iPad|iPhone|iPod/.test(navigator.userAgent)
+                || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            if (!asLink && scopedPdf && !iOSShare
+                && navigator.canShare && navigator.canShare({ files: [scopedPdf] })) {
+                try {
+                    await navigator.share({ files: [scopedPdf], title: subject, text: subject });
+                    markEmailedPending();
+                    return;
+                } catch (e) {
+                    if (e && e.name === 'AbortError') return;   // user backed out
+                    console.error('supplier email attach', e);  // fall through to the link
+                }
+            }
+
+            // LINK MODE (🔗), and iOS's only working route. mailto gets a REAL
+            // Subject + body — the only way iOS fills the Subject field — and the
+            // defect list + photos ride as a tap-to-open hosted PDF link, so
+            // nothing is attached (= no blob, subject stays).
             let url = null;
             try { if (scopedPdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name); }
             catch (e) { console.error('supplier PDF link', e); }
@@ -5458,11 +5483,44 @@
             const defects = (db.data.defects || []).filter(d =>
                 d.addressId === addressId && d.contractorId === contractorId && !d.completed);
             if (!defects.length) { showToast('No open items for this supplier', true); return; }
+            // OPENED, not downloaded (Spiro 2026-07-30 — "the pdf should generate
+            // and open"). This used to call generateDefectPDF without asFile, which
+            // on iOS ends in navigator.share — a share SHEET, not the document —
+            // and then said "PDF downloaded" regardless of what actually happened.
+            //
+            // The tab is opened here, synchronously, BEFORE any await: iOS blocks
+            // window.open once the click gesture has been handed back, so opening
+            // it after the upload would be swallowed by the popup blocker.
+            const tab = window.open('', '_blank');
             showToast('Building PDF…');
             try {
-                await generateDefectPDF(defects, { photos: true, statuses: ['open', 'pending'], addressIds: [addressId], contractorIds: [contractorId], groupBy: 'address' });
-                showToast('PDF downloaded');
-            } catch (e) { console.error('contractor job PDF', e); showToast('Could not build the PDF', true); }
+                const file = await generateDefectPDF(defects, {
+                    photos: true, asFile: true, statuses: ['open', 'pending'],
+                    addressIds: [addressId], contractorIds: [contractorId], groupBy: 'address',
+                });
+                if (!file) throw new Error('PDF builder returned nothing');
+                let url = null;
+                try { if (window.CloudShare) url = await window.CloudShare.uploadTempPdf(file, file.name); }
+                catch (e) { console.error('contractor job PDF host', e); }
+                if (url) {
+                    if (tab) tab.location.href = url; else window.location.href = url;
+                    showToast('PDF opened');
+                    return;
+                }
+                // Hosting unavailable (offline) — hand the file over locally rather
+                // than leaving a blank tab sitting there.
+                if (tab) tab.close();
+                const blobUrl = URL.createObjectURL(file);
+                const a = document.createElement('a');
+                a.href = blobUrl; a.download = file.name; a.rel = 'noopener';
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+                showToast('PDF saved — could not reach the server to open it', true);
+            } catch (e) {
+                if (tab) tab.close();
+                console.error('contractor job PDF', e);
+                showToast('Could not build the PDF', true);
+            }
         }
 
         // Defects currently in view — matches what generateDefectText() lists, so
