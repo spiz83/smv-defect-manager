@@ -504,7 +504,7 @@
       selectAllRows('dm_trades', '*', 'id'),
       selectAllRows('dm_contractors', '*', 'id'),
       selectAllRows('dm_contractor_trades', 'contractor_id, trade_id', 'contractor_id'),
-      selectAllRows('jobs', 'id, job_number, lot, street, suburb, active', 'id'),
+      selectAllRows('jobs', 'id, job_number, lot, street, suburb, active, status', 'id'),
       selectAllRows('dm_defects', '*', 'id'),
       selectAllRows('job_call_up_archive', 'job_id, cost_centre, supplier_name', 'job_id'),   // Framework call-up archive (accumulates across uploads); best-effort
       selectAllRows('job_called_for_archive', 'job_id, activity, supplier_name, called_actual, last_seen_at', 'job_id'),   // Called For archive (who actually did each trade activity, with recency); best-effort
@@ -569,8 +569,20 @@
     // job uuid is the legacy int id the rest of the app keys off. Address text
     // is "Lot N, Street" + suburb, job_number kept as propertyNumber for search.
     jobs.data.forEach(j => {
-      // Hide handed-over jobs (active = false) unless a manager has toggled them on.
-      if (!showInactiveJobs && j.active === false) return;
+      // Hide handed-over jobs unless a manager has toggled them on.
+      //
+      // Driven by the v7 `status` enum, NOT the legacy `active` boolean.
+      // CH Tracker's CLAUDE.md is explicit that `active` is legacy and only
+      // `status` (admin/pre_planner/active/completed) governs the lifecycle,
+      // so `active` can sit stale at false on a job that is very much live.
+      // This filter used to read that stale boolean and hide the job — and
+      // because a defect whose job isn't visible is dropped further down,
+      // every defect on it silently disappeared from the phone while showing
+      // fine in CH Tracker (Band Street, Spiro 2026-07-30).
+      // Falls back to `active` only when status is unreadable.
+      const jStatus = j.status || (supByJob[j.id] || {}).status || '';
+      const hidden = jStatus ? (jStatus === 'completed') : (j.active === false);
+      if (!showInactiveJobs && hidden) return;
       const lid = hashId(j.id);
       idMap.addresses[lid] = j.id; uuidToLegacy.addresses[j.id] = lid;
       // Clean sort keys: street NAME (strip any leading house number) and the
@@ -640,10 +652,12 @@
       };
     }
 
+    let droppedNoJob = 0;
+    const droppedJobIds = new Set();
     defects.data.forEach(d => {
       // d.job_id -> address legacy id. Skip any defect whose job isn't visible.
       const addressLid = d.job_id != null ? uuidToLegacy.addresses[d.job_id] : null;
-      if (addressLid == null) return;
+      if (addressLid == null) { droppedNoJob++; if (d.job_id) droppedJobIds.add(d.job_id); return; }
       const lid = d.legacy_id != null ? d.legacy_id : hashId(d.id);
       idMap.defects[lid] = d.id;
       defectUuidToLegacy[d.id] = lid;
@@ -662,6 +676,13 @@
         bookingAt: d.booking_at                    // supplier attendance/booking date
       });
     });
+    // Never drop defects silently again. This is what made Band Street look
+    // empty on the phone while CH Tracker showed its items: the job was hidden,
+    // so its defects went nowhere and said nothing about it.
+    if (droppedNoJob) {
+      console.warn('[CloudSync] ' + droppedNoJob + ' defect(s) hidden — their job is not visible on this phone. job_ids: '
+        + [...droppedJobIds].join(', ') + (showInactiveJobs ? '' : ' (completed jobs are hidden; CloudSync.setShowInactive(true) to include them)'));
+    }
 
     // A local edit may have landed WHILE we were fetching — don't overwrite it.
     // Compared against the state at entry, so a device that was already stuck
@@ -2247,8 +2268,14 @@
     // job_id; if it's empty (cold boot), fetch the jobs to build it.
     if (!Object.keys(idMap.addresses).length) {
       try {
-        const { data: jobs } = await selectAllRows('jobs', 'id, active', 'id');
-        (jobs || []).forEach((j) => { if (showInactiveJobs || j.active !== false) idMap.addresses[hashId(j.id)] = j.id; });
+        // Same status-over-`active` rule as the main pull — see the comment
+        // there. A stale `active=false` here would leave the job unmapped and
+        // commitDefect unable to set job_id.
+        const { data: jobs } = await selectAllRows('jobs', 'id, active, status', 'id');
+        (jobs || []).forEach((j) => {
+          const hidden = j.status ? (j.status === 'completed') : (j.active === false);
+          if (showInactiveJobs || !hidden) idMap.addresses[hashId(j.id)] = j.id;
+        });
       } catch (e) { /* offline — try again next boot */ }
     }
     // Build the contractor map too BEFORE pushing — otherwise commitDefect can't

@@ -120,6 +120,26 @@ omitting it keeps the column default, so every existing photo path is
 unchanged. The duration rides in the IndexedDB queue and is applied when the
 photo LANDS, so a phone offline for a week doesn't lose a week.
 
+## Defects missing from the phone — fixed (2026-07-30)
+
+Band Street showed items in CH Tracker and nothing here. Cause: the job
+visibility filter in `pullAll` read the LEGACY `jobs.active` boolean. CH
+Tracker moved to the v7 `status` enum and its CLAUDE.md is explicit that
+`active` is legacy and only `status` governs the lifecycle — so `active` can
+sit stale at `false` on a live job. That hid the job, and a defect whose job
+isn't visible is dropped by the loop below it, so every defect on that job
+vanished from the phone without a word.
+
+Now driven by `status` (hidden only when `completed`), falling back to
+`active` only when status is unreadable. Applied in both places that build
+`idMap.addresses` — the main pull and the cold-boot map used by
+`commitDefect`. `jobs` select now includes `status`.
+
+Dropped defects also log a warning naming the job_ids, so this can never be
+silent again. No data was ever lost — the rows were always in `dm_defects`;
+they just had nowhere to land on the phone.
+
+
 ## Backups
 Free plan has no automatic backups. A `backup.snapshot_defects()` function +
 pg_cron daily snapshot (14-day retention) was drafted — confirm it exists via
