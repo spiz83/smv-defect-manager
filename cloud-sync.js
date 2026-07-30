@@ -1261,7 +1261,11 @@
   // already told once when the photo first queued — re-toasting "No connection"
   // on every 20s retry cycle (even WITH reception, when the real failure was a
   // server rejection) made the banner look permanently stuck (Spiro 2026-07-11).
-  async function uploadDefectPhoto(legacyId, file, idKey, quiet) {
+  // keepDays: optional override for how long the photo is retained. Omitted =
+  // the dm_defect_photos.expires_at default (42 days) as before. BPI report
+  // photos pass 60, matching CH Tracker so a report retained the same length
+  // whichever app imported it (Spiro 2026-07-30).
+  async function uploadDefectPhoto(legacyId, file, idKey, quiet, keepDays) {
     const uuid = await resolveDefectUuid(legacyId);
     if (!uuid) { return false; }   // defect not in cloud yet — keep the photo queued, retry later
     // Honest failure wording: only claim "No connection" when the device is
@@ -1295,7 +1299,11 @@
         already = !!(ex && ex.length);
       } catch (e) { /* treat as not-yet-recorded; insert below */ }
       if (!already) {
-        const ins = await withTimeout(sb.from('dm_defect_photos').insert({ defect_id: uuid, storage_path: path, bytes: blob.size }), 30000, 'photo record');
+        // Retention runs from when the photo actually LANDS, not when it was
+        // queued — a phone that was offline for a week shouldn't lose a week.
+        const rec = { defect_id: uuid, storage_path: path, bytes: blob.size };
+        if (keepDays > 0) rec.expires_at = new Date(Date.now() + keepDays * 864e5).toISOString();
+        const ins = await withTimeout(sb.from('dm_defect_photos').insert(rec), 30000, 'photo record');
         if (ins.error) { console.error(ins.error); if (!quiet) photoProgError(failMsg()); return false; }
       }
     } catch (e) {
@@ -1558,11 +1566,14 @@
       req.onerror = () => reject(req.error);
     });
   }
-  async function pendingPut(legacyId, blob) {
+  async function pendingPut(legacyId, blob, keepDays) {
     const db = await idbOpen();
     return new Promise((resolve, reject) => {
       const tx = db.transaction('q', 'readwrite');
-      tx.objectStore('q').put({ key: `${legacyId}|${Date.now()}|${Math.random().toString(36).slice(2)}`, legacyId, blob, ts: Date.now() });
+      // keepDays rides along so a photo queued offline still gets the right
+      // retention when it finally uploads. Items queued before this existed
+      // have it undefined and fall back to the column default.
+      tx.objectStore('q').put({ key: `${legacyId}|${Date.now()}|${Math.random().toString(36).slice(2)}`, legacyId, blob, ts: Date.now(), keepDays: keepDays || undefined });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -1645,7 +1656,7 @@
         try {
           // Pass the outbox key so the storage path is deterministic (retry-safe).
           const quiet = (photoFailCounts[it.key] || 0) > 0;
-          const ok = await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet);
+          const ok = await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays);
           if (ok) { delete photoFailCounts[it.key]; await pendingDelete(it.key); await refreshPendingCounts(); }
           else photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1;
         } catch (e) { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; /* leave it queued; next sweep retries */ }
@@ -1677,9 +1688,9 @@
   // the app is closed, or there's no reception — THEN attempt the upload in the
   // background. The photo shows immediately (optimistic badge + gallery) and the
   // retry loop lands it whenever signal allows.
-  async function savePhotoDurable(legacyId, fileOrBlob) {
+  async function savePhotoDurable(legacyId, fileOrBlob, keepDays) {
     let persisted = false;
-    try { await pendingPut(legacyId, fileOrBlob); persisted = true; } catch (e) { /* IndexedDB unavailable */ }
+    try { await pendingPut(legacyId, fileOrBlob, keepDays); persisted = true; } catch (e) { /* IndexedDB unavailable */ }
     if (persisted) {
       await refreshPendingCounts();                       // badge + banner show it at once
       try { await commitDefect(legacyId); } catch (e) {}  // ensure the defect row exists to attach to
@@ -1688,7 +1699,7 @@
     }
     // No IndexedDB at all (very rare) — last resort, attempt a direct upload so
     // we at least try rather than silently dropping it.
-    try { await window.CloudPhotos.uploadWhenReady(legacyId, fileOrBlob); return true; }
+    try { await window.CloudPhotos.uploadWhenReady(legacyId, fileOrBlob, keepDays); return true; }
     catch (e) { showToastSafe('Could not save photo on this device'); return false; }
   }
 
@@ -1741,7 +1752,7 @@
     // were silently dropped. flushPending() runs the pending push and waits for
     // the insert to populate idMap.defects[legacyId]; loop a few times so a
     // transient push error (which runSync retries) still resolves.
-    uploadWhenReady: async (legacyId, file) => {
+    uploadWhenReady: async (legacyId, file, keepDays) => {
       // Direct-write the defect so its row (and uuid) exists, then upload. Retry
       // a few times for a transient/offline hiccup.
       for (let i = 0; i < 30 && !idMap.defects[legacyId]; i++) {
@@ -1754,14 +1765,15 @@
         photoProgError('Photo not attached — defect still syncing. Reopen it and add the photo again.');
         return;
       }
-      await uploadDefectPhoto(legacyId, file);
+      await uploadDefectPhoto(legacyId, file, undefined, undefined, keepDays);
     },
     // THE durable save for any captured photo — persists to this phone FIRST,
     // then uploads in the background and retries until it lands. Used by both the
     // new-defect rows and the gallery "add photo to existing defect" button.
-    savePhoto: (legacyId, file) => savePhotoDurable(legacyId, file),
+    // keepDays is optional; omitted keeps the 42-day column default.
+    savePhoto: (legacyId, file, keepDays) => savePhotoDurable(legacyId, file, keepDays),
     // Back-compat alias (new-defect row photos call this name).
-    queueRowPhoto: (legacyId, file) => savePhotoDurable(legacyId, file),
+    queueRowPhoto: (legacyId, file, keepDays) => savePhotoDurable(legacyId, file, keepDays),
     // Pending (not-yet-uploaded) blobs for a defect — gallery shows these so a
     // photo is visible the instant it's taken, even offline.
     pendingPhotos: (legacyId) => pendingForLegacy(legacyId),

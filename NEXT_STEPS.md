@@ -112,11 +112,13 @@ supporting photo cut out of the report and attached to that defect.
 Not deployed — `AGENT_INSTRUCTIONS.md` says stop and ask before anything goes
 live. On branch `claude/bpi-photo-extraction`.
 
-**Known divergence to settle:** CH Tracker stamps BPI photos with a ~2-year
-`expires_at`; here they take the 42-day default, so the phone's copies get
-swept first. `sweepExpiredPhotos()` honours `expires_at` either way, so
-nothing breaks — but the two apps currently disagree on how long report
-evidence lives. Pick one policy and apply it to both.
+**Retention: settled at 60 days** (Spiro 2026-07-30). Both apps stamp BPI
+photos with `expires_at = now + 60 days` — longer than the 42-day default for
+site photos because the BPI shot is the defect's evidence, but bounded.
+`CloudPhotos.savePhoto(legacyId, blob, keepDays)` takes an optional retention;
+omitting it keeps the column default, so every existing photo path is
+unchanged. The duration rides in the IndexedDB queue and is applied when the
+photo LANDS, so a phone offline for a week doesn't lose a week.
 
 ## Backups
 Free plan has no automatic backups. A `backup.snapshot_defects()` function +

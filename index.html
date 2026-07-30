@@ -8239,6 +8239,11 @@
         // enough to hit that and no finer.
         const BPI_PHOTO_TARGET_PX = 620;   // native width of a BPI report photo
         const BPI_PHOTO_MIN_PT = 40;       // smaller than this is an icon, not a photo
+        // How long an extracted BPI photo is kept (Spiro 2026-07-30). Longer
+        // than the 42-day default for site photos — this one is the defect's
+        // evidence — but bounded. CH Tracker uses the same 60, so a report is
+        // retained identically whichever app imported it.
+        const BPI_PHOTO_DAYS = 60;
 
         // A photo belongs to the nearest Tag line at or ABOVE its vertical centre —
         // the report's reading order. Ascending sort matters: sorted the other way,
@@ -8783,7 +8788,7 @@
                     if (shots && shots.length && savedDefect && savedDefect.id != null) {
                         const cp = window.CloudPhotos;
                         const put = cp && (cp.savePhoto || cp.queueRowPhoto || cp.uploadWhenReady);
-                        if (put) shots.forEach(b => put.call(cp, savedDefect.id, b));
+                        if (put) shots.forEach(b => put.call(cp, savedDefect.id, b, BPI_PHOTO_DAYS));
                     }
                 } catch (e) { console.warn('[BPI] attach photo', e); }
                 if (contractorId) {
