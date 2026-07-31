@@ -1415,6 +1415,61 @@
         }
 
         /* ============================================================
+           PREVIEW MODE — walk-the-house view (Spiro 2026-07-31)
+           Description at readable size with its report photo directly
+           underneath, and one big target to tick it off.
+           ============================================================ */
+        .pv-seg { display: inline-flex; border: 1.5px solid var(--blue); border-radius: 999px; overflow: hidden; flex-shrink: 0; }
+        .pv-opt {
+            border: none; background: #fff; color: var(--blue); cursor: pointer;
+            padding: 6px 11px; font-size: 11px; font-weight: 800;
+            text-transform: uppercase; letter-spacing: .03em; line-height: 1;
+        }
+        .pv-opt.on { background: var(--blue); color: #fff; }
+        .pv-card {
+            position: relative; background: var(--card-bg, #fff);
+            border: 1px solid var(--border-color); border-radius: 12px;
+            margin: 0 12px 12px; overflow: hidden;
+        }
+        .pv-tab { position: absolute; left: 0; top: 0; bottom: 0; width: 7px; }
+        .pv-tab.status-open { background: #FF4D4F; }
+        .pv-tab.status-pending { background: #FFC02E; }
+        .pv-tab.status-completed { background: #3FCB7E; }
+        .pv-in { padding: 12px 13px 12px 18px; }
+        .pv-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 7px; }
+        .pv-ref { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-secondary); }
+        .pv-loc {
+            background: color-mix(in srgb, var(--blue) 12%, transparent); color: var(--blue);
+            border-radius: 999px; padding: 2px 9px; font-size: 10.5px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: .03em;
+        }
+        .pv-desc { font-size: 16.5px; line-height: 1.38; font-weight: 600; margin-bottom: 11px; }
+        .pv-photo {
+            width: 100%; aspect-ratio: 4 / 3; border-radius: 9px; overflow: hidden;
+            border: 1px solid var(--border-color); background: var(--bg-secondary);
+            display: flex; align-items: center; justify-content: center; cursor: zoom-in;
+        }
+        .pv-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .pv-ph-wait { font-size: 11px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
+        .pv-act { display: flex; align-items: center; gap: 9px; margin-top: 11px; }
+        .pv-tick {
+            flex: 1; padding: 12px; border-radius: 9px; cursor: pointer;
+            font-weight: 800; font-size: 13px; letter-spacing: .04em; text-transform: uppercase;
+            border: 1.5px solid; background: #fff;
+        }
+        .pv-t-open { border-color: #FF4D4F; color: #FF4D4F; }
+        .pv-t-done { border-color: #3FCB7E; background: #3FCB7E; color: #fff; }
+        .pv-mini {
+            width: 42px; height: 42px; flex-shrink: 0; border: 1px solid var(--border-color);
+            border-radius: 9px; background: #fff; font-size: 17px; cursor: pointer;
+        }
+        /* Ticked off, still on screen: visibly done, still undoable, and it holds
+           your scroll position half-way down a job. */
+        .pv-done .pv-desc { opacity: .5; text-decoration: line-through; }
+        .pv-done .pv-photo { opacity: .45; }
+        .pv-count { font-size: 11px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
+
+        /* ============================================================
            COMPACT DEFECT ROW — small status pill, location dropdown,
            and maximum room for the description.
            ============================================================ */
@@ -2595,6 +2650,7 @@
                         <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="Add defects for this job">${formatAddress(address)} ＋</div>
                         <div class="toolbar">
                             ${statusFilterButton()}
+                            ${previewToggle()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">➕</button>
@@ -2619,7 +2675,10 @@
                                     <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">📑</button>` : ''}
                                 </span>
                             </div>
-                            ${group.defects.map(defect => `
+                            ${previewMode() ? `<div style="padding:2px 14px 8px"><span class="pv-count" data-pvcount="${group.defects.map(d => d.id).join(',')}">${group.defects.filter(d => defectStatusOf(d) !== 'completed').length} of ${group.defects.length} outstanding</span></div>` : ''}
+                            ${previewMode()
+                                ? group.defects.map(defect => previewCard(defect)).join('')
+                                : group.defects.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
                                     <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
@@ -5173,6 +5232,104 @@
         }
         // The toolbar pill. Coloured dots show which statuses are on; a dimmed dot
         // means that status is hidden.
+        // ── PREVIEW MODE ────────────────────────────────────────────────────
+        // Walk-the-house mode (Spiro 2026-07-31). The compact list is built for
+        // scanning; this is built for DOING. Each defect becomes a card with its
+        // description at readable size and the report photo directly underneath,
+        // so you scroll thumb-first and tick items off as you find them —
+        // instead of opening every photo one at a time just to see what the item
+        // actually is.
+        function previewMode() { try { return localStorage.getItem('dm_preview') === '1'; } catch (e) { return false; } }
+        function setPreviewMode(on) {
+            try { localStorage.setItem('dm_preview', on ? '1' : '0'); } catch (e) {}
+            render();
+            if (on) void fillPreviewPhotos();
+        }
+        function previewToggle() {
+            const on = previewMode();
+            return `<span class="pv-seg" title="Preview shows each defect large, with its photo, for ticking off on site">
+                <button class="pv-opt ${on ? '' : 'on'}" onclick="event.stopPropagation(); setPreviewMode(false)">List</button>
+                <button class="pv-opt ${on ? 'on' : ''}" onclick="event.stopPropagation(); setPreviewMode(true)">Preview</button>
+            </span>`;
+        }
+        // One card. Photo slot is left empty and filled in after render by
+        // fillPreviewPhotos() — a card must never wait on the network to appear.
+        function previewCard(defect) {
+            const st = defectStatusOf(defect);
+            const done = st === 'completed';
+            const ref = String(defect.description || '').match(/^BPI #(\d+)(?:\s*\(p\.(\d+)\))?\s*—\s*/);
+            const body = ref ? String(defect.description).slice(ref[0].length) : (defect.description || '');
+            const refLbl = ref ? ('BPI #' + ref[1] + (ref[2] ? ' · p.' + ref[2] : '')) : '';
+            const loc = defect.location ? `<span class="pv-loc">${_pvEsc(defect.location)}</span>` : '';
+            const n = (window.CloudPhotos && window.CloudPhotos.count(defect.id)) || 0;
+            return `<div class="pv-card ${done ? 'pv-done' : ''}" data-pv="${defect.id}">
+                <span class="pv-tab status-${st}"></span>
+                <div class="pv-in">
+                    <div class="pv-meta">${refLbl ? `<span class="pv-ref">${refLbl}</span>` : ''}${loc}</div>
+                    <div class="pv-desc">${_pvEsc(body)}</div>
+                    ${n > 0 ? `<div class="pv-photo" data-pvphoto="${defect.id}" onclick="event.stopPropagation(); CloudPhotos.openGallery(${defect.id})">
+                        <div class="pv-ph-wait">loading photo…</div>
+                    </div>` : ''}
+                    <div class="pv-act">
+                        <button class="pv-tick ${done ? 'pv-t-done' : 'pv-t-open'}" onclick="event.stopPropagation(); pvToggleDone(${defect.id})">
+                            ${done ? '✓ Done' : '◯ Mark done'}
+                        </button>
+                        <button class="pv-mini" onclick="event.stopPropagation(); openDefectEdit(${defect.id})" title="Edit">✏️</button>
+                        <button class="pv-mini" onclick="event.stopPropagation(); openLocationPicker(${defect.id})" title="Location">📍</button>
+                    </div>
+                </div>
+            </div>`;
+        }
+        function _pvEsc(x) { return String(x == null ? '' : x).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
+        // Tap-to-complete. Deliberately does NOT re-render: the card stays put,
+        // greyed, so a mis-tap is one tap back and you keep your scroll position
+        // half-way down a job. It drops out of the list on the next load, the
+        // same way the tracker's row does.
+        function pvToggleDone(id) {
+            const d = db.data.defects.find(x => x.id === id); if (!d) return;
+            const next = defectStatusOf(d) === 'completed' ? 'open' : 'completed';
+            db.setDefectStatus(id, next);
+            flushStatus();
+            const card = document.querySelector(`.pv-card[data-pv="${id}"]`);
+            if (card) {
+                card.classList.toggle('pv-done', next === 'completed');
+                const tab = card.querySelector('.pv-tab');
+                if (tab) tab.className = 'pv-tab status-' + next;
+                const btn = card.querySelector('.pv-tick');
+                if (btn) {
+                    btn.className = 'pv-tick ' + (next === 'completed' ? 'pv-t-done' : 'pv-t-open');
+                    btn.textContent = next === 'completed' ? '✓ Done' : '◯ Mark done';
+                }
+            }
+            pvUpdateCounts();
+        }
+        function pvUpdateCounts() {
+            document.querySelectorAll('[data-pvcount]').forEach(el => {
+                const ids = String(el.getAttribute('data-pvcount') || '').split(',').filter(Boolean).map(Number);
+                const left = ids.filter(id => {
+                    const d = db.data.defects.find(x => x.id === id);
+                    return d && defectStatusOf(d) !== 'completed';
+                }).length;
+                el.textContent = left + ' of ' + ids.length + ' outstanding';
+            });
+        }
+        // Fill every visible card's photo in ONE batch, after the list is on
+        // screen. Cards render instantly; photos arrive when they arrive.
+        async function fillPreviewPhotos() {
+            if (!previewMode()) return;
+            const slots = [...document.querySelectorAll('[data-pvphoto]')];
+            if (!slots.length || !(window.CloudPhotos && window.CloudPhotos.thumbs)) return;
+            const ids = slots.map(el => Number(el.getAttribute('data-pvphoto')));
+            const urls = await window.CloudPhotos.thumbs(ids);
+            slots.forEach(el => {
+                const id = Number(el.getAttribute('data-pvphoto'));
+                const u = urls[id];
+                el.innerHTML = u
+                    ? `<img src="${u}" loading="lazy" alt="report photo">`
+                    : '<div class="pv-ph-wait">photo unavailable offline</div>';
+            });
+        }
+
         function statusFilterButton() {
             const flt = activeStatusFilter();
             const dots = STATUS_FILTER_OPTS
@@ -7023,6 +7180,9 @@
                 window.CloudPhotos && window.CloudPhotos.refreshCounts) {
                 window.CloudPhotos.refreshCounts();
             }
+            // Preview cards render with an empty photo slot so the list appears
+            // instantly; the images are fetched in one batch straight after.
+            if (typeof previewMode === 'function' && previewMode()) void fillPreviewPhotos();
         }
 
         function reloadContractorTrades() {
@@ -9668,7 +9828,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-07-31a';
+        const APP_VERSION = '2026-07-31b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -9742,7 +9902,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-07-31a"></script>
+    <script src="cloud-sync.js?v=2026-07-31b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
