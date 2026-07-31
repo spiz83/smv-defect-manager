@@ -1759,6 +1759,41 @@
     // row photos so markup works on every screen, not just the gallery.
     editPhoto: (file) => openPhotoEditor(file),
     getForPdf: (legacyId) => photoDataUrlsForDefect(legacyId),
+    // ONE signed URL per defect, for MANY defects, in two round trips.
+    // Preview mode shows a photo inline on every card, so the per-defect
+    // getLinks() below would fire a query per card — 24 defects, 48 requests,
+    // on a phone in a driveway. This does one select and one signing call.
+    // Keyed on defect_id (the uuid), never legacy_id: a defect imported in CH
+    // Tracker has legacy_id NULL and would otherwise be skipped entirely.
+    thumbs: async (legacyIds) => {
+      try {
+        const pairs = (legacyIds || [])
+          .map((lid) => [lid, idMap.defects[lid]])
+          .filter(([, uuid]) => !!uuid);
+        if (!pairs.length) return {};
+        const byUuid = {};
+        pairs.forEach(([lid, uuid]) => { byUuid[uuid] = lid; });
+        const { data: rows, error } = await sb.from('dm_defect_photos')
+          .select('defect_id, storage_path, created_at')
+          .in('defect_id', pairs.map(([, uuid]) => uuid))
+          .order('created_at', { ascending: true });
+        if (error || !rows || !rows.length) return {};
+        // First photo per defect — the BPI report shot, which is the one worth
+        // showing at a glance.
+        const firstPath = {};
+        rows.forEach((r) => { if (!firstPath[r.defect_id]) firstPath[r.defect_id] = r.storage_path; });
+        const paths = Object.values(firstPath);
+        const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(paths, 3600);
+        const urlByPath = {};
+        (signed || []).forEach((x) => { if (x && x.signedUrl) urlByPath[x.path] = x.signedUrl; });
+        const out = {};
+        Object.entries(firstPath).forEach(([uuid, path]) => {
+          const url = urlByPath[path];
+          if (url) out[byUuid[uuid]] = url;
+        });
+        return out;
+      } catch (e) { console.warn('[CloudPhotos] thumbs', e && e.message); return {}; }
+    },
     // Signed URLs (valid 7 days) for emailing photo links to a supplier
     getLinks: async (legacyId) => {
       const uuid = idMap.defects[legacyId];
