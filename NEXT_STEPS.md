@@ -3,8 +3,8 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
-## View Defects screens reworked (2026-08-02) — build `2026-08-02d`
-Merged to `main`. Build stamp `2026-08-02d` in all four places (index.html
+## View Defects screens reworked (2026-08-02) — build `2026-08-02e`
+Merged to `main`. Build stamp `2026-08-02e` in all four places (index.html
 `APP_VERSION` + `cloud-sync.js?v=`, sw.js `CACHE` + the CORE `?v=` entry).
 The letter advances on every push to `main`, because Pages publishes from it —
 never re-use a stamp that has reached a phone.
@@ -23,6 +23,11 @@ use — has to be deployed from a machine that's logged in.
   as DD/MM (date set) — never both. `fmtDateShort` is for that button ONLY;
   reports and emails still use `fmtDateNice` with the year, and so does the
   button's tooltip.
+- **Screen title + lot title are Titillium 700 upright, as-typed**, matching an
+  index job row, instead of 900 italic uppercase. The home hero is deliberately
+  excluded — it's the masthead. Twice now a "different font" report has turned
+  out to be weight/slant/case on a shared family: read the computed style before
+  reaching for `font-family`.
 
 - **Row actions are hidden until you double-tap a row** — the pencil, pin and
   camera open as a strip under the description, single tap closes it, one row

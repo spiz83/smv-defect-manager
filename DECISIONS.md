@@ -27,6 +27,24 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   seven-control supplier toolbar is smaller than it was — still a comfortable
   tap target, and verified fully inside the screen edge.
 
+## 2026-08-02 — Job + supplier screen headings drop the italic caps
+- **Decision:** On the View Defects and View Supplier screens, the screen title
+  and the `.lot-title` now use **Titillium Web 700, upright, as-typed** — the
+  same three properties an index job row uses — instead of 900 italic uppercase.
+  The home hero keeps its italic caps.
+- **Why:** Spiro: the defects screen "seemed like a different font" to the index.
+  It wasn't — computed styles confirm the index job rows, the defect rows and
+  these headings were all already Titillium Web. The difference was weight,
+  slant and case, so that's what changed. (Same finding as 2026-07-30 on the
+  supplier headings, one level up: check the computed style before swapping a
+  family.) The hero is the app's masthead, not a page heading, and isn't part of
+  what changes underfoot.
+- **Trade-off:** The screens read quieter — the italic caps were doing the work
+  of signalling "you are inside a job". The frozen header carries that now, and
+  it's a better signal because it stays on screen. Sentence case is narrower
+  than caps, so the lot title fell from **56px to 28px** — one line instead of
+  two — and on a frozen block every one of those pixels goes back to the list.
+
 ## 2026-08-02 — Supplier heading on one line
 - **Decision:** The supplier heading inside a job is now a single non-wrapping
   line. Three changes bought the width: the name takes every pixel the actions
