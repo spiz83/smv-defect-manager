@@ -2511,6 +2511,7 @@
                         <div class="lot-title">${contractor.name}</div>
                         <div class="toolbar">
                             ${statusFilterButton()}
+                            ${previewToggle()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="emailDefectList(true)" title="Email Defect List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">➕</button>
@@ -2548,7 +2549,10 @@
                         ${defectGroups.map(group => `
                             <div class="contractor-section">
                                 <div class="contractor-name" ${group.address && group.address.id != null ? `onclick="viewDefectsForAddress(${group.address.id})" style="cursor:pointer" title="View this address's defects"` : ''}>${formatAddress(group.address)}${group.address && group.address.id != null ? ' ›' : ''}</div>
-                                ${group.defects.map(defect => `
+                                ${previewMode() ? `<div style="padding:2px 14px 8px"><span class="pv-count" data-pvcount="${group.defects.map(d => d.id).join(',')}">${group.defects.filter(d => defectStatusOf(d) !== 'completed').length} of ${group.defects.length} outstanding</span></div>` : ''}
+                                ${previewMode()
+                                    ? group.defects.map(defect => previewCard(defect)).join('')
+                                    : group.defects.map(defect => `
                                     <div class="defect-item">
                                         ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
                                         <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>

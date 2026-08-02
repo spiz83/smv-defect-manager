@@ -27,6 +27,21 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   seven-control supplier toolbar is smaller than it was — still a comfortable
   tap target, and verified fully inside the screen edge.
 
+## 2026-08-02 — Preview mode reaches the supplier screen
+- **Decision:** `renderViewDefectsContractor` now honours preview mode and
+  carries the toggle icon, rendering walk-the-house cards grouped by address
+  with a per-address "N of M outstanding" count. Trade, multiple-suppliers and
+  All Defects stay list-only and carry no toggle.
+- **Why:** `dm_preview` is one global flag but only the address screen read it,
+  so a supervisor who turned Preview on and then opened a supplier silently got
+  compact rows back — the setting looked broken. The supplier screen is a
+  walk-the-house screen too: one trade's outstanding items across their jobs.
+- **Trade-off:** The supplier toolbar is now eight controls on one line. At
+  320px they shrink to ~18px, the floor of the `clamp()`. Verified as still one
+  row inside both screen edges; anything further would need the row to scroll.
+  Completed items stay as compact rows underneath the cards on both screens —
+  they're a record, not something you tick off on site.
+
 ## 2026-08-02 — `overflow-x: clip` on body, never `hidden`
 - **Decision:** The three `html, body { overflow-x: hidden }` rules now set
   `hidden` on `html` only; `body` gets `overflow-x: clip`.

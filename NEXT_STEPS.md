@@ -19,11 +19,11 @@ not been deployed — run the `deploy-defect-manager` skill when approved.
 - **The load-bearing fix:** body had `overflow-x: hidden`, which made it a
   scroll container and silently disabled `position: sticky` app-wide. Now
   `overflow-x: clip` on body, `hidden` on html. Don't put `hidden` back.
-- Preview mode still only renders on the **address/job** screen. The toggle icon
-  therefore only appears there. If supervisors want walk-the-house cards on the
-  supplier screen too, it's a small change in `renderViewDefectsContractor` —
-  add the `previewMode() ? previewCard(d) : row` branch and `${previewToggle()}`
-  to its toolbar. Deliberately not done: it changes what that screen shows.
+- Preview mode now works on the **supplier** screen as well as the address/job
+  screen, so the toggle is not a dead setting when you move between them. Its
+  cards are grouped by address with a per-address "N of M outstanding" count.
+  The trade / multiple-suppliers / All Defects screens stay list-only and have
+  no toggle — those are office screens, not walk-the-house ones.
 - Verified in real Chromium at 320px and 390px, in all three design modes:
   every toolbar one row, nothing past either edge, header frozen at scroll on
   both the address and supplier screens, filter modal still opens above it.
