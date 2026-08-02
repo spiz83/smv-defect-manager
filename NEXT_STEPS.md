@@ -76,8 +76,9 @@ un-bumped push ships to Vercel and never reaches a phone.
 ## READ THIS FIRST (for a fresh session)
 A long debugging session on 2026-07-27..29 found and fixed **six** faults plus
 **two regressions I introduced myself**. Versions `2026-07-27a` → `k`.
-`main` = the source of truth. Deploys are manual: `npx vercel deploy --prod
---yes --scope spiro-vladimiroskis-projects`.
+`main` = the source of truth. **Deploys are automatic — pushing `main` ships to
+Vercel** (corrected 2026-08-02; this line used to say they were manual and cost
+a session). Bump the stamp, push, done.
 
 Supabase project: **Homes Dashboard**, ref `cubwwnvzmeydyixhetfb` (NOT the
 paused "DefectFlow"). Shared with CH Tracker — one database, two apps.
