@@ -45,9 +45,19 @@ What the SUPERVISOR has to order, as opposed to what a trade has to fix.
   part. Don't "simplify" that later; read the DECISIONS entry first.
 - **Completing the defect clears the item** with no extra step, because the flag
   lives on the defect (`orderStatus`), not in a parallel list.
-- **Adding a synced field?** Copy `ensureOrderColumn()` in `cloud-sync.js`.
-  `defectRow()` feeds every defect write, so naming a column that doesn't exist
-  yet 400s the lot. Probe, degrade, never assume.
+- **Adding a synced field? Guard BOTH directions.** The write side is
+  `ensureOrderColumn()` — `defectRow()` feeds every defect write, so naming a
+  column that doesn't exist yet 400s the lot. The READ side matters just as
+  much and is easy to miss: `select('*')` can't error on a missing column, it
+  just omits it, so a naive `x: row.new_col || ''` resolves to empty and the
+  wholesale `db.data = newData` wipes the local value on the next pull. That
+  shipped as a bug on 2026-08-02 (🛒 "shows up then vanishes") and is fixed by
+  `prevOrder` in `pullAll`. Probe, degrade, preserve — never assume.
+- **Regression test:** `sync.mjs` in the scratchpad drives the real
+  `cloud-sync.js` pull against a stubbed Supabase whose `dm_defects` rows have
+  no `order_status` key (and whose `select('order_status')` 42703s), exactly
+  like the live database today. It covers both the un-migrated and migrated
+  worlds. Reverting the `prevOrder` line makes it fail — verified.
 
 ## Deep read — third-party private inspection reports (2026-08-02) — build `2026-08-02l`
 Manager-only. Report type **Private Inspection** + a PDF + the 🔬 Deep read

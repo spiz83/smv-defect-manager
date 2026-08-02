@@ -2,6 +2,35 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — The pull must PRESERVE a field the cloud can't carry yet
+- **Bug:** flagging a defect with 🛒 put it on the shopping list, then it
+  vanished seconds later. Reported from site the day the feature shipped.
+- **Cause:** the write guard was only half the problem. `ensureOrderColumn()`
+  correctly stopped the app sending a column that doesn't exist — but the PULL
+  read `orderStatus: d.order_status || ''` unconditionally, and `select('*')`
+  can't error on a missing column, it just doesn't return one. So every flag
+  resolved to `''`, and since `db.data = newData` replaces every defect
+  wholesale, the next pull (realtime nudge, tab focus, or the periodic one)
+  wiped it. Hence "shows up, then vanishes".
+- **Decision:** capture the device's existing flags before the rebuild and keep
+  them for any row the cloud returns **without** an `order_status` key. The test
+  is per ROW (`'order_status' in d`), not the session-wide capability flag, so
+  the cloud wins the instant it can carry the value — including clearing a flag
+  someone removed on another device.
+- **Also fixed:** `commitDefect` claimed its outbox slot AFTER `await
+  ensureOrderColumn()`. `pullAll()` bails while the outbox is non-empty, so a
+  pull landing during that probe — a real round-trip on the first write of a
+  session — would have rebuilt `db.data` with the edit unguarded. The slot is
+  now claimed before the first await.
+- **The general rule:** a write guard is not enough for a field the schema
+  doesn't have yet. Guard BOTH directions — the write must not send it, and the
+  read must not erase it. `select('*')` failing silent is what makes the read
+  side easy to miss.
+- **Trade-off:** while the column is missing, a flag cleared on another device
+  can't propagate (there's nowhere for it to travel). Both devices keep their
+  own view until the migration runs. Accepted: that state is temporary and one
+  SQL statement from over.
+
 ## 2026-08-02 — Preview toggle is `📺`, not `🖼️`
 - **Decision:** `ICON_CARDS` = `📺`. Preview mode is now a small television.
 - **Why:** Spiro, on site — the picture frame "looks weird". It reads as a

@@ -652,6 +652,25 @@
       };
     }
 
+    // Shopping-list flags this device already holds, keyed by legacy id. Read
+    // BEFORE the rebuild below, because `db.data = newData` replaces every
+    // defect wholesale.
+    //
+    // This is load-bearing until the order_status migration runs. Selecting '*'
+    // can't error on a missing column — it just doesn't return one — so the
+    // mapping quietly resolved every flag to '' and the next pull (realtime
+    // nudge, tab focus, or the periodic one) wiped it seconds after the
+    // supervisor set it. That is the "🛒 shows up then vanishes" bug
+    // (Spiro 2026-08-02).
+    //
+    // The test is per ROW, not the capability flag: `'order_status' in d` is
+    // true only when the column genuinely exists, so the cloud wins the moment
+    // it can carry the value — including clearing a flag someone else removed.
+    const prevOrder = Object.create(null);
+    for (const x of (db.data && db.data.defects) || []) {
+      if (x && x.orderStatus) prevOrder[x.id] = x.orderStatus;
+    }
+
     let droppedNoJob = 0;
     const droppedJobIds = new Set();
     defects.data.forEach(d => {
@@ -674,9 +693,9 @@
         lastEmailAt: d.last_email_at, lastSmsAt: d.last_sms_at,
         lastUpdateAt: d.last_update_at, followupAt: d.followup_at,
         bookingAt: d.booking_at,                   // supplier attendance/booking date
-        // Shopping list: '' | needed | ordered | done. Reads are safe before the
-        // migration — the pull selects '*', so this is simply undefined.
-        orderStatus: d.order_status || ''
+        // Shopping list: '' | needed | ordered | done. The cloud owns this once
+        // the column exists; until then keep what this device has (see prevOrder).
+        orderStatus: ('order_status' in d) ? (d.order_status || '') : (prevOrder[lid] || '')
       });
     });
     // Never drop defects silently again. This is what made Band Street look
@@ -2300,13 +2319,17 @@
   async function commitDefect(legacyId) {
     const d = (db.data.defects || []).find((x) => String(x.id) === String(legacyId));
     if (!d) { outboxRemove(legacyId); return; }   // deleted locally — nothing to write
-    await ensureOrderColumn();                    // before defectRow() is built
     // Mark this write PENDING for its whole in-flight window. pullAll() bails while
     // the outbox is non-empty, so a background pull (realtime/focus) can't rebuild
     // db.data and drop/revert this just-made edit before the upsert lands. Cleared
     // the instant the write confirms below. This is the belt-and-braces guard that
     // stops a freshly-picked contractor reverting on a poor connection.
+    //
+    // Claimed BEFORE the first await, not after: the capability probe below is a
+    // real round-trip on the first write of a session, and a pull landing in
+    // that window would rebuild db.data with this edit still unguarded.
     outboxAdd(legacyId);
+    await ensureOrderColumn();                    // before defectRow() is built
     if (!idMap.addresses[d.addressId]) { return; }   // job not mapped yet (RLS) — stays queued, retry later
     // DATA-LOSS GUARD: a defect IS assigned locally but the contractor map isn't
     // built yet (cold boot / pre-pull reconcile). Writing now would resolve the
