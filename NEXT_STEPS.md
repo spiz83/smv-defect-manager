@@ -3,8 +3,8 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
-## View Defects screens reworked (2026-08-02) — build `2026-08-02g`
-Merged to `main`. Build stamp `2026-08-02g` in all four places (index.html
+## View Defects screens reworked (2026-08-02) — build `2026-08-02h`
+Merged to `main`. Build stamp `2026-08-02h` in all four places (index.html
 `APP_VERSION` + `cloud-sync.js?v=`, sw.js `CACHE` + the CORE `?v=` entry).
 The letter advances on every push to `main`, because Pages publishes from it —
 never re-use a stamp that has reached a phone.
@@ -27,6 +27,14 @@ un-bumped push ships to Vercel and never reaches a phone.
   as DD/MM (date set) — never both. `fmtDateShort` is for that button ONLY;
   reports and emails still use `fmtDateNice` with the year, and so does the
   button's tooltip.
+- **All icons are one drawn family now** — `ICON_PATHS` + `ic(name)`, 32 icons,
+  1.75 stroke on a 24 grid, `currentColor` at `1em`. To add a control, add a
+  path to the map and call `ic('name')`; never reach for an emoji again. Empty
+  states and toasts are still emoji on purpose. The five-way chooser that
+  produced this lives at the artifact link in the 2026-08-02 session.
+- **Copy to clipboard is per-supplier too** (`copySupplierDefects`), a fourth
+  option in the send group. Whole-screen copy was never removed — it's in all
+  five toolbars; only the per-supplier version was missing.
 - **The job heading keeps its own row** (`.defects-header.hdr-inline`), 17px,
   toolbar on the row below. Header 115px -> 78px. The title is street
   (ellipsises) + job number (pinned), the suburb is dropped, and
