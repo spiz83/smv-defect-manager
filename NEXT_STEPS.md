@@ -3,8 +3,8 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
-## View Defects screens reworked (2026-08-02) — build `2026-08-02j`
-Merged to `main`. Build stamp `2026-08-02j` in all four places (index.html
+## View Defects screens reworked (2026-08-02) — build `2026-08-02k`
+Merged to `main`. Build stamp `2026-08-02k` in all four places (index.html
 `APP_VERSION` + `cloud-sync.js?v=`, sw.js `CACHE` + the CORE `?v=` entry).
 The letter advances on every push to `main`, because Pages publishes from it —
 never re-use a stamp that has reached a phone.
@@ -54,7 +54,8 @@ un-bumped push ships to Vercel and never reaches a phone.
   out to be weight/slant/case on a shared family: read the computed style before
   reaching for `font-family`.
 
-- **Row actions are hidden until you double-tap a row** — the pencil, pin and
+- **Row actions are hidden until you tap a row** (single tap — it was a double
+  tap for a few hours on 2026-08-02 and Spiro changed it after using it on site) — the pencil, pin and
   camera open as a strip under the description, single tap closes it, one row
   open at a time. `⋯` at the right edge is the affordance. It's one delegated
   click listener near `statusTab()` plus CSS on `.defect-item`, so it covers

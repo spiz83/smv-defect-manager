@@ -1661,12 +1661,13 @@
            longer than about four words pushed them onto a second line, so a
            three-word defect and a full sentence cost the same two lines and a
            screen held a third fewer items — the wording was what got squeezed.
-           They're hidden now; DOUBLE-TAP a row to open them as a full-width
-           strip underneath it, at 19px instead of 13px, which is a far bigger
-           target than what it replaces. The ⋯ at the right edge is the only
-           thing it costs: 15px, against roughly 90px of icons.
-           Selection is off on the row so iOS answers a double-tap by opening
-           the row instead of selecting a word and raising the callout menu. */
+           They're hidden now; ONE TAP on a row opens them as a full-width strip
+           underneath it, at 19px instead of 13px, which is a far bigger target
+           than what it replaces. The ⋯ at the right edge is the only thing it
+           costs: 15px, against roughly 90px of icons.
+           Selection stays off on the row: without it a stray double tap selects
+           a word and raises the iOS callout menu over the strip you just
+           opened. */
         .defect-item {
             padding-right: 15px !important;
             -webkit-user-select: none; user-select: none;
@@ -5108,37 +5109,29 @@
 
         // Left-edge status tab. Red = logged (not booked), Amber = booked in
         // (outstanding), Green = completed. Tap to advance (confirm on complete).
-        // Double-tap a defect row to reveal its pencil / pin / camera; double-tap
-        // again (or open another row) to put them away. Only one row is open at a
-        // time — the point of hiding them is a compact list, and several open
-        // strips would give that straight back.
+        // ONE tap on a defect row reveals its pencil / pin / camera; tap it again,
+        // or open another row, to put them away. Only one row is open at a time —
+        // the point of hiding them is a compact list, and several open strips
+        // would give that straight back.
+        //
+        // This was a DOUBLE tap until Spiro used it on site (2026-08-02). Double
+        // tap is a gesture you have to be told about; a single tap is the one
+        // every thumb tries first. The tap-timing detector it needed is gone, and
+        // with it the 450ms window where a slow second tap did nothing.
         //
         // Every button inside a row calls event.stopPropagation(), so only taps on
         // the row background or its description reach this listener: the status
-        // tab still advances on ONE tap, and tapping the revealed icons doesn't
-        // close the row underneath them. Delegated from document because the list
-        // is rebuilt wholesale on every render.
+        // tab still advances on one tap, and tapping a revealed icon doesn't shut
+        // the row underneath it. Delegated from document because the list is
+        // rebuilt wholesale on every render.
         (function bindRowExpand() {
-            let lastRow = null, lastTapAt = 0;
             document.addEventListener('click', function (e) {
                 const row = e.target && e.target.closest ? e.target.closest('.defect-item') : null;
-                if (!row) { lastRow = null; return; }
-                // Already open: ONE tap closes it, which is what the ✕ promises.
-                // Aiming for a revealed icon is still safe — those stop the event.
-                if (row.classList.contains('row-open')) {
-                    row.classList.remove('row-open');
-                    lastRow = null; lastTapAt = 0;
-                    return;
-                }
-                const now = Date.now();
-                if (row === lastRow && now - lastTapAt < 450) {
-                    lastRow = null; lastTapAt = 0;
-                    document.querySelectorAll('.defect-item.row-open')
-                        .forEach(r => r.classList.remove('row-open'));
-                    row.classList.add('row-open');
-                } else {
-                    lastRow = row; lastTapAt = now;
-                }
+                if (!row) return;
+                const wasOpen = row.classList.contains('row-open');
+                document.querySelectorAll('.defect-item.row-open')
+                    .forEach(r => r.classList.remove('row-open'));
+                if (!wasOpen) row.classList.add('row-open');
             });
         })();
 
@@ -10169,7 +10162,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02j';
+        const APP_VERSION = '2026-08-02k';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10243,7 +10236,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02j"></script>
+    <script src="cloud-sync.js?v=2026-08-02k"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

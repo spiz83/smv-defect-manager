@@ -143,6 +143,20 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   `.date-only` pads it to 42×29 and cancels that padding with an equal negative
   margin — the tap area grows, the heading stays 22px.
 
+## 2026-08-02 (later) — Make it a SINGLE tap
+- **Decision:** One tap on a defect row opens its pencil / pin / camera. Tap
+  again, or open another row, to close. The double-tap detector and its 450ms
+  window are deleted.
+- **Why:** Spiro used it on site. Double tap is a gesture you have to be *told*
+  about; a single tap is the one every thumb tries first. The timing window also
+  had a quiet failure mode — a second tap that arrived at 500ms did nothing at
+  all, which reads as the app ignoring you.
+- **Trade-off:** a mis-tap now opens a row rather than doing nothing, so the
+  list shifts under your thumb more often. Cheap to undo (tap again) and worth
+  it against a gesture nobody discovers. `user-select: none` stays on rows —
+  without it a stray double tap selects a word and raises the iOS callout menu
+  over the strip you just opened.
+
 ## 2026-08-02 — Row actions on demand: double-tap to open a defect row
 - **Decision:** The pencil / pin / camera no longer sit on every list row. A
   **double-tap** on a row opens them as a full-width strip underneath it, at
