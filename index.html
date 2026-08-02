@@ -392,12 +392,6 @@
             padding: 0;
         }
 
-        /* Every icon inherits the font-size already set on its button, so a call
-           site never names a pixel value. block avoids the inline-baseline gap;
-           .ic-inline is for the few that sit inside a run of text. */
-        .ic { width: 1em; height: 1em; display: block; flex: none; overflow: visible; }
-        .ic-inline { display: inline-block; vertical-align: -.14em; }
-
         /* Toolbar icons scale down with the screen so seven of them still fit a
            320px phone on one line. */
         .toolbar .icon-btn {
@@ -2597,15 +2591,15 @@
 
                     <div class="section-title">Reports</div>
                     <div class="reports-actions">
-                        <a href="#" class="report-link" onclick="event.preventDefault(); openRecentReports()"><span>${ic('recent')}</span> View Recent Reports</a>
-                        <a href="#" class="report-link" onclick="event.preventDefault(); openReportImport()"><span>${ic('addreport')}</span> Add Report</a>
-                        <a href="#" class="report-link" onclick="event.preventDefault(); openReportBuilder()"><span>${ic('report')}</span> Generate PDF Report</a>
-                        <a href="#" class="report-link" onclick="event.preventDefault(); openDeleteReports()"><span>${ic('delete')}</span> Delete Report</a>
+                        <a href="#" class="report-link" onclick="event.preventDefault(); openRecentReports()"><span>🗂️</span> View Recent Reports</a>
+                        <a href="#" class="report-link" onclick="event.preventDefault(); openReportImport()"><span>📥</span> Add Report</a>
+                        <a href="#" class="report-link" onclick="event.preventDefault(); openReportBuilder()"><span>📑</span> Generate PDF Report</a>
+                        <a href="#" class="report-link" onclick="event.preventDefault(); openDeleteReports()"><span>🗑️</span> Delete Report</a>
                     </div>
 
                     <div class="manage-row">
                         <a href="#" class="manage-link" onclick="event.preventDefault(); showManageScreen()">
-                            <span>${ic('settings')}</span>
+                            <span>⚙️</span>
                             <span>Settings</span>
                         </a>
                         <a href="#" class="view-all-link" onclick="event.preventDefault(); viewAllDefects()">View All Defects</a>
@@ -2656,10 +2650,10 @@
                         <div class="toolbar">
                             ${statusFilterButton()}
                             ${previewToggle()}
-                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">${ic('copy')}</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email Defect List">${ic('email')}</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">${ic('link')}</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">${ic('report')}</button>
-                            <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">${ic('add')}</button>
-                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">${ic('refresh')}</button>
+                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email Defect List">✉️</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">＋</button>
+                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2668,18 +2662,20 @@
                         <div style="flex: 1;">
                             <div style="margin-bottom: 5px;">
                                 ${contractor.email ? 
-                                    `${ic('email','ic-inline')} <a href="mailto:${contractor.email}" style="color: var(--blue); text-decoration: none;">${contractor.email}</a>` :
-                                    `${ic('email','ic-inline')} <span style="color: var(--text-secondary);">No email</span>`
+                                    `📧 <a href="mailto:${contractor.email}" style="color: var(--blue); text-decoration: none;">${contractor.email}</a>` :
+                                    `📧 <span style="color: var(--text-secondary);">No email</span>`
                                 }
                             </div>
                             <div>
                                 ${contractor.phone ? 
-                                    `${ic('call','ic-inline')} <a href="tel:${contractor.phone}" style="color: var(--blue); text-decoration: none;">${contractor.phone}</a>` :
-                                    `${ic('call','ic-inline')} <span style="color: var(--text-secondary);">No phone</span>`
+                                    `📞 <a href="tel:${contractor.phone}" style="color: var(--blue); text-decoration: none;">${contractor.phone}</a>` :
+                                    `📞 <span style="color: var(--text-secondary);">No phone</span>`
                                 }
                             </div>
                         </div>
-                        <button class="icon-btn" onclick="openEditContactModal(${contractorId})" title="Edit Contact Info" style="font-size: 24px;">${ic('edit')}</button>
+                        <button class="icon-btn" onclick="openEditContactModal(${contractorId})" title="Edit Contact Info" style="font-size: 24px;">
+                            ✏️
+                        </button>
                     </div>
 
                     ${nothingShown ? `
@@ -2763,8 +2759,8 @@
                         <div class="lot-title">${tradeName}</div>
                         <div class="toolbar">
                             ${statusFilterButton()}
-                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">${ic('copy')}</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">${ic('email')}</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">${ic('link')}</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">${ic('refresh')}</button>
+                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">✉️</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2844,10 +2840,10 @@
                         <div class="toolbar">
                             ${statusFilterButton()}
                             ${previewToggle()}
-                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">${ic('copy')}</button>
-                            <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">${ic('report')}</button>
-                            <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">${ic('add')}</button>
-                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">${ic('refresh')}</button>
+                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
+                            <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">＋</button>
+                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -2861,15 +2857,15 @@
                             <div class="contractor-name contractor-hdr">
                                 <span class="supplier-name" title="${(group.contractor.name || 'Unassigned').replace(/"/g, '&quot;')}" ${group.contractor.id != null ? `onclick="viewDefectsForContractor(${group.contractor.id})" style="cursor:pointer"` : ''}><span class="supplier-name-txt">${group.contractor.name || 'Unassigned'}</span>${group.contractor.id != null ? '<span class="supplier-chev">›</span>' : ''}</span>
                                 <span class="supplier-actions">
-                                    <button class="supplier-email-btn" onclick="openReassignGroup(${group.contractor.id != null ? group.contractor.id : 'null'}, ${addressId})" title="Reassign ALL of these defects to another contractor or trade">${ic('edit')}</button>
+                                    <button class="supplier-email-btn" onclick="openReassignGroup(${group.contractor.id != null ? group.contractor.id : 'null'}, ${addressId})" title="Reassign ALL of these defects to another contractor or trade">✏️</button>
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
                                     <span class="supplier-send">
-                                        <button class="supplier-email-btn send-toggle" onclick="toggleSupplierSend(this)" title="Send this supplier their list — tap to choose how">${ic('send')}</button>
+                                        <button class="supplier-email-btn send-toggle" onclick="toggleSupplierSend(this)" title="Send this supplier their list — tap to choose how">📤</button>
                                         <span class="send-opts">
-                                            <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier with the PDF ATTACHED — opens the share sheet, pick Mail">${ic('email')}</button>
-                                            <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — ready to send, with a tap-to-open link instead of an attachment">${ic('link')}</button>
-                                            <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">${ic('report')}</button>
-                                            <button class="supplier-email-btn" onclick="copySupplierDefects(${group.contractor.id}, ${addressId})" title="Copy just this supplier's items as text — paste into a message">${ic('copy')}</button>
+                                            <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier with the PDF ATTACHED — opens the share sheet, pick Mail">✉️</button>
+                                            <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — ready to send, with a tap-to-open link instead of an attachment">🔗</button>
+                                            <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">📑</button>
+                                            <button class="supplier-email-btn" onclick="copySupplierDefects(${group.contractor.id}, ${addressId})" title="Copy just this supplier's items as text — paste into a message">📋</button>
                                         </span>
                                     </span>` : ''}
                                 </span>
@@ -2910,8 +2906,8 @@
                         <a href="#" class="back-link" onclick="event.preventDefault(); backFromAddDefects()">Back</a>
                         <div class="header-title">Add Defects</div>
                         <span style="display:inline-flex;gap:6px;">
-                            <button class="icon-btn" onclick="openBulkPhotoImport(${addressId})" title="Bulk import photos — pick lots of photos, fill in the details for each after" style="font-size:30px;padding:8px 12px;line-height:1;">${ic('photos')}</button>
-                            <button class="icon-btn" onclick="saveAddDefectsAddress()" title="Save Defects" style="font-size:30px;padding:8px 12px;line-height:1;">${ic('save')}</button>
+                            <button class="icon-btn" onclick="openBulkPhotoImport(${addressId})" title="Bulk import photos — pick lots of photos, fill in the details for each after" style="font-size:30px;padding:8px 12px;line-height:1;">🖼️</button>
+                            <button class="icon-btn" onclick="saveAddDefectsAddress()" title="Save Defects" style="font-size:30px;padding:8px 12px;line-height:1;">💾</button>
                         </span>
                     </div>
 
@@ -2920,7 +2916,7 @@
                     </div>
 
                     <div style="padding: 0 14px;">
-                        <div onclick="openAddContractor('')" style="display:inline-flex;align-items:center;gap:6px;margin:4px 0;padding:8px 12px;border:1px dashed var(--border-color,#ccc);border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--blue,#2563eb);">${ic('addperson','ic-inline')} Contractor missing? Add one</div>
+                        <div onclick="openAddContractor('')" style="display:inline-flex;align-items:center;gap:6px;margin:4px 0;padding:8px 12px;border:1px dashed var(--border-color,#ccc);border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--blue,#2563eb);">👤＋ Contractor missing? Add one</div>
                     </div>
 
                     <div style="padding: 14px;">
@@ -2935,9 +2931,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-1-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-1" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
 
                         <!-- Contractor 2 -->
@@ -2951,9 +2947,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-2-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-2" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
 
                         <!-- Contractor 3 -->
@@ -2967,9 +2963,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-3-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-3" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
 
                         <!-- Contractor 4 -->
@@ -2983,9 +2979,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-4-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-4" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
 
                         <!-- Contractor 5 -->
@@ -2999,9 +2995,9 @@
                                        style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                                 <div id="add-contractor-5-dropdown" class="autocomplete-dropdown"></div>
                             </div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
-                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
+                            <div class="defect-input-row"><button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button><input type="text" class="add-defect-5" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button></div>
                         </div>
                     </div>
                 </div>
@@ -3016,7 +3012,7 @@
                     <div class="app-header">
                         <a href="#" class="back-link" onclick="event.preventDefault(); backFromAddDefects()">Back</a>
                         <div class="header-title">Add Defects</div>
-                        <button class="icon-btn" onclick="saveAddDefectsContractor()" title="Save Defects">${ic('save')}</button>
+                        <button class="icon-btn" onclick="saveAddDefectsContractor()" title="Save Defects">💾</button>
                     </div>
                     
                     <div class="defects-header">
@@ -3043,28 +3039,28 @@
                             <label style="display: block; font-size: 15px; font-weight: 600; margin-bottom: 10px;">Defects:</label>
                             <div id="add-defects-contractor-container">
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="add-defect-contractor-input" placeholder="Enter defect" style="flex: 1; padding: 10px; border: 1px solid #c6c6c8; border-radius: 8px; font-size: 16px;"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                             </div>
                         </div>
@@ -3115,8 +3111,8 @@
                         <div class="lot-title">Search Multiple Contractors:<br><span style="font-size: 14px; font-weight: 400; color: var(--text-secondary);">${contractorNames}</span></div>
                         <div class="toolbar">
                             ${statusFilterButton()}
-                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">${ic('copy')}</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">${ic('email')}</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">${ic('link')}</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">${ic('refresh')}</button>
+                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">✉️</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -3128,7 +3124,7 @@
                     ` : Object.keys(byAddressThenContractor).sort().map(addressKey => `
                         <div class="contractor-section">
                             <div class="contractor-name" style="background: var(--bg-secondary); padding: 10px 12px; margin: -12px -15px 10px -15px; border-radius: 0; font-size: 16px; color: var(--text-primary);">
-                                ${ic('location','ic-inline')} ${addressKey}
+                                📍 ${addressKey}
                             </div>
                             ${Object.keys(byAddressThenContractor[addressKey].contractors).sort().map(contractorName => `
                                 <div style="margin-bottom: 10px;">
@@ -3229,10 +3225,10 @@
                             </div>
                         </div>
                         <div class="toolbar">
-                            <button class="icon-btn" onclick="toggleShowCompleted()" title="${state.showCompleted ? 'Hide completed' : 'Show completed'}" style="${state.showCompleted ? 'background: var(--blue); color: #fff;' : ''}">${ic('eye')}</button>
-                            <button class="icon-btn" onclick="openReportBuilder()" title="Generate PDF Report">${ic('report')}</button>
-                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">${ic('copy')}</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">${ic('email')}</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">${ic('link')}</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">${ic('refresh')}</button>
+                            <button class="icon-btn" onclick="toggleShowCompleted()" title="${state.showCompleted ? 'Hide completed' : 'Show completed'}" style="${state.showCompleted ? 'background: var(--blue); color: #fff;' : ''}">👁️</button>
+                            <button class="icon-btn" onclick="openReportBuilder()" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">✉️</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -3245,7 +3241,7 @@
                     ` : addressGroups.map(addressGroup => `
                         <div class="contractor-section">
                             <div class="contractor-name" style="background: var(--bg-secondary); padding: 10px 12px; margin: -12px -15px 10px -15px; border-radius: 0; font-size: 16px; color: var(--text-primary);">
-                                ${ic('location','ic-inline')} ${addressGroup.addressKey}
+                                📍 ${addressGroup.addressKey}
                             </div>
                             ${Object.keys(addressGroup.contractors).sort().map(contractorName => `
                                 <div style="margin-bottom: 10px;">
@@ -3867,8 +3863,8 @@
                     <div class="autocomplete-item" style="display:flex;flex-wrap:nowrap;align-items:center;gap:8px;padding:10px 12px;font-size:15px;">
                         <div style="flex:1 1 auto;min-width:0;overflow:hidden;cursor:pointer;" onclick="viewDefectsFor('${item.type}', ${item.id})">${main}</div>
                         <div style="flex:0 0 auto;display:flex;gap:6px;">
-                            <div style="${ico}" onclick="event.stopPropagation();viewDefectsFor('${item.type}', ${item.id})" title="View defects">${ic('eye')}</div>
-                            ${canAdd ? `<div style="${ico}color:var(--acc,#2563eb);font-weight:800;" onclick="event.stopPropagation();addDefectsFor('${item.type}', ${item.id})" title="Add defects">${ic('add')}</div>` : ''}
+                            <div style="${ico}" onclick="event.stopPropagation();viewDefectsFor('${item.type}', ${item.id})" title="View defects">👁️</div>
+                            ${canAdd ? `<div style="${ico}color:var(--acc,#2563eb);font-weight:800;" onclick="event.stopPropagation();addDefectsFor('${item.type}', ${item.id})" title="Add defects">＋</div>` : ''}
                         </div>
                     </div>`;
                 }
@@ -4471,7 +4467,7 @@
                     row._photos.push(img);
                 }
                 btn.classList.add('has');
-                btn.innerHTML = ic('camera') + (row._photos.length > 1 ? `<span class="cnt">${row._photos.length}</span>` : '');
+                btn.innerHTML = '📷' + (row._photos.length > 1 ? `<span class="cnt">${row._photos.length}</span>` : '');
                 showToast(files.length > 1 ? `${files.length} photos attached` : 'Photo attached — it saves with this defect');
                 cleanup();
             };
@@ -4650,7 +4646,7 @@
             const cur = (row && row._location) || '';
             const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" data-val="${String(val).replace(/"/g, '&quot;')}">${label}</button>`;
             const items = opt('', '— None —') + DEFECT_LOCATIONS.map(l => opt(l, l)).join('');
-            impOverlay(`<div id="imp-head"><strong>${ic('location','ic-inline')} Location</strong><button id="imp-close">✕</button></div>
+            impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">${LOC_SEARCH_INPUT}<div class="loc-grid">${items}</div></div>`);
             focusLocSearch();
             document.querySelectorAll('#imp-ov .loc-opt').forEach(b => {
@@ -4659,7 +4655,7 @@
                     if (row) row._location = val;
                     btn.classList.toggle('has-loc', !!val);
                     btn.title = val || 'Set location';
-                    btn.innerHTML = ic('location') + ' ' + (val ? '<span class="row-loc-lbl">' + val + '</span>' : '<span class="row-loc-ph">Location</span>');
+                    btn.innerHTML = '📍 ' + (val ? '<span class="row-loc-lbl">' + val + '</span>' : '<span class="row-loc-ph">Location</span>');
                     impClose();
                     showToast(val ? ('Location: ' + val) : 'Location cleared');
                 };
@@ -5198,14 +5194,14 @@
             'Other'];
         function locationControl(defect) {
             const cur = defect.location || '';
-            return `<button class="loc-btn ${cur ? 'has-loc' : ''}" title="${cur || 'Set location'}" onclick="event.stopPropagation(); openLocationPicker(${defect.id})">${ic('location')}</button>`;
+            return `<button class="loc-btn ${cur ? 'has-loc' : ''}" title="${cur || 'Set location'}" onclick="event.stopPropagation(); openLocationPicker(${defect.id})">📍</button>`;
         }
         function openLocationPicker(defectId) {
             const d = db.data.defects.find(x => x.id === defectId); if (!d) return;
             const cur = d.location || '';
             const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" onclick="pickLocation(${defectId}, '${String(val).replace(/'/g, "\\'")}')">${label}</button>`;
             const items = opt('', '— None —') + DEFECT_LOCATIONS.map(l => opt(l, l)).join('');
-            impOverlay(`<div id="imp-head"><strong>${ic('location','ic-inline')} Location</strong><button id="imp-close">✕</button></div>
+            impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">${LOC_SEARCH_INPUT}<div class="loc-grid">${items}</div></div>`);
             focusLocSearch();
         }
@@ -5240,13 +5236,13 @@
                 ? `window.CloudPhotos.openGallery(${defect.id})`
                 : `showToast('Log in to use photos')`;
             return `<button class="photo-btn ${count ? 'has-photos' : ''}" title="Photos"
-                        onclick="event.stopPropagation(); ${onclick}">${ic('camera')}${count ? `<span class="photo-count">${count}</span>` : ''}</button>`;
+                        onclick="event.stopPropagation(); ${onclick}">📷${count ? `<span class="photo-count">${count}</span>` : ''}</button>`;
         }
 
         // Pencil beside every defect — edit its description / supplier after entry.
         function editControl(defect) {
             return `<button class="edit-btn" title="Edit description / supplier"
-                        onclick="event.stopPropagation(); openDefectEdit(${defect.id})">${ic('edit')}</button>`;
+                        onclick="event.stopPropagation(); openDefectEdit(${defect.id})">✏️</button>`;
         }
         // Edit modal: change the wording and reassign the supplier via the same
         // predictive dropdown used in BPI review. Leaving the supplier blank sets
@@ -5257,7 +5253,7 @@
             const esc = s => (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
             const cObj = d.contractorId != null ? db.getContractor(d.contractorId) : null;
             impOverlay(`
-                <div id="imp-head"><strong>${ic('edit','ic-inline')} Edit defect</strong><button id="imp-close">✕</button></div>
+                <div id="imp-head"><strong>✏️ Edit defect</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-field" style="margin-bottom:14px">
                         <label>Description</label>
@@ -5325,7 +5321,7 @@
             const fromName = contractorId != null ? ((db.getContractor(contractorId) || {}).name || 'Unknown') : 'Unassigned';
             const esc = s => (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
             impOverlay(`
-                <div id="imp-head"><strong>${ic('edit','ic-inline')} Reassign all — ${esc(fromName)}</strong><button id="imp-close">✕</button></div>
+                <div id="imp-head"><strong>✏️ Reassign all — ${esc(fromName)}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div style="font-size:13px;color:var(--text-secondary,#888);margin-bottom:12px">
                         Move <strong>${groupDefects.length}</strong> defect${groupDefects.length === 1 ? '' : 's'} at this job to another contractor or trade.
@@ -5438,7 +5434,7 @@
             // the date opens the same picker, so it's still editable.
             return `<button class="supplier-book-btn ${dt ? 'has-booking date-only' : ''}"
                         onclick="openSupplierBooking(${contractorId}, ${addressId})"
-                        title="${title}">${dt ? `<span class="book-lbl">${fmtDateShort(dt)}</span>` : ic('calendar')}</button>`;
+                        title="${title}">${dt ? `<span class="book-lbl">${fmtDateShort(dt)}</span>` : '📅'}</button>`;
         }
         // The single 📤 in a supplier heading expands into ✉️ / 🔗 / 📑. Only one
         // is open at a time, and a render closes them all — it's a transient
@@ -5453,7 +5449,7 @@
         function openSupplierBooking(contractorId, addressId) {
             const cur = db.getContractorBooking(contractorId, addressId);
             impOverlay(`
-                <div id="imp-head"><strong>${ic('calendar','ic-inline')} Booking date</strong><button id="imp-close">✕</button></div>
+                <div id="imp-head"><strong>📅 Booking date</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-field"><input type="date" id="bk-date" value="${cur ? String(cur).slice(0,10) : ''}"></div>
                     <button class="imp-btn" id="bk-save">Save</button>
@@ -5509,64 +5505,17 @@
         // Toolbar glyphs. Drawn rather than picked from the emoji set so they
         // inherit the toolbar colour, scale with the icon size, and can't collide
         // with the emoji already used for the actions (📋 📑 📧 🔗 ➕ 🔄).
+        const ICON_FUNNEL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5h17l-6.6 7.9v5.3l-3.8 1.9v-7.2L3.5 5z"/></svg>';
+        const ICON_LIST   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg>';
+        const ICON_CARDS  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="3"/><circle cx="8.5" cy="10" r="1.4" fill="currentColor" stroke="none"/><path d="M4.6 17.6l4.5-4.5a1.8 1.8 0 0 1 2.5 0l4.8 4.8"/></svg>';
 
         // One button, two states, showing the view you'll GET when you tap it —
         // the same convention as a grid/list switch. Two side-by-side labelled
         // buttons cost more toolbar width than every action icon combined, which
         // is what forced the header onto two lines (Spiro 2026-08-02).
-
-        // ── ICON SET ────────────────────────────────────────────────────
-        // One family, drawn on a 24 grid, 1.75 stroke, round ends — the "Line"
-        // direction Spiro picked (2026-08-02). Every control that used to be an
-        // emoji now comes from here, so the app reads as one program instead of
-        // whatever each platform's emoji font decided. currentColor means they
-        // follow the theme, and 1em means they follow the font-size already set
-        // on each button, so no call site needs to know a pixel value.
-        const ICON_PATHS = {
-            filter: '<path d="M3.4 5h17.2l-6.7 8v5.4l-3.8 1.9V13L3.4 5Z"/>',   // Filter
-            list: '<path d="M4 6.6h16M4 12h16M4 17.4h16"/>',   // List view
-            cards: '<rect x="3.2" y="4.6" width="17.6" height="14.8" rx="3"/><circle cx="8.7" cy="10" r="1.5"/><path d="M4.6 17.6l4.3-4.3a1.9 1.9 0 0 1 2.7 0l4.8 4.8"/>',   // Preview view
-            copy: '<rect x="8.6" y="3.4" width="12" height="14.4" rx="2.4"/><path d="M15.4 20.6H5.8a2.4 2.4 0 0 1-2.4-2.4V7.6"/>',   // Copy to clipboard
-            report: '<path d="M13.4 3.2H7a2.4 2.4 0 0 0-2.4 2.4v12.8A2.4 2.4 0 0 0 7 20.8h10a2.4 2.4 0 0 0 2.4-2.4V9.2l-6-6Z"/><path d="M13.2 3.4v5.6h5.8"/><path d="M8.6 14h6.8M8.6 17.2h4.4"/>',   // PDF report
-            add: '<path d="M12 4.6v14.8M4.6 12h14.8"/>',   // Add defects
-            refresh: '<path d="M20.2 11.4a8.2 8.2 0 1 1-2.5-5.6"/><path d="M20.6 4.4v5.2h-5.2"/>',   // Refresh / sync
-            eye: '<path d="M2.6 12s3.6-6.4 9.4-6.4S21.4 12 21.4 12s-3.6 6.4-9.4 6.4S2.6 12 2.6 12Z"/><circle cx="12" cy="12" r="2.8"/>',   // Show completed
-            send: '<path d="M20.6 3.4 11 13"/><path d="M20.6 3.4 14.5 20.6l-3.5-7.6-7.6-3.5 17.2-6.1Z"/>',   // Send
-            email: '<rect x="2.8" y="5" width="18.4" height="14" rx="2.6"/><path d="M3.4 7.2 12 13l8.6-5.8"/>',   // Email
-            link: '<path d="M10 13.6a3.8 3.8 0 0 0 5.7.4l2.6-2.6a3.8 3.8 0 0 0-5.4-5.4l-1.5 1.5"/><path d="M14 10.4a3.8 3.8 0 0 0-5.7-.4L5.7 12.6a3.8 3.8 0 0 0 5.4 5.4l1.5-1.5"/>',   // Web link
-            save: '<path d="M4.6 4.6h11l4.4 4.4v10.4a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 19.4V6.2a1.6 1.6 0 0 1 1.6-1.6Z"/><path d="M7.4 4.6v5h8v-5M7.4 20.4v-6.2h9.2v6.2"/>',   // Save
-            edit: '<path d="M15.9 4.3a2.3 2.3 0 0 1 3.3 3.3L8.4 18.4l-4.3 1 1-4.3L15.9 4.3Z"/>',   // Edit
-            calendar: '<rect x="3.4" y="5.2" width="17.2" height="15.4" rx="2.6"/><path d="M3.4 9.8h17.2M8.2 3.4v3.6M15.8 3.4v3.6"/>',   // Booking date
-            location: '<path d="M12 21.2s7-5.6 7-11.2a7 7 0 1 0-14 0c0 5.6 7 11.2 7 11.2Z"/><circle cx="12" cy="10" r="2.6"/>',   // Location
-            camera: '<path d="M3.4 8.8a2.4 2.4 0 0 1 2.4-2.4h1.9l1.4-2.2h5.8l1.4 2.2h1.9a2.4 2.4 0 0 1 2.4 2.4v8.4a2.4 2.4 0 0 1-2.4 2.4H5.8a2.4 2.4 0 0 1-2.4-2.4V8.8Z"/><circle cx="12" cy="12.8" r="3.4"/>',   // Photos
-            photos: '<rect x="7.4" y="3.4" width="13.2" height="13.2" rx="2.6"/><path d="M16.6 20.6H6a2.6 2.6 0 0 1-2.6-2.6V7.4"/><circle cx="11.6" cy="7.8" r="1.4"/><path d="M8.4 15.6 12 12a1.8 1.8 0 0 1 2.5 0l3.4 3.4"/>',   // Photo dump
-            search: '<circle cx="10.8" cy="10.8" r="6.6"/><path d="M15.6 15.6 20.6 20.6"/>',   // Search
-            settings: '<path d="M6.4 7.2h13M4.6 12h14.8M6.4 16.8h13"/><circle cx="9" cy="7.2" r="1.9"/><circle cx="15.4" cy="12" r="1.9"/><circle cx="9" cy="16.8" r="1.9"/>',   // Settings
-            delete: '<path d="M3.8 6.2h16.4M8.6 6.2V4.4a1.4 1.4 0 0 1 1.4-1.4h4a1.4 1.4 0 0 1 1.4 1.4v1.8"/><path d="M5.8 6.2 6.8 19a2.2 2.2 0 0 0 2.2 2h6a2.2 2.2 0 0 0 2.2-2l1-12.8"/><path d="M10.4 10.2v6.6M13.6 10.2v6.6"/>',   // Delete
-            recent: '<path d="M13.2 3.4H7a2.2 2.2 0 0 0-2.2 2.2v12.8A2.2 2.2 0 0 0 7 20.6h3.4"/><path d="M13 3.6v5.4h5.4V11"/><circle cx="17.2" cy="16.6" r="4.2"/><path d="M17.2 14.5v2.2l1.5 1"/>',   // Recent reports
-            addreport: '<path d="M13.2 3.4H7a2.2 2.2 0 0 0-2.2 2.2v12.8A2.2 2.2 0 0 0 7 20.6h4.6"/><path d="M13 3.6v5.4h5.4v2.2"/><path d="M17.8 14.6v6.2M14.7 17.7h6.2"/>',   // Add report
-            addperson: '<path d="M14.6 20.4v-1.8a3.7 3.7 0 0 0-3.7-3.7H6.5a3.7 3.7 0 0 0-3.7 3.7v1.8"/><circle cx="8.7" cy="7.7" r="3.7"/><path d="M18.6 8v5.4M21.3 10.7h-5.4"/>',   // Add contractor
-            contactcard: '<rect x="2.8" y="4.8" width="18.4" height="14.4" rx="2.4"/><circle cx="8.9" cy="10.9" r="2.2"/><path d="M5.4 16.5a3.9 3.9 0 0 1 7 0"/><path d="M15.2 10.2h3.6M15.2 13.6h3.6"/>',   // Import contact
-            call: '<path d="M20.6 17v2.6a1.8 1.8 0 0 1-2 1.8 17.7 17.7 0 0 1-7.7-2.8 17.4 17.4 0 0 1-5.3-5.3A17.7 17.7 0 0 1 2.8 5.6a1.8 1.8 0 0 1 1.8-2h2.6a1.8 1.8 0 0 1 1.8 1.6 11.3 11.3 0 0 0 .6 2.5 1.8 1.8 0 0 1-.4 1.9L8.1 10.7a14.3 14.3 0 0 0 5.3 5.3l1.1-1.1a1.8 1.8 0 0 1 1.9-.4 11.3 11.3 0 0 0 2.5.6 1.8 1.8 0 0 1 1.7 1.9Z"/>',   // Call
-            trades: '<rect x="2.8" y="7.8" width="18.4" height="12" rx="2.2"/><path d="M8.6 7.8V6a2 2 0 0 1 2-2h2.8a2 2 0 0 1 2 2v1.8"/><path d="M2.8 13.2h18.4"/><path d="M10.4 11.8h3.2v2.8h-3.2z"/>',   // Trades
-            appearance: '<circle cx="12" cy="12" r="8.6"/><path d="M12 3.4a8.6 8.6 0 0 1 0 17.2Z"/>',   // Appearance
-            status: '<path d="M4.6 20V12.6M9.5 20V5.4M14.5 20v-6.2M19.4 20V9.2"/>',   // Database status
-            cleardata: '<path d="M8.4 20.6h12.2"/><path d="M13.6 4.4 4.9 13.1a2 2 0 0 0 0 2.9l3.3 3.3a2 2 0 0 0 2.9 0l8.7-8.7a2 2 0 0 0 0-2.9l-3.3-3.3a2 2 0 0 0-2.9 0Z"/><path d="M9.2 8.8 15.2 14.8"/>',   // Clear all data
-            homesec: '<path d="M3.6 10.5 12 3.7l8.4 6.8v8.9a1.8 1.8 0 0 1-1.8 1.8H5.4a1.8 1.8 0 0 1-1.8-1.8v-8.9Z"/><path d="M9.4 21.2v-7h5.2v7"/>',   // Home sections
-            directory: '<path d="M15.6 20.4v-1.8a3.7 3.7 0 0 0-3.7-3.7H6.4a3.7 3.7 0 0 0-3.7 3.7v1.8"/><circle cx="9.2" cy="7.7" r="3.7"/><path d="M21.3 20.4v-1.8a3.7 3.7 0 0 0-2.8-3.6"/><path d="M15.6 4.2a3.7 3.7 0 0 1 0 7.1"/>',   // Contractor directory
-            attach: '<path d="M20.5 11.6 12.4 19.7a5.1 5.1 0 0 1-7.2-7.2l8.1-8.1a3.4 3.4 0 1 1 4.8 4.8l-8.1 8.1a1.7 1.7 0 0 1-2.4-2.4l7.5-7.4"/>',   // Attachment
-        };
-        function ic(name, cls) {
-            const d = ICON_PATHS[name];
-            if (!d) { console.warn('[ic] unknown icon:', name); return ''; }
-            return '<svg class="ic' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" fill="none"'
-                 + ' stroke="currentColor" stroke-width="1.75" stroke-linecap="round"'
-                 + ' stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
-        }
-
         function previewToggle() {
             const on = previewMode();
-            return `<button class="icon-btn pv-toggle" onclick="event.stopPropagation(); setPreviewMode(${on ? 'false' : 'true'})" title="${on ? 'Switch to List — compact rows' : 'Switch to Preview — big cards with the report photo, for walking the house'}" aria-label="${on ? 'Switch to list view' : 'Switch to preview view'}">${on ? ic('list') : ic('cards')}</button>`;
+            return `<button class="icon-btn pv-toggle" onclick="event.stopPropagation(); setPreviewMode(${on ? 'false' : 'true'})" title="${on ? 'Switch to List — compact rows' : 'Switch to Preview — big cards with the report photo, for walking the house'}" aria-label="${on ? 'Switch to list view' : 'Switch to preview view'}">${on ? ICON_LIST : ICON_CARDS}</button>`;
         }
         // One card. Photo slot is left empty and filled in after render by
         // fillPreviewPhotos() — a card must never wait on the network to appear.
@@ -5590,8 +5539,8 @@
                         <button class="pv-tick ${done ? 'pv-t-done' : 'pv-t-open'}" onclick="event.stopPropagation(); pvToggleDone(${defect.id})">
                             ${done ? '✓ Done' : '◯ Mark done'}
                         </button>
-                        <button class="pv-mini" onclick="event.stopPropagation(); openDefectEdit(${defect.id})" title="Edit">${ic('edit')}</button>
-                        <button class="pv-mini" onclick="event.stopPropagation(); openLocationPicker(${defect.id})" title="Location">${ic('location')}</button>
+                        <button class="pv-mini" onclick="event.stopPropagation(); openDefectEdit(${defect.id})" title="Edit">✏️</button>
+                        <button class="pv-mini" onclick="event.stopPropagation(); openLocationPicker(${defect.id})" title="Location">📍</button>
                     </div>
                 </div>
             </div>`;
@@ -5656,7 +5605,7 @@
             const showing = flt.length === 0
                 ? 'nothing — tap to choose'
                 : STATUS_FILTER_OPTS.filter(o => flt.includes(o.k)).map(o => o.label).join(', ');
-            return `<button class="icon-btn filter-btn ${hidingWork ? 'is-filtered' : ''}" onclick="event.stopPropagation(); openStatusFilter()" title="Filter by status — showing ${showing}" aria-label="Filter defects by status">${ic('filter')}</button>`;
+            return `<button class="icon-btn filter-btn ${hidingWork ? 'is-filtered' : ''}" onclick="event.stopPropagation(); openStatusFilter()" title="Filter by status — showing ${showing}" aria-label="Filter defects by status">${ICON_FUNNEL}</button>`;
         }
         function openStatusFilter() {
             const flt = activeStatusFilter();
@@ -5828,7 +5777,7 @@
         }
 
         function copyDefectsToClipboard() {
-            writeToClipboard(generateDefectText(), 'Copied to clipboard');
+            writeToClipboard(generateDefectText(), '📋 Copied to clipboard');
         }
 
         // One clipboard path for the whole app: the async API where it exists,
@@ -5836,7 +5785,7 @@
         // context). Both report the same way, so a supervisor always knows it
         // landed.
         function writeToClipboard(text, okMsg) {
-            const done = () => showToast(okMsg || 'Copied to clipboard');
+            const done = () => showToast(okMsg || '📋 Copied to clipboard');
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(done)
                     .catch(() => fallbackCopyToClipboard(text, okMsg));
@@ -5860,7 +5809,7 @@
             const bk = db.getContractorBooking(contractorId, addressId);
             if (bk) lines.push('', 'Attending: ' + fmtDateNice(bk));
             writeToClipboard(lines.join('\n'),
-                items.length + ' item' + (items.length === 1 ? '' : 's') + ' copied');
+                '📋 ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' copied');
         }
 
         function fallbackCopyToClipboard(text, okMsg) {
@@ -5873,7 +5822,7 @@
             
             try {
                 document.execCommand('copy');
-                showToast(okMsg || 'Copied to clipboard');
+                showToast(okMsg || '📋 Copied to clipboard');
             } catch (err) {
                 showToast('Failed to copy to clipboard', true);
             }
@@ -6480,7 +6429,7 @@
                         <!-- Save Button at Top -->
                         <div style="text-align: center; margin-bottom: 20px;">
                             <button class="btn btn-primary" onclick="saveQuickDefectsForContractor()" style="padding: 12px 40px; font-size: 17px; font-weight: 600;">
-                                ${ic('save','ic-inline')} Save Defects
+                                💾 Save Defects
                             </button>
                         </div>
 
@@ -6501,28 +6450,28 @@
                             <label>Defects:</label>
                             <div id="quick-defects-container">
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                             </div>
                         </div>
@@ -6540,7 +6489,7 @@
                         <!-- Save Button at Top -->
                         <div style="text-align: center; margin-bottom: 20px;">
                             <button class="btn btn-primary" onclick="saveQuickDefectsForAddress()" style="padding: 12px 40px; font-size: 17px; font-weight: 600;">
-                                ${ic('save','ic-inline')} Save Defects
+                                💾 Save Defects
                             </button>
                         </div>
 
@@ -6561,28 +6510,28 @@
                             <label>Defects:</label>
                             <div id="quick-defects-container-address">
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                                 <div class="defect-input-row">
-                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">${ic('location')}<span class="row-loc-ph">Location</span></button>
-                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">${ic('camera')}</button>
+                                    <button type="button" class="row-loc-btn" onclick="pickRowLocation(this)" title="Set location">📍 <span class="row-loc-ph">Location</span></button>
+                                    <input type="text" class="quick-defect-input-address" placeholder="Enter defect"><button type="button" class="row-photo-btn" onclick="pickRowPhoto(this)" title="Add photo">📷</button>
                                 </div>
                             </div>
                         </div>
@@ -6623,7 +6572,7 @@
                             </p>
                             <input type="file" id="address-text-upload" accept=".txt" style="display: none;" onchange="handleAddressTextUpload(event)">
                             <button class="btn btn-secondary" style="width: 100%;" onclick="document.getElementById('address-text-upload').click()">
-                                ${ic('addreport','ic-inline')} Choose Text File
+                                📄 Choose Text File
                             </button>
                         </div>
 
@@ -6688,7 +6637,7 @@
                         
                         <div class="modal-actions">
                             <button class="btn btn-secondary" onclick="closeModal('edit-address-modal')">Cancel</button>
-                            <button class="btn btn-primary" onclick="saveEditedAddress()">${ic('save','ic-inline')} Save</button>
+                            <button class="btn btn-primary" onclick="saveEditedAddress()">💾 Save</button>
                         </div>
                     </div>
                 </div>
@@ -6709,7 +6658,7 @@
                                             <div style="font-size: 13px; color: ${(!c.tradeIds || c.tradeIds.length === 0) ? '#FF3B30' : '#8e8e93'}; margin-top: 2px;">
                                                 ${c.trades || '⚠️ No Trade Assigned'}
                                             </div>
-                                            ${c.email ? `<div style="font-size: 12px; color: #8e8e93; margin-top: 2px;">${ic('email','ic-inline')} ${c.email}</div>` : ''}
+                                            ${c.email ? `<div style="font-size: 12px; color: #8e8e93; margin-top: 2px;">📧 ${c.email}</div>` : ''}
                                             ${c.phone ? `<div style="font-size: 12px; color: #8e8e93; margin-top: 2px;">📞 ${c.phone}</div>` : ''}
                                         </div>
                                         <div style="display: flex; flex-direction: column; gap: 5px;">
@@ -6880,7 +6829,7 @@
                             </p>
                             <input type="file" id="trade-text-upload" accept=".txt" style="display: none;" onchange="handleTradeTextUpload(event)">
                             <button class="btn btn-secondary" style="width: 100%;" onclick="document.getElementById('trade-text-upload').click()">
-                                ${ic('addreport','ic-inline')} Choose Text File
+                                📄 Choose Text File
                             </button>
                         </div>
 
@@ -6925,7 +6874,7 @@
                             </p>
                             <input type="file" id="contractor-text-upload" accept=".txt" style="display: none;" onchange="handleContractorTextUpload(event)">
                             <button class="btn btn-secondary" style="width: 100%;" onclick="document.getElementById('contractor-text-upload').click()">
-                                ${ic('addreport','ic-inline')} Choose Text File
+                                📄 Choose Text File
                             </button>
                         </div>
 
@@ -7122,7 +7071,7 @@
                         </div>
                         
                         <div class="input-group">
-                            <label>${ic('email','ic-inline')} Email:</label>
+                            <label>📧 Email:</label>
                             <input type="email" id="modal-edit-email" placeholder="contractor@example.com" style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
                         </div>
                         
@@ -7133,7 +7082,7 @@
                         
                         <div class="modal-actions">
                             <button class="btn btn-secondary" onclick="closeModal('edit-contact-modal')">Cancel</button>
-                            <button class="btn btn-primary" onclick="saveContactInfoFromModal()">${ic('save','ic-inline')} Save</button>
+                            <button class="btn btn-primary" onclick="saveContactInfoFromModal()">💾 Save</button>
                         </div>
                     </div>
                 </div>
@@ -7841,8 +7790,8 @@
                     </div>
                     ${badge}
                     <div style="flex:0 0 auto;display:flex;gap:6px;">
-                        <div style="${icoStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">${ic('eye')}</div>
-                        <div style="${icoStyle}color:var(--acc,#2563eb);font-weight:800;" onclick="startDefectsForJob(${a.id})" title="Add defects">${ic('add')}</div>
+                        <div style="${icoStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">👁️</div>
+                        <div style="${icoStyle}color:var(--acc,#2563eb);font-weight:800;" onclick="startDefectsForJob(${a.id})" title="Add defects">＋</div>
                     </div>
                 </div>`;
             }).join('');
@@ -7901,7 +7850,7 @@
             const contactHint = hasPicker ? ''
                 : `<div style="font-size:11.5px;color:var(--text-secondary,#999);margin-top:8px;line-height:1.4;">iPhone can’t open your contacts directly. To pull one in: Contacts → the person → <b>Share Contact</b> → <b>Save to Files</b>, then tap <b>Contact file</b> above. Or just type it in.</div>`;
             impOverlay(`
-                <div id="imp-head"><strong>${ic('addperson','ic-inline')} ${editC ? 'Edit' : 'Add'} contractor</strong><button id="imp-close">✕</button></div>
+                <div id="imp-head"><strong>👤 ${editC ? 'Edit' : 'Add'} contractor</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body" style="padding:16px;">
                     <div style="font-size:12.5px;color:var(--text-secondary,#888);margin-bottom:12px;line-height:1.4;">
                         ${editC ? 'Clean up the details, then Save. Use “Share to team” in Manage to make it visible to everyone.'
@@ -8058,7 +8007,7 @@
             // On the Contractor tab, offer "add a missing contractor" so a user is
             // never stuck if the trade/contractor they need isn't listed.
             const addBtn = currentSearchType() === 'contractor'
-                ? `<div onclick="openAddContractor((document.getElementById('unified-search')||{}).value||'')" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px dashed var(--brd,rgba(128,128,128,.4));border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--acc,#2563eb);">${ic('addperson','ic-inline')} Add a contractor that's missing</div>`
+                ? `<div onclick="openAddContractor((document.getElementById('unified-search')||{}).value||'')" style="margin-top:8px;display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px dashed var(--brd,rgba(128,128,128,.4));border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--acc,#2563eb);">👤＋ Add a contractor that's missing</div>`
                 : '';
             return `
                 <div style="display:flex;gap:6px;margin-bottom:10px;">${tabs}</div>
@@ -8215,7 +8164,7 @@
                     resolve(false); return;
                 }
                 impOverlay(`
-                    <div id="imp-head"><strong>${ic('attach','ic-inline')} ${headline}</strong><button id="imp-close">✕</button></div>
+                    <div id="imp-head"><strong>📎 ${headline}</strong><button id="imp-close">✕</button></div>
                     <div id="imp-body">
                         <div style="font-size:14px;line-height:1.5;margin-bottom:14px">${note}</div>
                         <button class="imp-btn" id="sh-go" style="width:100%">📎 Attach ${file.name}</button>
@@ -8263,7 +8212,7 @@
         function openReportImport() {
             const aiOn = window.CloudAI ? 'checked' : '';
             impOverlay(`
-                <div id="imp-head"><strong>${ic('addreport','ic-inline')} Add Report</strong><button id="imp-close">✕</button></div>
+                <div id="imp-head"><strong>📄 Add Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-field" style="margin-bottom:14px">
                         <label>Report type</label>
@@ -9348,7 +9297,7 @@
                 candidates.push({ contractorId: cid, icon, name: c.name, hint, note, autofill });
             };
             const calledfor = effTrade ? suggestCalledForTrade(effTrade, r.lastAddressId) : null;
-            if (calledfor) addCand(calledfor.contractorId, ic('calendar'), 'did this work here',
+            if (calledfor) addCand(calledfor.contractorId, '📅', 'did this work here',
                 '📅 Did this work here: ' + ((db.getContractor(calledfor.contractorId) || {}).name || '') + ' (' + calledfor.activity + (calledfor.times > 1 ? ' ×' + calledfor.times : '') + ')', true);
             const callup = effTrade ? suggestCallupForTrade(effTrade, r.lastAddressId) : null;
             if (callup) addCand(callup.contractorId, '📋', 'called up on this job',
@@ -9431,13 +9380,13 @@
             }).join('');
             const photoBlock = shotHtml
                 ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${shotHtml}</div>`
-                : (r.photoNote ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">${ic('camera','ic-inline')} ${r.photoNote}</div>` : '');
+                : (r.photoNote ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">📷 ${r.photoNote}</div>` : '');
             impOverlay(`
                 <div id="imp-head"><strong>Review defect ${r.index + 1} of ${r.items.length}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-progress">${r.saved} saved · ${r.items.length - r.index} to review</div>
                     <div class="imp-bar"><i style="width:${pct}%"></i></div>
-                    ${meta ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">${ic('addreport','ic-inline')} ${meta}</div>` : ''}
+                    ${meta ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">📄 ${meta}</div>` : ''}
                     ${photoBlock}
                     <div class="imp-field">
                         <label>Defect description</label>
@@ -9585,8 +9534,8 @@
         }
 
         // ---- Recent reports / delete ----
-        async function openRecentReports() { await renderReportsList(ic('recent','ic-inline') + ' Recent Reports'); }
-        async function openDeleteReports() { await renderReportsList(ic('delete','ic-inline') + ' Delete Reports'); }
+        async function openRecentReports() { await renderReportsList('🗂️ Recent Reports'); }
+        async function openDeleteReports() { await renderReportsList('🗑️ Delete Reports'); }
         async function renderReportsList(title) {
             impOverlay(`<div id="imp-head"><strong>${title}</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body"><div style="padding:20px;text-align:center;color:var(--text-secondary)">Loading…</div></div>`);
@@ -9652,7 +9601,7 @@
             const contrRows = db.getContractors().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                 .map(c => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="rb-contr" value="${c.id}" style="width:auto"> ${c.name}</label>`).join('');
             impOverlay(`
-                <div id="imp-head"><strong>${ic('report','ic-inline')} Generate Report</strong><button id="imp-close">✕</button></div>
+                <div id="imp-head"><strong>📑 Generate Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-field"><label>Statuses to include</label>
                         <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px;padding:4px 0">
@@ -10101,7 +10050,7 @@
             const onSty = 'background:var(--blue,#2563eb);color:#fff';
             const offSty = 'background:transparent;color:var(--text-secondary,#888)';
             impOverlay(`
-                <div id="imp-head"><strong>${ic('report','ic-inline')} Generate Report</strong><button id="imp-close">✕</button></div>
+                <div id="imp-head"><strong>📑 Generate Report</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <div class="imp-field"><label>For</label><div style="font-size:15px;font-weight:600">${ctxLabel}</div></div>
                     ${jobField}
@@ -10217,7 +10166,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02h';
+        const APP_VERSION = '2026-08-02i';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10291,7 +10240,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02h"></script>
+    <script src="cloud-sync.js?v=2026-08-02i"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -27,41 +27,37 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   seven-control supplier toolbar is smaller than it was — still a comfortable
   tap target, and verified fully inside the screen edge.
 
-## 2026-08-02 — One icon family, drawn not borrowed
-- **Decision:** Every control that was an emoji is now an inline SVG from a
-  single family: 24 grid, **1.75 stroke, round caps and joins** — the "Line"
-  direction Spiro picked from a five-way comparison. 32 icons, ~142 call sites,
-  one `ICON_PATHS` map and one `ic(name)` helper. Icons are `currentColor` at
-  `1em`, so they inherit the theme and whatever font-size the button already
-  sets; no call site names a colour or a pixel.
-- **Why:** emoji are a different typeface on every platform, at different
-  optical weights and with vendor colour baked in. A clipboard from Apple beside
-  a paperclip from Google beside a plus from the system font is why the app read
-  as assembled rather than designed. It also made two documents (report vs
-  recent reports) indistinguishable, because both vendors draw a page.
-- **Trade-off:** ~5.5KB of path data in the shell, and emoji's free colour is
-  gone — the set is monochrome, so anything that was carrying meaning through
-  colour now has to carry it through shape. Where two icons share a body
-  (report / recent reports / add report all being a document) the distinction is
-  a badge: lines, a clock, a plus. Verified legible at 19px, which is the size
-  the app actually renders them.
-- **Deliberately left as emoji:** empty states (📭 ✅ ⚠️), toast text, and the
-  ✓ ✕ ▴ ▾ chrome. They're illustration and prose, not controls, and converting
-  them buys nothing.
-
-## 2026-08-02 — Copy to clipboard, per supplier
-- **Decision:** `copySupplierDefects()` added as a fourth option in the supplier
-  send group, beside email / link / PDF. Copies just that trade's outstanding
-  items for that job, formatted the same way their email is, with the booking
-  date appended when there is one.
-- **Why:** Spiro asked for it back, believing it had been removed. It hadn't —
-  whole-screen copy is still in all five toolbars and always has been. What
-  never existed was copy scoped to ONE supplier, which is the useful one: half
-  these lists get pasted into a text message, not sent as an email.
-- **Trade-off:** the send group is four icons wide when expanded rather than
-  three. Verified still one line at 320px. Both clipboard paths now go through
-  one `writeToClipboard()` so the async API and the textarea fallback report
-  identically instead of drifting apart.
+## 2026-08-02 — Emoji icons stay. The drawn set was built, shipped, rejected.
+- **Decision:** Reverted `2026-08-02h`, which replaced all 32 emoji controls with
+  a one-family line-SVG set. The app is back on emoji, with four consistency
+  fixes applied on top:
+  1. **One plus.** The toolbar's `➕` (a dark, heavy glyph) became `＋`, which is
+     plain text and so inherits `.icon-btn`'s blue — matching the home job rows
+     and the blue funnel sitting beside it. Two buttons doing the same thing no
+     longer look different.
+  2. **One envelope.** `📧` in toolbars and `✉️` on supplier headings both meant
+     "email this". Now `✉️` everywhere — the simpler shape, better at 19px.
+  3. **Add Report is `📥`, not `📄`.** It sat directly above `📑 Generate PDF
+     Report` in the reports list as a second pale page; on iOS they were near
+     indistinguishable. A tray says "bring one in", which is the action.
+  4. **`🙈` is gone.** The see-no-evil monkey was the "hide completed" state. One
+     `👁️` for both states — the button already goes solid blue when completed
+     are showing, which was always the clearer signal.
+- **Why:** Spiro, on seeing it live: *"These icons suck."* The drawn set was
+  technically the better system — one grid, one weight, theme-aware, no vendor
+  drift — and it was still wrong. Emoji carry **colour**, and on a list of four
+  near-identical actions colour is doing more work than stroke consistency ever
+  could: a yellow card index, a red-arrow tray, a blue-tabbed document and a
+  grey bin are told apart in peripheral vision. A monochrome set threw that away
+  and asked shape alone to carry it at 19px.
+- **Trade-off accepted:** emoji render as a different typeface on every platform
+  and can't take the app's accent. That inconsistency is real and is being
+  **kept on purpose**, because it buys colour.
+- **Don't redo this.** The full five-way comparison was built, rendered at true
+  phone size, chosen from, implemented across ~142 call sites and shipped. It
+  lost on the phone. If someone proposes drawn icons again, the answer is that
+  it was tried on 2026-08-02 and reverted the same day — and the reason was
+  colour, not craft.
 
 ## 2026-08-02 — Job heading: own line, one line, auto-fitted
 - **Decision:** On the job and supplier screens the heading keeps its **own
