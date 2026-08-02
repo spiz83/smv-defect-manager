@@ -1565,6 +1565,14 @@
         .supplier-book-btn.has-booking { opacity: 1; }
         .supplier-book-btn:active { transform: scale(.9); }
         .book-lbl { font-size: 11px; font-weight: 700; color: var(--blue); }
+        /* Date set: the date IS the button, no 📅 beside it. 11px of blue text
+           is a small thing to hit on site, so the padding widens the tap target
+           and an equal negative margin stops that padding making the heading
+           any taller. */
+        .supplier-book-btn.date-only {
+            padding: 9px 7px;
+            margin-top: -7px; margin-bottom: -7px;
+        }
 
         /* One 📤 that expands into ✉️ / 🔗 / 📑 on tap. Collapsed it costs a
            single icon; the three only take the width while they're being used,
@@ -5348,9 +5356,14 @@
             const title = dt
                 ? `Attending ${fmtDateNice(dt)} — tap to change`
                 : 'Set the date this supplier will attend to fix all their items';
-            return `<button class="supplier-book-btn ${dt ? 'has-booking' : ''}"
+            // Once a date is set the 📅 goes away and the DATE is the button —
+            // the icon was only ever saying "this is a date", which the date
+            // already says (Spiro 2026-08-02). With no date there's nothing to
+            // show, so the icon stays as the thing you tap to add one. Tapping
+            // the date opens the same picker, so it's still editable.
+            return `<button class="supplier-book-btn ${dt ? 'has-booking date-only' : ''}"
                         onclick="openSupplierBooking(${contractorId}, ${addressId})"
-                        title="${title}">📅${dt ? `<span class="book-lbl">${fmtDateShort(dt)}</span>` : ''}</button>`;
+                        title="${title}">${dt ? `<span class="book-lbl">${fmtDateShort(dt)}</span>` : '📅'}</button>`;
         }
         // The single 📤 in a supplier heading expands into ✉️ / 🔗 / 📑. Only one
         // is open at a time, and a render closes them all — it's a transient
@@ -10046,7 +10059,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02c';
+        const APP_VERSION = '2026-08-02d';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10120,7 +10133,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02c"></script>
+    <script src="cloud-sync.js?v=2026-08-02d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

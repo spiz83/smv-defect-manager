@@ -44,6 +44,13 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   booking button is display-only: `fmtDateNice` and its year still drive every
   report and email, `fmtDateShort` is used for the button alone, and that
   button's tooltip reads "Attending 07/08/2026 — tap to change".
+- **Follow-up the same day:** once a date is set the 📅 goes too — the date
+  itself is the button. The icon was only ever saying "this is a date", which
+  the date says on its own; with no date there's nothing to show, so the icon
+  stays as the thing you tap to add one. Tapping the date opens the same picker,
+  so it stays editable. 11px of blue text is a small target on site, so
+  `.date-only` pads it to 42×29 and cancels that padding with an equal negative
+  margin — the tap area grows, the heading stays 22px.
 
 ## 2026-08-02 — Row actions on demand: double-tap to open a defect row
 - **Decision:** The pencil / pin / camera no longer sit on every list row. A
