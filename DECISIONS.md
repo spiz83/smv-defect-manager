@@ -2,6 +2,44 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — View Defects header: one line of icons, and frozen
+- **Decision:** The View Defects toolbar is now a **single row that never
+  wraps**, on every screen that has one (address/job, supplier, trade, multiple
+  suppliers, All Defects). Two controls were collapsed to make it fit: the
+  `Filter ●●● ▾` pill became one **funnel icon**, and the `LIST | PREVIEW`
+  segmented control became **one toggle icon** showing the view you'll get when
+  you tap it. The whole `.defects-header` (job title + toolbar) is now
+  `position: sticky`, frozen under the blue app header, which is itself frozen
+  under the cloud-sync status bar.
+- **Why:** Spiro, from site: the header was taking two lines and the controls
+  scrolled away, so filtering or refreshing meant scrolling back to the top of a
+  long job. The wrap was added on 2026-08-01 because a no-wrap row pushed the
+  Filter button off the left edge — but the real problem was that the two
+  labelled controls cost more width than all six action icons combined. Removing
+  the labels fixes the width properly instead of spending a second line on it.
+- **Trade-off:** The three status dots no longer show the filter at a glance.
+  Mitigated: the funnel carries a **red dot whenever Open or Pending is hidden**
+  — i.e. whenever the filter could make a job look finished when it isn't — and
+  the button's tooltip/aria-label names exactly which statuses are showing. A
+  dot for "Completed hidden" was deliberately NOT used: that is the default, so
+  the warning would be on permanently and mean nothing. Toolbar icons also
+  shrink with the viewport (`clamp(18px, 5.8vw, 26px)`), so on a 320px phone the
+  seven-control supplier toolbar is smaller than it was — still a comfortable
+  tap target, and verified fully inside the screen edge.
+
+## 2026-08-02 — `overflow-x: clip` on body, never `hidden`
+- **Decision:** The three `html, body { overflow-x: hidden }` rules now set
+  `hidden` on `html` only; `body` gets `overflow-x: clip`.
+- **Why:** `overflow: hidden` makes body a **scroll container**, and every
+  `position: sticky` descendant then anchors to a box that never scrolls. The
+  app header has been declared `position: sticky` for a long time and has never
+  actually stuck because of this — it scrolled away with the list. `clip` clips
+  identically without creating a scroll container.
+- **Trade-off:** `overflow: clip` needs Safari 16+ / Chrome 90+. Older browsers
+  drop the declaration, leaving body at `visible` — but `html` keeps `hidden`,
+  which propagates to the viewport, so sideways drag is still impossible. The
+  degradation is "sticky doesn't stick", i.e. exactly today's behaviour.
+
 ## 2026-07-27 (b) — ROOT CAUSE of "says it saves but it's not there"
 - **Decision:** Defect ids are no longer recycled (persisted high-water mark in
   `dm_defect_id_hw`, raised on every load/save), and `isTombstoned()` only trusts

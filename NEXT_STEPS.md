@@ -1,7 +1,36 @@
 # Next Steps / Handover
 
 STATUS: Active — mid-incident
-LAST UPDATED: 2026-07-29
+LAST UPDATED: 2026-08-02
+
+## View Defects header — one line + frozen (2026-08-02) — NOT DEPLOYED
+Branch `claude/defects-header-single-line-5oo2zw`. Build stamp bumped to
+`2026-08-02a` (index.html `APP_VERSION`, `cloud-sync.js?v=`, sw.js `CACHE`).
+`AGENT_INSTRUCTIONS.md` says stop and ask before anything goes live, so it has
+not been deployed — run the `deploy-defect-manager` skill when approved.
+
+- Toolbar is one non-wrapping row on all five View Defects screens. Filter is a
+  funnel icon; LIST|PREVIEW is one toggle icon showing the view you'll get.
+- `.defects-header` is sticky under the app header, which is sticky under the
+  cloud-sync status bar. Offsets are MEASURED (`syncStickyHeader()`, called at
+  the end of `render()`, on resize/orientationchange, and once when the status
+  bar mounts) — the app header's height changes with the design theme and the
+  status bar's with the notch, so neither can be a constant.
+- **The load-bearing fix:** body had `overflow-x: hidden`, which made it a
+  scroll container and silently disabled `position: sticky` app-wide. Now
+  `overflow-x: clip` on body, `hidden` on html. Don't put `hidden` back.
+- Preview mode still only renders on the **address/job** screen. The toggle icon
+  therefore only appears there. If supervisors want walk-the-house cards on the
+  supplier screen too, it's a small change in `renderViewDefectsContractor` —
+  add the `previewMode() ? previewCard(d) : row` branch and `${previewToggle()}`
+  to its toolbar. Deliberately not done: it changes what that screen shows.
+- Verified in real Chromium at 320px and 390px, in all three design modes:
+  every toolbar one row, nothing past either edge, header frozen at scroll on
+  both the address and supplier screens, filter modal still opens above it.
+  Harness lives outside the repo (adding Playwright is a "stop and ask" dep) —
+  see "Test harness" below for how to rebuild it, and note
+  `serviceWorkers: 'block'` on the context plus fulfilling off-origin requests
+  with empty 200s, or the app never boots and then reloads mid-test.
 
 ## READ THIS FIRST (for a fresh session)
 A long debugging session on 2026-07-27..29 found and fixed **six** faults plus
