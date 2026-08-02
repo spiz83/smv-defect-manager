@@ -9,11 +9,15 @@ Merged to `main`. Build stamp `2026-08-02g` in all four places (index.html
 The letter advances on every push to `main`, because Pages publishes from it —
 never re-use a stamp that has reached a phone.
 
-**Deploying from a Claude session doesn't work.** The container has no Vercel
-credential and the environment's network policy answers 403 to CONNECT for
-vercel.com, so `npx vercel deploy` gets as far as the interactive login and
-dies. Pushing `main` covers GitHub Pages; the Vercel copy — the one supervisors
-use — has to be deployed from a machine that's logged in.
+**Deploys are AUTOMATIC. Push to `main` and it ships.** Verified 2026-08-02 via
+the Vercel API: the last four production deployments all have `source: git`,
+`target: production`, `state: READY`, one per push to `main`. Don't run
+`npx vercel deploy` — it is redundant, and this repo's docs sent people chasing
+it for hours. Just bump the stamp, commit, push `main`, done.
+
+The version letter still matters even though the deploy is automatic: the
+service worker only fetches a new shell when the CACHE string changes, so an
+un-bumped push ships to Vercel and never reaches a phone.
 
 - **Supplier heading is one line.** The name ellipsises (`min-width: 0` on the
   flex child was the missing piece), and ✉️🔗📑 collapsed into one 📤 that
@@ -151,10 +155,13 @@ id-recycling regression, 11 paging boundary checks, BPI checklist stripping.
    defect was destroyed. Safe but unreachable; re-log and re-attach. No auto
    cleanup written — "defect missing" can also mean "not synced yet"
 4. CH Tracker needs the same BPI parser fix (separate repo)
-5. Vercel git auto-deploy still not firing. GitHub app access and the project's
-   Git link are both confirmed healthy; unchecked: `Environments → Production →
-   Branch Tracking` should be `main`, and `Build and Deployment → Ignored Build
-   Step` should be empty
+5. ~~Vercel git auto-deploy still not firing.~~ **RESOLVED / was stale
+   (2026-08-02).** It fires. Confirmed against the Vercel API: four consecutive
+   production deployments, all `source: git` off `main`, all READY, and
+   `deffixer-shell-2026-08-02g` serving live minutes after the push. This note
+   being wrong cost a whole session of hand-running `npx vercel deploy` that
+   was never needed. If a deploy ever looks missing, check the API before
+   believing a note: `GET /v6/deployments?projectId=…&target=production`
 6. Supervisors must be told: saving is now all-or-nothing per tap. An
    unrecognised supplier refuses the whole save and names the block
 
