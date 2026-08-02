@@ -27,6 +27,24 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   seven-control supplier toolbar is smaller than it was — still a comfortable
   tap target, and verified fully inside the screen edge.
 
+## 2026-08-02 — Spiro's emoji picks
+- **Decision:** Ten glyph changes chosen from a five-option-per-icon comparison:
+  filter `🚦`, list view `☰`, preview view `🖼️`, email `📧`, add `✚`,
+  photo dump `🎞️`, send `📨`, photos `📸`, import contact `📱`, call `☎️`.
+- **Why:** worth recording two of them. **`🚦` for the filter** is the best idea
+  in the set — the three statuses it selects ARE red, amber and green, so the
+  glyph states what the control does rather than gesturing at "filtering". And
+  the filter, list and preview toggles were the last drawn SVGs in the app; with
+  these they're gone, so the whole set is now one medium.
+- **Trade-off / watch item:** `📨` (send) and `📧` (email) are both envelopes and
+  sit **adjacent** once a supplier's send group is expanded. The chooser only
+  ever showed the group collapsed, so that pairing wasn't visible when it was
+  picked. On Apple's set they differ by an arrow vs an @; on Google's they're
+  closer. If it reads badly on site, `📤` for send separates them cleanly and is
+  a one-line change.
+- Also note `🖼️` moved from photo dump to the preview toggle, and photo dump
+  took `🎞️` — deliberate, avoiding a collision.
+
 ## 2026-08-02 — Emoji icons stay. The drawn set was built, shipped, rejected.
 - **Decision:** Reverted `2026-08-02h`, which replaced all 32 emoji controls with
   a one-family line-SVG set. The app is back on emoji, with four consistency

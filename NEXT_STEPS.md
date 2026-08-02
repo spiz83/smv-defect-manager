@@ -3,8 +3,8 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
-## View Defects screens reworked (2026-08-02) — build `2026-08-02i`
-Merged to `main`. Build stamp `2026-08-02i` in all four places (index.html
+## View Defects screens reworked (2026-08-02) — build `2026-08-02j`
+Merged to `main`. Build stamp `2026-08-02j` in all four places (index.html
 `APP_VERSION` + `cloud-sync.js?v=`, sw.js `CACHE` + the CORE `?v=` entry).
 The letter advances on every push to `main`, because Pages publishes from it —
 never re-use a stamp that has reached a phone.
@@ -33,6 +33,10 @@ un-bumped push ships to Vercel and never reaches a phone.
   app's blue), one envelope (`✉️`), Add Report is `📥` so it isn't a second pale
   page next to `📑`, and `🙈` is gone. Don't propose drawn icons again without
   reading the DECISIONS entry first.
+  Ten more glyphs picked 2026-08-02: `🚦` filter (its three statuses ARE red /
+  amber / green), `☰` list, `🖼️` preview, `📧` email, `✚` add, `🎞️` photo dump,
+  `📨` send, `📸` photos, `📱` import contact, `☎️` call. No drawn SVGs remain —
+  the set is one medium now. Watch `📨` next to `📧` in an expanded send group.
 - **Copy to clipboard is per-supplier too** (`copySupplierDefects`), a fourth
   option in the send group. Whole-screen copy was never removed — it's in all
   five toolbars; only the per-supplier version was missing.
