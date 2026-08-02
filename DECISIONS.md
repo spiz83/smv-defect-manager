@@ -27,6 +27,26 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   seven-control supplier toolbar is smaller than it was — still a comfortable
   tap target, and verified fully inside the screen edge.
 
+## 2026-08-02 — Job title and toolbar share one line
+- **Decision:** On the job and supplier screens the `.defects-header` is a flex
+  row (`.hdr-inline`): title left, toolbar right, one line. Title drops to 14px,
+  toolbar icons to `clamp(16px, 4.7vw, 21px)`. The title renders in three parts —
+  street (ellipsises), job number (never shrinks), trailer — and the **suburb is
+  left out**. The duplicate `＋` came off the title; the toolbar's ➕ does the
+  same thing.
+- **Why:** Spiro wanted the frozen block down to one line. It went **115px → 44px**,
+  and on a header that never scrolls away that's 71px permanently back on the list.
+- **Trade-off, and it's a real one:** on a 390px phone the longest addresses still
+  clip. "Lot 905, (11) Woodlawn Rd" needs 177px and gets 142px, so it shows as
+  "Lot 905, (11) Woodla…". Closing that would need the toolbar under ~121px,
+  i.e. 14px icons — too small to hit. Dropping the suburb was the fix that
+  bought the most (it was clipping at "Lot 905, (11) W…" before); the job number
+  is pinned because it identifies the job absolutely, and the full address is in
+  the heading's tooltip. **The remaining lever is the toolbar**: collapsing 📋+📑
+  into one 📤 expander, the pattern already used on supplier headings, frees
+  ~26px and would leave only ~9px missing on this worst-case address. Not done —
+  it removes a one-tap action, and that's Spiro's call.
+
 ## 2026-08-02 — Job + supplier screen headings drop the italic caps
 - **Decision:** On the View Defects and View Supplier screens, the screen title
   and the `.lot-title` now use **Titillium Web 700, upright, as-typed** — the

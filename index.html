@@ -333,6 +333,42 @@
             margin-bottom: 10px;
         }
 
+        /* ── TITLE AND TOOLBAR ON ONE LINE (Spiro 2026-08-02) ──────────────
+           The frozen header was two rows: the address, then the icons. Now
+           they share one, which takes another ~34px off a block that never
+           scrolls away. The address gives up width first and ellipsises; the
+           JOB NUMBER never does — it's what identifies the job, and losing
+           the tail of a long street name costs nothing next to losing that.
+           Only the job and supplier screens get this: the All Defects title
+           carries a row of status badges and the multi-supplier one carries a
+           <br>, and neither survives being pinned to a single line. */
+        .defects-header.hdr-inline {
+            display: flex;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 8px;
+        }
+        .defects-header.hdr-inline .lot-title {
+            flex: 1 1 auto;
+            min-width: 0;
+            margin-bottom: 0;
+            font-size: 14px;
+            line-height: 1.3;
+            display: flex;
+            align-items: baseline;
+            white-space: nowrap;
+        }
+        .defects-header.hdr-inline .lot-addr {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .defects-header.hdr-inline .lot-job,
+        .defects-header.hdr-inline .lot-add { flex-shrink: 0; }
+        .defects-header.hdr-inline .toolbar { flex: 0 0 auto; gap: clamp(2px, 1.6vw, 10px); }
+        .defects-header.hdr-inline .toolbar .icon-btn { font-size: clamp(16px, 4.7vw, 21px); }
+
         .toolbar {
             display: flex;
             /* ONE LINE, ALWAYS. The Filter pill became a single funnel icon and
@@ -2423,6 +2459,24 @@
         // UI Helper Functions
         
         // Unified address formatting - always: "Street, Suburb - PropertyNumber"
+        // The job heading for the one-line header, in three parts so the right
+        // things survive a narrow screen (Spiro 2026-08-02):
+        //   street   — ellipsises, it's the only part that can afford to
+        //   job no.  — never shrinks; it identifies the job absolutely
+        //   trailer  — the ＋, always tappable
+        // The SUBURB is left out on purpose. With it, "Lot 905, (11) Woodlawn
+        // Rd, Wollert - 306648" truncated to "Lot 905, (11) W… - 306648" and
+        // you couldn't tell Woodlawn from Willowbank; without it the street
+        // fits whole. You reached this screen from a list that showed the
+        // suburb, and the full address is still in the heading's tooltip.
+        function lotTitleHtml(address, trailer) {
+            const street = (address && address.street) || '';
+            const job = (address && address.propertyNumber) ? ` - ${address.propertyNumber}` : '';
+            return `<span class="lot-addr">${street}</span>`
+                 + (job ? `<span class="lot-job">${job}</span>` : '')
+                 + (trailer ? `<span class="lot-add">${trailer}</span>` : '');
+        }
+
         function formatAddress(address) {
             if (!address) return '';
             const street = address.street || '';
@@ -2591,8 +2645,8 @@
                         <div style="width: 60px;"></div>
                     </div>
                     
-                    <div class="defects-header">
-                        <div class="lot-title">${contractor.name}</div>
+                    <div class="defects-header hdr-inline">
+                        <div class="lot-title"><span class="lot-addr">${contractor.name}</span></div>
                         <div class="toolbar">
                             ${statusFilterButton()}
                             ${previewToggle()}
@@ -2781,8 +2835,8 @@
                         <div style="width: 60px;"></div>
                     </div>
                     
-                    <div class="defects-header">
-                        <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="Add defects for this job">${formatAddress(address)} ＋</div>
+                    <div class="defects-header hdr-inline">
+                        <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="${formatAddress(address)} — tap to add defects for this job">${lotTitleHtml(address)}</div>
                         <div class="toolbar">
                             ${statusFilterButton()}
                             ${previewToggle()}
@@ -10075,7 +10129,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02e';
+        const APP_VERSION = '2026-08-02f';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10149,7 +10203,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02e"></script>
+    <script src="cloud-sync.js?v=2026-08-02f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
