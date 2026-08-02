@@ -38,6 +38,12 @@ What the SUPERVISOR has to order, as opposed to what a trade has to fix.
   job's list. A **Shopping List** row on the home screen, directly under the job
   list, opens every job the supervisor holds — that's the one that matters, a
   hardware run is planned across jobs.
+- **Preview mode has it too** (`pvOrderBtn` / `pvToggleOrder`), added
+  2026-08-02 — walking the house is exactly when you notice a part is needed.
+  It updates the card IN PLACE, like `pvToggleDone`: a full `render()` throws
+  you back to the top of a long job. `pvUpdateCartBadge()` keeps the toolbar
+  count honest without one. The card's three icons live in `.pv-minis` so they
+  wrap as a group — loose, they broke mid-set at 320px ("MARK DONE ✏️" / "📍 🛒").
 - **States:** `''` → `needed` (To order) → `ordered` → `done` (Got it, leaves
   the list). The row 🛒 is a plain on/off switch; the tri-state advance happens
   on the list itself, which is where the supervisor is standing when it changes.

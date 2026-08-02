@@ -1568,9 +1568,18 @@
         }
         .pv-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .pv-ph-wait { font-size: 11px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
-        .pv-act { display: flex; align-items: center; gap: 9px; margin-top: 11px; }
+        /* Wraps rather than squeezes. A fourth control (🛒) took MARK DONE down
+           to 78px on a 320px phone — narrower than its own label. It now keeps a
+           130px floor and the icons drop beneath it instead, which on the
+           smallest phones is the better layout anyway: preview mode is walked
+           one-handed and the primary action gets the full width.
+           The icons are one flex item (.pv-minis) so they wrap as a GROUP —
+           left loose they broke mid-set, giving "MARK DONE ✏️" on one line and
+           "📍 🛒" on the next. */
+        .pv-act { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 11px; }
+        .pv-minis { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
         .pv-tick {
-            flex: 1; padding: 12px; border-radius: 9px; cursor: pointer;
+            flex: 1 1 130px; min-width: 130px; padding: 12px; border-radius: 9px; cursor: pointer;
             font-weight: 800; font-size: 13px; letter-spacing: .04em; text-transform: uppercase;
             border: 1.5px solid; background: #fff;
         }
@@ -1580,6 +1589,11 @@
             width: 42px; height: 42px; flex-shrink: 0; border: 1px solid var(--border-color);
             border-radius: 9px; background: #fff; font-size: 17px; cursor: pointer;
         }
+        /* 🛒 dimmed until the item is on the shopping list, matching the tell 📍
+           uses on a list row. The border goes blue when it's on: at arm's length,
+           walking a house, the outline reads before the glyph does. */
+        .pv-order { opacity: .45; }
+        .pv-order.on { opacity: 1; border-color: var(--blue); border-width: 1.5px; }
         /* Ticked off, still on screen: visibly done, still undoable, and it holds
            your scroll position half-way down a job. */
         .pv-done .pv-desc { opacity: .5; text-decoration: line-through; }
@@ -5829,11 +5843,63 @@
                         <button class="pv-tick ${done ? 'pv-t-done' : 'pv-t-open'}" onclick="event.stopPropagation(); pvToggleDone(${defect.id})">
                             ${done ? '✓ Done' : '◯ Mark done'}
                         </button>
-                        <button class="pv-mini" onclick="event.stopPropagation(); openDefectEdit(${defect.id})" title="Edit">✏️</button>
-                        <button class="pv-mini" onclick="event.stopPropagation(); openLocationPicker(${defect.id})" title="Location">📍</button>
+                        <span class="pv-minis">
+                            <button class="pv-mini" onclick="event.stopPropagation(); openDefectEdit(${defect.id})" title="Edit">✏️</button>
+                            <button class="pv-mini" onclick="event.stopPropagation(); openLocationPicker(${defect.id})" title="Location">📍</button>
+                            ${pvOrderBtn(defect)}
+                        </span>
                     </div>
                 </div>
             </div>`;
+        }
+        // 🛒 on a preview card. Same flag, same toggle as the list row — Preview
+        // is a different way of looking at the same defects, so anything you can
+        // do to one you should be able to do to the other. Walking the house is
+        // exactly when you notice a part is needed, so this is arguably the more
+        // important of the two places. (Spiro 2026-08-02)
+        function pvOrderBtn(defect) {
+            const s = orderStatusOf(defect);
+            const title = s
+                ? ORDER_META[s].label + ' — tap to take it off the shopping list'
+                : 'Order a part or materials for this item — puts it on the job shopping list';
+            return `<button class="pv-mini pv-order ${s ? 'on' : ''}" title="${title}"
+                        onclick="event.stopPropagation(); pvToggleOrder(${defect.id})">${s ? ORDER_META[s].icon : '🛒'}</button>`;
+        }
+        // Updates the card IN PLACE rather than re-rendering, for the same reason
+        // pvToggleDone does: a full render throws you back to the top of the list,
+        // and you're half-way down a job with a phone in one hand.
+        function pvToggleOrder(id) {
+            const d = db.data.defects.find(x => x.id === id); if (!d) return;
+            const was = orderStatusOf(d);
+            db.setDefectOrder(id, was ? '' : 'needed');
+            flushStatus();
+            const card = document.querySelector(`.pv-card[data-pv="${id}"]`);
+            const btn = card && card.querySelector('.pv-order');
+            if (btn) {
+                const s = orderStatusOf(d);
+                btn.classList.toggle('on', !!s);
+                btn.textContent = s ? ORDER_META[s].icon : '🛒';
+                btn.title = s
+                    ? ORDER_META[s].label + ' — tap to take it off the shopping list'
+                    : 'Order a part or materials for this item — puts it on the job shopping list';
+            }
+            pvUpdateCartBadge();
+            showToast(was ? 'Taken off the shopping list' : '🛒 Added to the shopping list');
+        }
+        // The toolbar count has to keep up without a re-render.
+        function pvUpdateCartBadge() {
+            const btn = document.querySelector('.toolbar .cart-btn');
+            if (!btn) return;
+            const aid = state.filters && state.filters.addressId;
+            const n = shoppingItems(aid == null ? null : aid).length;
+            const old = btn.querySelector('.cart-n');
+            if (old) old.remove();
+            if (n) {
+                const s = document.createElement('span');
+                s.className = 'cart-n';
+                s.textContent = n > 99 ? '99+' : String(n);
+                btn.appendChild(s);
+            }
         }
         function _pvEsc(x) { return String(x == null ? '' : x).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
         // Tap-to-complete. Deliberately does NOT re-render: the card stays put,
@@ -10700,7 +10766,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02p';
+        const APP_VERSION = '2026-08-02q';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10774,7 +10840,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02p"></script>
+    <script src="cloud-sync.js?v=2026-08-02q"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
