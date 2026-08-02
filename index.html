@@ -1578,6 +1578,49 @@
         .loc-btn { opacity: .45; }
         .loc-btn.has-loc { opacity: 1; }
         .photo-count { margin-left: 0 !important; font-size: 9px !important; font-weight: 700; }
+
+        /* ── ROW ACTIONS ON DEMAND (Spiro 2026-08-02) ──────────────────────
+           The pencil / pin / camera used to sit on every row. Any description
+           longer than about four words pushed them onto a second line, so a
+           three-word defect and a full sentence cost the same two lines and a
+           screen held a third fewer items — the wording was what got squeezed.
+           They're hidden now; DOUBLE-TAP a row to open them as a full-width
+           strip underneath it, at 19px instead of 13px, which is a far bigger
+           target than what it replaces. The ⋯ at the right edge is the only
+           thing it costs: 15px, against roughly 90px of icons.
+           Selection is off on the row so iOS answers a double-tap by opening
+           the row instead of selecting a word and raising the callout menu. */
+        .defect-item {
+            padding-right: 15px !important;
+            -webkit-user-select: none; user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
+        }
+        .defect-item .defect-actions { display: none; }
+        .defect-item::after {
+            content: '⋯';
+            position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+            font-size: 13px; line-height: 1; letter-spacing: 0;
+            color: var(--text-secondary); opacity: .4; pointer-events: none;
+        }
+        .defect-item.row-open { background: var(--bg-secondary); border-radius: 8px; }
+        /* Pinned to the top line once open — centred, it drifts to the middle of
+           a four-line description and stops reading as "close this". */
+        .defect-item.row-open::after {
+            content: '✕'; font-size: 11px; opacity: .5;
+            top: 9px; transform: none;
+        }
+        .defect-item.row-open .defect-actions {
+            display: flex !important;
+            flex-basis: 100%;
+            gap: 22px !important;
+            padding: 3px 0 1px 2px;
+        }
+        .defect-item.row-open .loc-btn,
+        .defect-item.row-open .photo-btn,
+        .defect-item.row-open .edit-btn { font-size: 19px !important; padding: 4px 6px !important; }
+        .defect-item.row-open .loc-btn { opacity: 1; }
+        .defect-item.row-open .photo-count { font-size: 11px !important; }
         /* Location picker grid */
         .loc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
         .loc-opt { padding: 11px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; cursor: pointer; text-align: left; }
@@ -4964,6 +5007,40 @@
 
         // Left-edge status tab. Red = logged (not booked), Amber = booked in
         // (outstanding), Green = completed. Tap to advance (confirm on complete).
+        // Double-tap a defect row to reveal its pencil / pin / camera; double-tap
+        // again (or open another row) to put them away. Only one row is open at a
+        // time — the point of hiding them is a compact list, and several open
+        // strips would give that straight back.
+        //
+        // Every button inside a row calls event.stopPropagation(), so only taps on
+        // the row background or its description reach this listener: the status
+        // tab still advances on ONE tap, and tapping the revealed icons doesn't
+        // close the row underneath them. Delegated from document because the list
+        // is rebuilt wholesale on every render.
+        (function bindRowExpand() {
+            let lastRow = null, lastTapAt = 0;
+            document.addEventListener('click', function (e) {
+                const row = e.target && e.target.closest ? e.target.closest('.defect-item') : null;
+                if (!row) { lastRow = null; return; }
+                // Already open: ONE tap closes it, which is what the ✕ promises.
+                // Aiming for a revealed icon is still safe — those stop the event.
+                if (row.classList.contains('row-open')) {
+                    row.classList.remove('row-open');
+                    lastRow = null; lastTapAt = 0;
+                    return;
+                }
+                const now = Date.now();
+                if (row === lastRow && now - lastTapAt < 450) {
+                    lastRow = null; lastTapAt = 0;
+                    document.querySelectorAll('.defect-item.row-open')
+                        .forEach(r => r.classList.remove('row-open'));
+                    row.classList.add('row-open');
+                } else {
+                    lastRow = row; lastTapAt = now;
+                }
+            });
+        })();
+
         function statusTab(defect) {
             const s = defectStatusOf(defect);
             const title = s === 'open' ? 'Logged — tap to book in'
@@ -9924,7 +10001,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02a';
+        const APP_VERSION = '2026-08-02b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -9998,7 +10075,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02a"></script>
+    <script src="cloud-sync.js?v=2026-08-02b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

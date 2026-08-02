@@ -3,11 +3,19 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
-## View Defects header — one line + frozen (2026-08-02) — NOT DEPLOYED
-Branch `claude/defects-header-single-line-5oo2zw`. Build stamp bumped to
-`2026-08-02a` (index.html `APP_VERSION`, `cloud-sync.js?v=`, sw.js `CACHE`).
-`AGENT_INSTRUCTIONS.md` says stop and ask before anything goes live, so it has
-not been deployed — run the `deploy-defect-manager` skill when approved.
+## View Defects screens reworked (2026-08-02) — build `2026-08-02b`
+Merged to `main`. Build stamp `2026-08-02b` in all four places (index.html
+`APP_VERSION` + `cloud-sync.js?v=`, sw.js `CACHE` + the CORE `?v=` entry).
+Spiro gave deploy permission; see "Deploy status" at the end of this section.
+
+- **Row actions are hidden until you double-tap a row** — the pencil, pin and
+  camera open as a strip under the description, single tap closes it, one row
+  open at a time. `⋯` at the right edge is the affordance. It's one delegated
+  click listener near `statusTab()` plus CSS on `.defect-item`, so it covers
+  every screen that renders a row. Measured: list height 528px → 436px and
+  8/10 → 10/10 rows visible on a 390×700 screen.
+  Rows have `user-select: none` — without it iOS answers the double-tap by
+  selecting a word and raising the callout menu. Don't remove it.
 
 - Toolbar is one non-wrapping row on all five View Defects screens. Filter is a
   funnel icon; LIST|PREVIEW is one toggle icon showing the view you'll get.

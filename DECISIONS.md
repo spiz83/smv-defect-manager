@@ -27,6 +27,27 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   seven-control supplier toolbar is smaller than it was — still a comfortable
   tap target, and verified fully inside the screen edge.
 
+## 2026-08-02 — Row actions on demand: double-tap to open a defect row
+- **Decision:** The pencil / pin / camera no longer sit on every list row. A
+  **double-tap** on a row opens them as a full-width strip underneath it, at
+  19px instead of 13px; a **single tap** on an open row closes it again. Only
+  one row is open at a time. A faint `⋯` at the right edge is the affordance,
+  becoming `✕` when open. Applies to every screen that renders `.defect-item`,
+  since it is one delegated listener plus CSS on the shared row.
+- **Why:** Spiro, with a screenshot: any description longer than about four
+  words pushed the icons onto a second line, so a three-word defect and a full
+  sentence cost the same two lines — the wording was what got squeezed. Measured
+  on his own ten Htee Kleeh items at 390×700: list height **528px → 436px**, and
+  **8/10 rows visible on one screen → 10/10**. "Replace hinges to external door"
+  went from two lines to one.
+- **Trade-off:** The location text and the photo count are no longer visible at
+  a glance — you have to open the row to see them. Accepted as asked for; if the
+  photo count turns out to be worth its width, a 6px dot on the row is the
+  cheap version. Text selection is also off on rows (`user-select: none`), which
+  is what stops iOS answering a double-tap by selecting a word and raising the
+  callout menu instead of opening the row; copying a single description is lost,
+  and Copy to Clipboard still exports the whole list.
+
 ## 2026-08-02 — Preview mode reaches the supplier screen
 - **Decision:** `renderViewDefectsContractor` now honours preview mode and
   carries the toggle icon, rendering walk-the-house cards grouped by address
