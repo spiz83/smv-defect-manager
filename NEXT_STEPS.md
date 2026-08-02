@@ -110,9 +110,11 @@ un-bumped push ships to Vercel and never reaches a phone.
   page next to `📑`, and `🙈` is gone. Don't propose drawn icons again without
   reading the DECISIONS entry first.
   Ten more glyphs picked 2026-08-02: `🚦` filter (its three statuses ARE red /
-  amber / green), `☰` list, `🖼️` preview, `📧` email, `✚` add, `🎞️` photo dump,
+  amber / green), `☰` list, preview, `📧` email, `✚` add, `🎞️` photo dump,
   `📨` send, `📸` photos, `📱` import contact, `☎️` call. No drawn SVGs remain —
   the set is one medium now. Watch `📨` next to `📧` in an expanded send group.
+  Preview is `📺` as of `2026-08-02n` — it was `🖼️`, which read as a framed
+  picture on a wall rather than a way of viewing the list.
 - **Copy to clipboard is per-supplier too** (`copySupplierDefects`), a fourth
   option in the send group. Whole-screen copy was never removed — it's in all
   five toolbars; only the per-supplier version was missing.

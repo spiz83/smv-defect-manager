@@ -5668,10 +5668,12 @@
         // with the emoji already used for the actions (📋 📑 📧 🔗 ➕ 🔄).
         // Traffic light for the filter: the three statuses it selects ARE red,
         // amber and green, so the glyph says what the control does (Spiro
-        // 2026-08-02). ☰ and 🖼️ carry the list/preview toggle.
+        // 2026-08-02). ☰ and 📺 carry the list/preview toggle — 🖼️ read as a
+        // framed picture hanging on a wall rather than a way of viewing the
+        // list, and looked wrong in the row (Spiro 2026-08-02).
         const ICON_FUNNEL = '🚦';
         const ICON_LIST   = '☰';
-        const ICON_CARDS  = '🖼️';
+        const ICON_CARDS  = '📺';
 
         // One button, two states, showing the view you'll GET when you tap it —
         // the same convention as a grid/list switch. Two side-by-side labelled
@@ -10698,7 +10700,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02m';
+        const APP_VERSION = '2026-08-02n';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10772,7 +10774,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02m"></script>
+    <script src="cloud-sync.js?v=2026-08-02n"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

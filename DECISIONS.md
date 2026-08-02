@@ -2,6 +2,16 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — Preview toggle is `📺`, not `🖼️`
+- **Decision:** `ICON_CARDS` = `📺`. Preview mode is now a small television.
+- **Why:** Spiro, on site — the picture frame "looks weird". It reads as a
+  framed picture hanging on a wall, which is a THING, not a way of looking at
+  the list. `📺` reads as a screen/display, so it says "show me this differently"
+  the way the paired `☰` says "show me the compact rows".
+- **Trade-off:** none worth the name. `📺` isn't used anywhere else in the set,
+  it carries its own colour like every other glyph, and it's the same width, so
+  the one-line toolbar is unaffected (re-verified at 320px).
+
 ## 2026-08-02 — Shopping list: what the SUPERVISOR has to order
 - **Decision:** A fourth control (`🛒`) on an expanded defect row flags that the
   item is blocked on the supervisor sourcing a part or materials. Flagged items
