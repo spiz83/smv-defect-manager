@@ -64,6 +64,26 @@ What the SUPERVISOR has to order, as opposed to what a trade has to fix.
   no `order_status` key (and whose `select('order_status')` 42703s), exactly
   like the live database today. It covers both the un-migrated and migrated
   worlds. Reverting the `prevOrder` line makes it fail — verified.
+  It also covers **sharing a contractor**: a row with a legacy_id, a row with
+  `legacy_id = NULL` (the duplicate-insert case), and an RLS refusal.
+
+## Pushing a row whose cloud `legacy_id` is NULL (2026-08-02)
+`upsert(row, { onConflict: 'legacy_id' })` **cannot** match a row whose
+`legacy_id` is NULL — NULL never conflicts in Postgres — so it inserts a
+duplicate and leaves the original alone. Rows created in CH Tracker are exactly
+that shape. `commitDefect` has guarded this since June; `diffEntity` did not,
+which is what made an approved contractor reappear in "Contractors to review"
+with a second copy piling up behind it each time.
+Both now UPDATE by uuid first and only upsert as a fallback. **If you add
+another entity to the diff engine, it inherits the fix — don't reintroduce a
+bare upsert-by-legacy_id.**
+
+Related: `diffEntity` swallows permanent (RLS/constraint) errors on purpose so
+one un-pushable row can't freeze the device. That means **a button must not
+report success off the back of it**. Share now goes through
+`CloudSync.commitContractor()`, which waits for the answer and rolls the local
+change back if the database refused. Copy that pattern for any other
+user-initiated write whose failure the user needs to know about.
 
 ## Deep read — third-party private inspection reports (2026-08-02) — build `2026-08-02l`
 Manager-only. Report type **Private Inspection** + a PDF + the 🔬 Deep read

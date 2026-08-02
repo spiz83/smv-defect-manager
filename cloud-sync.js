@@ -153,16 +153,23 @@
       #cs-toggle a{color:var(--acc,#2f6df6);cursor:pointer;font-weight:700;}
       #cs-msg{font-size:12px;margin-top:11px;min-height:16px;text-align:center;font-family:'JetBrains Mono',monospace;}
       #cs-msg.err{color:var(--red,#f87171);} #cs-msg.ok{color:var(--green,#34d399);}
+      /* The page declares viewport-fit=cover + black-translucent, so content
+         runs UNDER the iPhone's own status bar. Without the safe-area inset the
+         clock and battery sit on top of this row and Sign out is barely
+         tappable — Spiro couldn't find how to log off. (2026-08-02) */
       #cs-statusbar{position:fixed;top:0;left:0;right:0;z-index:9998;
         display:flex;align-items:center;gap:10px;justify-content:flex-end;
-        padding:4px 12px;font:500 12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;
+        padding:4px 12px;padding-top:calc(4px + env(safe-area-inset-top, 0px));
+        font:500 12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;
         background:rgba(15,23,42,.92);color:#e2e8f0;}
       #cs-statusbar .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;}
       #cs-statusbar .dot.syncing{background:#f59e0b;}
       #cs-statusbar .dot.offline{background:#ef4444;}
+      /* Sign out is the only way off the app — give it a real tap target
+         rather than an 11px chip wedged under the notch. */
       #cs-statusbar button{background:transparent;border:1px solid #475569;color:#e2e8f0;
-        border-radius:6px;padding:2px 8px;cursor:pointer;font-size:11px;}
-      body.cs-authed{padding-top:26px;}
+        border-radius:6px;padding:5px 11px;cursor:pointer;font-size:12px;font-weight:600;}
+      body.cs-authed{padding-top:calc(30px + env(safe-area-inset-top, 0px));}
 
       /* Offline / sync banner — slides up from the bottom, very visible on a phone */
       #cs-banner{position:fixed;left:0;right:0;bottom:0;z-index:9997;
@@ -948,15 +955,40 @@
         });
       } catch (e) { /* network hiccup: fall through to the normal push */ }
     }
-    // Updates — UPSERT on the UNIQUE legacy_id, never by the local uuid. If the
-    // phone's uuid map has drifted, a status change / edit still lands on the
-    // correct cloud row (and refreshes the uuid), so completions/edits stop
-    // "reverting" on the next pull.
+    // Updates — by UUID when we know it, falling back to an upsert on the
+    // unique legacy_id.
+    //
+    // Upsert-by-legacy_id alone was wrong and is the "shared contractor keeps
+    // coming back" bug: a row created in CH Tracker has legacy_id = NULL, and
+    // NULL never conflicts with anything in Postgres, so ON CONFLICT matched
+    // nothing and INSERTED A DUPLICATE — leaving the original row untouched.
+    // The manager tapped Share, got a success toast, the next pull returned the
+    // untouched original, and it reappeared in "Contractors to review" with a
+    // second copy quietly piling up behind it every time.
+    //
+    // commitDefect fixed exactly this for dm_defects on 2026-06; it was never
+    // carried across to the entities that still go through the diff engine
+    // (contractors, trades). (Spiro 2026-08-02)
     for (const item of liveUpdates) {
       try {
-        const { data, error } = await sb.from(table).upsert(toRow(item), { onConflict: 'legacy_id' }).select('id, legacy_id').single();
+        const row = toRow(item);
+        const uuid = map[item.id];
+        let data = null, error = null;
+        if (uuid) {
+          const patch = { ...row };
+          delete patch.legacy_id;      // never restamp the unique column on an update
+          const res = await sb.from(table).update(patch).eq('id', uuid).select('id, legacy_id').maybeSingle();
+          data = res.data; error = res.error;
+        }
+        // No uuid, or the row it pointed at is gone → (re)create by legacy_id.
+        if (!error && !data) {
+          const res = await sb.from(table).upsert(row, { onConflict: 'legacy_id' }).select('id, legacy_id').single();
+          data = res.data; error = res.error;
+        }
         if (error) throw error;
-        if (data) map[data.legacy_id] = data.id;
+        // A cloud row can legitimately have legacy_id NULL — key the map off the
+        // LOCAL id in that case, or the mapping is lost and we duplicate again.
+        if (data) map[data.legacy_id != null ? data.legacy_id : item.id] = data.id;
       } catch (e) { note(e, 'update#' + item.id); }
     }
     // Deletes — by legacy_id (robust against a stale uuid), then drop from map.
@@ -2579,10 +2611,48 @@
       .filter((x) => x.contractorId === a[0] && x.addressId === a[1]).map((x) => x.id));
   }
 
+  // One contractor, written through and VERIFIED. Resolves { ok, error }.
+  //
+  // The diff engine deliberately SWALLOWS a permanent error (RLS, constraint):
+  // one un-pushable row must not abort the batch or freeze the device. That is
+  // right for a background push, and wrong for a button a manager just tapped —
+  // "Contractor shared with the team" followed by it reappearing on the next
+  // pull is worse than an honest failure. So Share goes through here and waits
+  // for the answer. (Spiro 2026-08-02)
+  async function commitContractor(legacyId) {
+    const c = (db.data.contractors || []).find((x) => String(x.id) === String(legacyId));
+    if (!c) return { ok: false, error: 'contractor not found on this device' };
+    const row = {
+      legacy_id: c.id, name: c.name, email: c.email || null, phone: c.phone || null,
+      is_shared: c.isShared !== false, added_by: c.addedBy || null,
+    };
+    try {
+      const uuid = idMap.contractors[c.id];
+      let data = null, error = null;
+      if (uuid) {
+        const patch = { ...row };
+        delete patch.legacy_id;
+        const res = await sb.from('dm_contractors').update(patch).eq('id', uuid).select('id, legacy_id').maybeSingle();
+        data = res.data; error = res.error;
+      }
+      if (!error && !data) {
+        const res = await sb.from('dm_contractors').upsert(row, { onConflict: 'legacy_id' }).select('id, legacy_id').maybeSingle();
+        data = res.data; error = res.error;
+      }
+      if (error) return { ok: false, error: error.message || 'the database refused the change' };
+      if (!data) return { ok: false, error: 'the database did not accept the change' };
+      idMap.contractors[data.legacy_id != null ? data.legacy_id : c.id] = data.id;
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || String(e) };
+    }
+  }
+
   window.CloudSync = {
     flush: () => flushPending(),
     pull: () => pullAll(),
     commitDefect: (legacyId) => commitDefect(legacyId),
+    commitContractor: (legacyId) => commitContractor(legacyId),
   };
 
   // ===========================================================================

@@ -2,6 +2,48 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — "Shared contractor keeps coming back" — two bugs, not one
+- **Report:** approving a supervisor-added contractor under the admin login
+  didn't stick; the review list refreshed and they reappeared.
+- **Bug 1 — a NULL legacy_id can't conflict.** `diffEntity` pushed every update
+  as `upsert(row, { onConflict: 'legacy_id' })`. A contractor row created in CH
+  Tracker has `legacy_id = NULL`, and NULL never conflicts with anything in
+  Postgres — so ON CONFLICT matched nothing, **INSERTED A DUPLICATE**, and left
+  the original row untouched. The next pull returned the untouched original and
+  the contractor was back in the list, with a second copy quietly accumulating
+  behind it on every tap of Share. `commitDefect` fixed exactly this for
+  `dm_defects` back in June; it was never carried across to the entities still
+  going through the diff engine.
+- **Decision:** `diffEntity` now UPDATEs by uuid when the id map has one, and
+  only falls back to upsert-by-legacy_id for a genuinely new row. It also keys
+  the map off the LOCAL id when the cloud row's `legacy_id` is NULL — otherwise
+  the mapping is lost on the next pass and it duplicates all over again. This is
+  generic, so trades get the fix too.
+- **Bug 2 — the diff engine swallows a refused write, by design.** A permanent
+  error (RLS, constraint) is caught and logged so one bad row can't abort the
+  batch or freeze the device. Correct for a background push; wrong for a button
+  a manager just tapped. "Contractor shared with the team" followed by it
+  reappearing is worse than an honest failure.
+- **Decision:** Share goes through a new `CloudSync.commitContractor()` that
+  writes and WAITS for the answer. On failure the local change is rolled back so
+  the screen matches the database, and the real error is shown.
+- **Trade-off:** Share is now as slow as the network. Worth it — the whole
+  complaint was that it appeared instant and wasn't real. The background diff
+  engine keeps swallowing errors; only this one user-initiated action doesn't.
+- **The general rule:** if a button tells the user something is done, something
+  has to have confirmed it. A fire-and-forget write behind a success toast is a
+  lie whenever the write can be refused.
+
+## 2026-08-02 — Sign out was under the notch
+- **Decision:** `#cs-statusbar` takes `env(safe-area-inset-top)`, and its button
+  goes from an 11px chip to a 12px/600 one with real padding.
+- **Why:** Spiro asked how to log off. It was there — behind the iPhone's own
+  clock and battery. The page declares `viewport-fit=cover` +
+  `black-translucent`, so content runs under the system status bar, and nothing
+  applied the inset. `body.cs-authed` picks up the same inset so the app header
+  isn't pushed under it, and `syncStickyHeader()` already measures the bar's
+  real height, so the frozen headers re-offset themselves.
+
 ## 2026-08-02 — The pull must PRESERVE a field the cloud can't carry yet
 - **Bug:** flagging a defect with 🛒 put it on the shopping list, then it
   vanished seconds later. Reported from site the day the feature shipped.

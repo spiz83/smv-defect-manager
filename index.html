@@ -8319,12 +8319,30 @@
             showToast(isMgr ? 'Contractor added' : 'Contractor added — private to you for now');
         }
         // Manager action: promote a private supervisor-added contractor to the team.
-        function shareContractor(legacyId) {
+        // Share waits for the CLOUD to confirm before it says so. The background
+        // diff engine swallows a refused write on purpose (one bad row must not
+        // freeze the push), which meant a manager could tap Share, be told it
+        // worked, and watch the contractor reappear on the next pull. On failure
+        // the local change is rolled back so the screen matches the database.
+        // (Spiro 2026-08-02)
+        async function shareContractor(legacyId) {
             const c = db.getContractor(legacyId);
             if (!c) return;
+            const prev = { isShared: c.isShared, addedBy: c.addedBy };
             c.isShared = true; c.addedBy = null;
             db.save();
             render();
+            const cs = window.CloudSync;
+            if (cs && cs.commitContractor) {
+                const res = await cs.commitContractor(legacyId);
+                if (!res || !res.ok) {
+                    c.isShared = prev.isShared; c.addedBy = prev.addedBy;
+                    db.save();
+                    render();
+                    showToast('Could not share — ' + ((res && res.error) || 'the database refused the change'), true);
+                    return;
+                }
+            }
             showToast('Contractor shared with the team');
         }
         function editContractor(id) { const c = db.getContractor(id); if (c) openAddContractor('', c); }
@@ -10766,7 +10784,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02q';
+        const APP_VERSION = '2026-08-02r';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10840,7 +10858,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02q"></script>
+    <script src="cloud-sync.js?v=2026-08-02r"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
