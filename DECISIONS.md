@@ -27,25 +27,28 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   seven-control supplier toolbar is smaller than it was — still a comfortable
   tap target, and verified fully inside the screen edge.
 
-## 2026-08-02 — Job title and toolbar share one line
-- **Decision:** On the job and supplier screens the `.defects-header` is a flex
-  row (`.hdr-inline`): title left, toolbar right, one line. Title drops to 14px,
-  toolbar icons to `clamp(16px, 4.7vw, 21px)`. The title renders in three parts —
-  street (ellipsises), job number (never shrinks), trailer — and the **suburb is
-  left out**. The duplicate `＋` came off the title; the toolbar's ➕ does the
-  same thing.
-- **Why:** Spiro wanted the frozen block down to one line. It went **115px → 44px**,
-  and on a header that never scrolls away that's 71px permanently back on the list.
-- **Trade-off, and it's a real one:** on a 390px phone the longest addresses still
-  clip. "Lot 905, (11) Woodlawn Rd" needs 177px and gets 142px, so it shows as
-  "Lot 905, (11) Woodla…". Closing that would need the toolbar under ~121px,
-  i.e. 14px icons — too small to hit. Dropping the suburb was the fix that
-  bought the most (it was clipping at "Lot 905, (11) W…" before); the job number
-  is pinned because it identifies the job absolutely, and the full address is in
-  the heading's tooltip. **The remaining lever is the toolbar**: collapsing 📋+📑
-  into one 📤 expander, the pattern already used on supplier headings, frees
-  ~26px and would leave only ~9px missing on this worst-case address. Not done —
-  it removes a one-tap action, and that's Spiro's call.
+## 2026-08-02 — Job heading: own line, one line, auto-fitted
+- **Decision:** On the job and supplier screens the heading keeps its **own
+  row**, with the toolbar on the row below, at **17px**. The title renders in
+  parts — street (ellipsises), job number (never shrinks) — the **suburb is left
+  out**, and `fitLotTitle()` steps the size down 17px → 14px if a very long
+  address would otherwise wrap or clip. The duplicate `＋` came off the title;
+  the toolbar's ➕ does the same thing.
+- **Why:** the heading and the toolbar were tried on ONE shared line first
+  (115px → 44px), and on paper it won. On a real job it didn't: it squeezed the
+  address to 13px and *still* clipped it — "Lot 1207, (28) Mimo… - 303719".
+  Spiro called it, and he was right. The address is the one thing on this screen
+  you cannot reconstruct from context; the toolbar is six icons you already know.
+  So the address gets the full width and a readable size, and the toolbar pays
+  the second row.
+- **Trade-off:** the header is **78px, not 44px** — 37px per screen given back to
+  keep the address whole and legible. Still 37px better than the 115px it
+  started at, because dropping the suburb and pinning the job number mean the
+  address no longer wraps to two lines. Measured un-clipped at 17px from 320px
+  to 430px.
+- **The general lesson:** the shared line optimised the measurable thing (pixels)
+  at the cost of the thing that mattered (reading the address). Check a layout
+  win against the worst real record, not the tidy one.
 
 ## 2026-08-02 — Job + supplier screen headings drop the italic caps
 - **Decision:** On the View Defects and View Supplier screens, the screen title

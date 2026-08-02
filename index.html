@@ -342,18 +342,17 @@
            Only the job and supplier screens get this: the All Defects title
            carries a row of status badges and the multi-supplier one carries a
            <br>, and neither survives being pinned to a single line. */
-        .defects-header.hdr-inline {
-            display: flex;
-            align-items: center;
-            flex-wrap: nowrap;
-            gap: 8px;
-        }
+        /* The address keeps its OWN line, with the toolbar on the line below
+           (Spiro 2026-08-02, after seeing it shared). Sharing one line worked
+           on paper — 44px against 115px — but it squeezed the address down to
+           13px and still clipped it on a real job, and the address is the one
+           thing on this screen you can't reconstruct from context. It gets the
+           full width and a readable size; the toolbar costs a second row. */
         .defects-header.hdr-inline .lot-title {
-            flex: 1 1 auto;
             min-width: 0;
-            margin-bottom: 0;
-            font-size: 14px;
-            line-height: 1.3;
+            margin-bottom: 8px;
+            font-size: 17px;
+            line-height: 1.25;
             display: flex;
             align-items: baseline;
             white-space: nowrap;
@@ -366,8 +365,9 @@
         }
         .defects-header.hdr-inline .lot-job,
         .defects-header.hdr-inline .lot-add { flex-shrink: 0; }
-        .defects-header.hdr-inline .toolbar { flex: 0 0 auto; gap: clamp(2px, 1.6vw, 10px); }
-        .defects-header.hdr-inline .toolbar .icon-btn { font-size: clamp(16px, 4.7vw, 21px); }
+        /* Leading whitespace collapses at the start of a flex item, so the gap
+           before the job number has to be a margin, not a space. */
+        .defects-header.hdr-inline .lot-job { margin-left: .3em; }
 
         .toolbar {
             display: flex;
@@ -2471,7 +2471,7 @@
         // suburb, and the full address is still in the heading's tooltip.
         function lotTitleHtml(address, trailer) {
             const street = (address && address.street) || '';
-            const job = (address && address.propertyNumber) ? ` - ${address.propertyNumber}` : '';
+            const job = (address && address.propertyNumber) ? `- ${address.propertyNumber}` : '';
             return `<span class="lot-addr">${street}</span>`
                  + (job ? `<span class="lot-job">${job}</span>` : '')
                  + (trailer ? `<span class="lot-add">${trailer}</span>` : '');
@@ -7390,6 +7390,25 @@
             if (bar) s.setProperty('--cs-bar-h', bar.offsetHeight + 'px');
             else s.removeProperty('--cs-bar-h');
             s.setProperty('--app-header-h', (head ? head.offsetHeight : 0) + 'px');
+            fitLotTitle();
+        }
+        // Keep the address on ONE line without clipping it. It has the full width
+        // now, so the only addresses that need anything are the very longest, and
+        // stepping down a point or two beats either wrapping to a second line or
+        // eating the end of the street name (Spiro 2026-08-02). CSS can't fit text
+        // to a box, hence the loop. Floor is 14px — below that it stops reading as
+        // the heading of the screen, and anything still over clips as before.
+        function fitLotTitle() {
+            document.querySelectorAll('.defects-header.hdr-inline .lot-title').forEach(t => {
+                const addr = t.querySelector('.lot-addr');
+                if (!addr) return;
+                let px = 17;
+                t.style.fontSize = px + 'px';
+                while (px > 14 && addr.scrollWidth > addr.clientWidth + 1) {
+                    px -= 0.5;
+                    t.style.fontSize = px + 'px';
+                }
+            });
         }
         window.addEventListener('resize', syncStickyHeader);
         window.addEventListener('orientationchange', syncStickyHeader);
@@ -10129,7 +10148,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02f';
+        const APP_VERSION = '2026-08-02g';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10203,7 +10222,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02f"></script>
+    <script src="cloud-sync.js?v=2026-08-02g"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -3,8 +3,8 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
-## View Defects screens reworked (2026-08-02) — build `2026-08-02f`
-Merged to `main`. Build stamp `2026-08-02f` in all four places (index.html
+## View Defects screens reworked (2026-08-02) — build `2026-08-02g`
+Merged to `main`. Build stamp `2026-08-02g` in all four places (index.html
 `APP_VERSION` + `cloud-sync.js?v=`, sw.js `CACHE` + the CORE `?v=` entry).
 The letter advances on every push to `main`, because Pages publishes from it —
 never re-use a stamp that has reached a phone.
@@ -23,12 +23,14 @@ use — has to be deployed from a machine that's logged in.
   as DD/MM (date set) — never both. `fmtDateShort` is for that button ONLY;
   reports and emails still use `fmtDateNice` with the year, and so does the
   button's tooltip.
-- **Title and toolbar share one line** on the job and supplier screens
-  (`.defects-header.hdr-inline`): 115px -> 44px on a block that never scrolls.
-  The title is three parts — street (ellipsises), job number (pinned), trailer —
-  and the suburb is deliberately dropped. Long addresses still clip the tail of
-  the street on a 390px phone; the only lever left is fewer toolbar icons
-  (collapsing the copy + PDF pair into one expander frees ~26px). See DECISIONS.
+- **The job heading keeps its own row** (`.defects-header.hdr-inline`), 17px,
+  toolbar on the row below. Header 115px -> 78px. The title is street
+  (ellipsises) + job number (pinned), the suburb is dropped, and
+  `fitLotTitle()` steps 17px -> 14px so a long address shrinks slightly instead
+  of wrapping. Verified un-clipped 320px..430px.
+  Sharing ONE line with the toolbar was tried and reverted — it got to 44px but
+  squeezed the address to 13px and still clipped it on a real job. Don't
+  re-try it without solving that; see DECISIONS.
 - **Screen title + lot title are Titillium 700 upright, as-typed**, matching an
   index job row, instead of 900 italic uppercase. The home hero is deliberately
   excluded — it's the masthead. Twice now a "different font" report has turned
