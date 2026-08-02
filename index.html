@@ -1343,6 +1343,22 @@
             font-style: italic; text-transform: uppercase; color: var(--t1) !important;
         }
 
+        /* ---- Job + supplier screens read like the index (Spiro 2026-08-02) ----
+           The family was never the difference — the index job rows, the defect
+           rows and these headings are all Titillium Web. What made walking into
+           a job feel like a different app was the TREATMENT: 900 italic
+           uppercase against the index's plain 700 upright. Same three
+           properties, same values as an index job row, so the two screens now
+           set an address the way the list that led you there did.
+           The home hero keeps its italic caps — that's the app's masthead, not
+           a page heading, and it isn't what changes underfoot. */
+        body.design-f1 .app-header:not(.home-hero) .header-title,
+        body.design-f1 .lot-title {
+            font-weight: 700 !important;
+            font-style: normal;
+            text-transform: none;
+        }
+
         /* Section labels → mono accent (pg-lbl) */
         body.design-f1 .section-title {
             font-family: 'JetBrains Mono', monospace !important;
