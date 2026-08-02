@@ -1571,19 +1571,49 @@
   }
 
   // AI report extraction via the secure edge function (key stays server-side)
+  function normaliseExtracted(data) {
+    // Normalise to {description, location, ...} objects (the review handles
+    // these, pre-filling the area); tolerate the old flat-string shape too.
+    return ((data && data.defects) || [])
+      .map((d) => (typeof d === 'string'
+        ? { description: d, location: '' }
+        : {
+            description: (d && d.description) || '',
+            location: (d && d.location) || '',
+            // Deep read only — absent on the flat path, and the review copes.
+            trade: (d && d.trade) || '',
+            page: (d && typeof d.page === 'number') ? d.page : null,
+            anchor: (d && d.anchor) || '',
+          }))
+      .filter((d) => d.description && d.description.trim());
+  }
+
   window.CloudAI = {
     available: () => true,
+    // Deep read is admin-only: it costs several times a flat read (every page
+    // is sent as an image as well as text) and it exists for the messy
+    // third-party reports, not the day-to-day BPI import. Gated on the same
+    // role the rest of the app uses. (Spiro 2026-08-02)
+    deepAvailable: () => (userRole || cachedIdentity.role) === 'manager',
     extract: async (text) => {
       const { data, error } = await sb.functions.invoke('extract-defects', { body: { text } });
       if (error) throw new Error(error.message || 'AI extraction failed');
       if (data && data.error) throw new Error(data.error);
-      // Normalise to {description, location} objects (the review handles these,
-      // pre-filling the area); tolerate the old flat-string shape too.
-      return ((data && data.defects) || [])
-        .map((d) => (typeof d === 'string'
-          ? { description: d, location: '' }
-          : { description: (d && d.description) || '', location: (d && d.location) || '' }))
-        .filter((d) => d.description && d.description.trim());
+      return normaliseExtracted(data);
+    },
+    // Deep read: Claude sees the actual PDF pages — headings, tables, columns
+    // and the photos printed between them — instead of a flattened wall of
+    // text. Returns the same items plus { trade, page, anchor }; `anchor` is
+    // what lets the app pair report photos to the defect they sit under.
+    // Resolves { items, layout }.
+    extractDeep: async (pdfBase64, trades) => {
+      if (!window.CloudAI.deepAvailable()) throw new Error('Deep read is available to managers only');
+      const { data, error } = await sb.functions.invoke('extract-defects', {
+        body: { pdf: pdfBase64, trades: trades || [] },
+      });
+      if (error) throw new Error(error.message || 'AI extraction failed');
+      if (data && data.error) throw new Error(data.error);
+      return { items: normaliseExtracted(data), layout: (data && data.layout) || '' };
     }
   };
 

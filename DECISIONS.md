@@ -2,6 +2,55 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — Deep read: private inspection reports are read as PAGES, not text
+- **Decision:** A third report path, **Deep read**, sends the actual PDF to
+  Claude as a base64 `document` block instead of flattened text. It is
+  **manager-only** (`CloudAI.deepAvailable()` → `role === 'manager'`) and only
+  offered for a **Private Inspection PDF** — BPI and pasted text never see it.
+  The model returns `{description, location, trade, page, anchor}` plus a
+  one-line `layout` summary of how that report was organised.
+- **Why:** BPI reports carry their structure in the WORDS (`1 Kitchen Painter
+  ...`), so flattened text is enough. Private inspection reports carry it in the
+  LAYOUT — a room heading, a defect-type heading, a cluster of four photos
+  sitting under a paragraph. `extract-defects` received `{ text }` and nothing
+  else, so every one of those cues was destroyed before the model saw it, and
+  we were asking it to work out how the report was organised from the one
+  representation that no longer said. Spiro's own framing — "analyse it start to
+  finish and almost reformat that report to work with this app" — is exactly the
+  job; it just needed the right input, not a better prompt.
+- **The photo problem this actually fixes.** `extractBpiPhotos` opened with
+  `if (!wantByPage.size) return out;`, which needs `page` and `itemNo` on every
+  item. The AI path returned neither, so that line returned empty **every single
+  time** — zero photos on every private report ever imported. The cropping
+  machinery was fine; it had nothing to hang photos off. `anchor` is the hook:
+  a verbatim snippet located in the page's text layer yields the same
+  `{itemNo, y}` the BPI Tag finder produces, so **one** pairing routine now
+  serves both (`bpiPairPhotosToTags` is unchanged).
+- **Learnings carry over for free — nothing was ported.** `resolveTrade()` runs
+  on the review screen, downstream of extraction, for every item whatever
+  produced it. Learned history, curated overrides, the admin-editable DB rules
+  and the keyword classifier were already shared. The model's `trade` is used
+  **only** when all of those return nothing, and is labelled `(AI)` when it is —
+  a cold read must never outrank what this team's own assignments have taught.
+- **Trade-off — cost, which is why it's gated.** A page costs ~2,300 tokens as
+  an image+text pair against ~350 as text: roughly **15c → 40c on a 25-page
+  report**. Three guards: manager-only, ≤60 pages, ≤11 MB, each falling back to
+  the flat read with a toast rather than quietly spending the money. Deep read
+  is also SLOWER (adaptive thinking on a 40-page PDF is a real wait), so it is a
+  checkbox, not the default for everyone.
+- **Trade-off — precision over recall on photos.** An anchor that can't be found
+  on its page gets NO photos, rather than a guess. A photo attached to the wrong
+  defect is worse than one not attached, because it goes to a supplier. The one
+  exception is a page holding exactly one defect, where a top-of-page fallback
+  can't mis-attach. Cross-page carry is capped at `ANCHOR_CARRY_PAGES = 2` so a
+  photo appendix 15 pages later can't pile onto the last item.
+- **Also:** both paths moved to `claude-opus-5` (the function was on
+  `claude-opus-4-8`, same price) and both now **stream** — a non-streaming
+  request long enough to read 40 pages is refused by the API outright.
+- **Needs a manual deploy:** `supabase functions deploy extract-defects`. Until
+  that runs, `extractDeep` gets an error back and the app falls back to the flat
+  AI read — degraded, not broken.
+
 ## 2026-08-02 — View Defects header: one line of icons, and frozen
 - **Decision:** The View Defects toolbar is now a **single row that never
   wraps**, on every screen that has one (address/job, supplier, trade, multiple

@@ -3,6 +3,50 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
+## ⚠️ ONE MANUAL STEP OUTSTANDING — deploy the edge function
+Build `2026-08-02l` ships the **Deep read** import, but the browser half and the
+server half deploy separately. The app went out with the push to `main`; the
+edge function did NOT. Until this runs, a manager ticking Deep read gets an
+error back and the app quietly falls back to the flat AI read:
+
+```
+supabase functions deploy extract-defects --project-ref cubwwnvzmeydyixhetfb
+```
+
+There is no CI for `supabase/functions/**` — it has always been hand-deployed
+(see REFACTOR_LOG.md, same note against the 100k input cap). Nothing else in
+this build needs a manual step.
+
+## Deep read — third-party private inspection reports (2026-08-02) — build `2026-08-02l`
+Manager-only. Report type **Private Inspection** + a PDF + the 🔬 Deep read
+checkbox sends the actual PDF to Claude instead of flattened text, so it sees
+headings, tables, columns and the photos printed between them.
+
+- **Why it was needed:** the AI path was never missing; it was reading a
+  flattened wall of text. Private reports keep their structure in the layout,
+  and flattening threw it away before the model saw it. Full reasoning in
+  DECISIONS.md — read that before changing any of this.
+- **Photos now attach.** `extractBpiPhotos` → `extractReportPhotos(file, items,
+  onProgress, mode)`. `mode: 'bpi'` is the old Tag-number pairing, untouched.
+  `mode: 'anchor'` locates each defect by a verbatim snippet the model copied
+  off the page. Both feed the same `bpiPairPhotosToTags`.
+- **Where the guards are** (`index.html`, the DEEP READ block):
+  `DEEP_MAX_PAGES = 60`, `DEEP_MAX_BYTES = 11 MB`, `ANCHOR_CARRY_PAGES = 2`,
+  and `MAX_PDF_B64` server-side. Every one of them falls back to the flat read
+  rather than failing the import. Raising them raises the bill — ~2,300 tokens
+  a page against ~350 as text, so about 15c → 40c on a 25-page report.
+- **Report references:** imported defects are saved as `BPI #7 (p.3) — ...` or
+  `Item #7 (p.3) — ...` for a private report. `REPORT_REF_RE` /
+  `stripReportRef()` / `reportRefWord()` are the ONE place that label is written
+  and stripped — it used to be a hand-copied regex in four spots. Keep it that
+  way.
+- **Not yet exercised on a real report.** Everything here was verified against
+  synthetic PDFs built to reproduce the shapes Spiro described (grouped by room,
+  photo clusters under a paragraph, a cluster spilling onto the next page). The
+  first real private report is the actual test — particularly whether the model
+  copies anchors verbatim enough to be found in the text layer. If photos come
+  back light, log the anchor miss rate first; that's the number that matters.
+
 ## View Defects screens reworked (2026-08-02) — build `2026-08-02k`
 Merged to `main`. Build stamp `2026-08-02k` in all four places (index.html
 `APP_VERSION` + `cloud-sync.js?v=`, sw.js `CACHE` + the CORE `?v=` entry).

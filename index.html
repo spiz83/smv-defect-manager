@@ -5280,8 +5280,7 @@
                 const newC = (cidRaw !== '' && contractorId != null) ? db.getContractor(contractorId) : null;
                 const isRealSub = c => c && !c.isTradePlaceholder && !/\bsupervisor\b/i.test(c.trades || '');
                 if (newC && isRealSub(newC)) {
-                    const clean = s => String(s || '').replace(/^BPI #\d+\s*(\(p\.\d+\))?\s*—\s*/, '');
-                    const trade = resolveTrade((d.location || '') + ' ' + clean(desc)).trade || contractorToBpiTrade(newC);
+                    const trade = resolveTrade((d.location || '') + ' ' + stripReportRef(desc)).trade || contractorToBpiTrade(newC);
                     if (trade) {
                         const others = db.getDefects({ addressId: d.addressId }).filter(x =>
                             x.id !== d.id &&
@@ -5344,7 +5343,7 @@
                 for (const d of groupDefects) {
                     db.updateDefect(d.id, { contractorId: newId });
                     if (learnedTrade && window.CloudLearning) {
-                        const cleanDesc = String(d.description || '').replace(/^BPI #\d+\s*(\(p\.\d+\))?\s*—\s*/, '');
+                        const cleanDesc = stripReportRef(d.description);
                         const phrase = normalizePhrase((d.location || '') + ' ' + cleanDesc);
                         if (phrase) { try { window.CloudLearning.record(phrase, learnedTrade, null,
                             { observation: (d.location ? d.location + ' ' : '') + cleanDesc, source: 'reassign', jobId: window.CloudLearning.jobUuidForAddress(d.addressId) }); } catch (e) {} }
@@ -5518,9 +5517,10 @@
         function previewCard(defect) {
             const st = defectStatusOf(defect);
             const done = st === 'completed';
-            const ref = String(defect.description || '').match(/^BPI #(\d+)(?:\s*\(p\.(\d+)\))?\s*—\s*/);
-            const body = ref ? String(defect.description).slice(ref[0].length) : (defect.description || '');
-            const refLbl = ref ? ('BPI #' + ref[1] + (ref[2] ? ' · p.' + ref[2] : '')) : '';
+            const ref = splitReportRef(defect.description);
+            const body = ref.body;
+            // The card shows "BPI #7 · p.3", not the saved "BPI #7 (p.3)".
+            const refLbl = ref.label.replace(/\s*\(p\.(\d+)\)/, ' · p.$1');
             const loc = defect.location ? `<span class="pv-loc">${_pvEsc(defect.location)}</span>` : '';
             const n = (window.CloudPhotos && window.CloudPhotos.count(defect.id)) || 0;
             return `<div class="pv-card ${done ? 'pv-done' : ''}" data-pv="${defect.id}">
@@ -5827,16 +5827,16 @@
         }
 
         // Email ONE supplier their open items (with photo links) for this address
-        // One defect → an email line ordered "BPI #N (p.P) — Location — item".
-        // The saved description already starts with the "BPI #N (p.P) — " ref,
-        // so we peel that off, slot the location in after it, then the item text.
-        // Defects with no BPI ref fall back to "Location — item".
+        // One defect → an email line ordered "BPI #N (p.P) — Location — item"
+        // ("Item #N" for a private report). The saved description already starts
+        // with that reference, so we peel it off, slot the location in after it,
+        // then the item text. Typed defects carry no ref and fall back to
+        // "Location — item".
         function formatDefectEmailLine(d) {
             const desc = (d.description || '').trim();
             const loc = (d.location || '').trim();
-            const m = desc.match(/^(BPI\s*#\d+(?:\s*\(p\.\d+\))?)\s*—\s*([\s\S]*)$/);
-            if (m) return [m[1], loc, m[2].trim()].filter(Boolean).join(' — ');
-            return [loc, desc].filter(Boolean).join(' — ');
+            const ref = splitReportRef(desc);
+            return [ref.label, loc, ref.body.trim()].filter(Boolean).join(' — ');
         }
         async function emailSupplier(contractorId, addressId, asLink = false) {
             const c = db.getContractor(contractorId);
@@ -8227,29 +8227,54 @@
                     <textarea id="imp-paste" placeholder="Paste defect text here..."></textarea>
                     <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:12px 0 4px">
                         <input type="checkbox" id="imp-ai" ${aiOn} style="width:auto"> 🤖 Use AI extraction (more accurate)</label>
+                    <label id="imp-deep-wrap" style="display:none;align-items:center;gap:8px;font-size:14px;margin:8px 0 0">
+                        <input type="checkbox" id="imp-deep" checked style="width:auto"> 🔬 Deep read<span style="font-size:11px;font-weight:700;letter-spacing:.4px;background:var(--bg-secondary,#eee);border-radius:4px;padding:1px 5px">ADMIN</span></label>
+                    <div id="imp-deep-note" style="display:none;font-size:12px;line-height:1.45;color:var(--text-secondary,#888);margin:5px 0 0 26px">
+                        Reads the actual pages — headings, layout and the photos printed between them — so a report that isn't a tidy numbered list still comes across with its photos attached. Slower, and costs more per report.
+                    </div>
                     <button class="imp-btn" id="imp-extract">Extract defects →</button>
                 </div>`);
             const fileInput = document.getElementById('imp-file');
             document.getElementById('imp-drop').onclick = () => fileInput.click();
+            // Deep read is manager-only and only means anything for a private
+            // report PDF — BPI already parses structurally, and pasted text has no
+            // pages to read. So the option only appears where it applies.
+            const typeSel = document.getElementById('imp-type');
+            const syncDeep = () => {
+                const on = deepReadAllowed() && typeSel.value !== 'BPI';
+                document.getElementById('imp-deep-wrap').style.display = on ? 'flex' : 'none';
+                document.getElementById('imp-deep-note').style.display = on ? 'block' : 'none';
+            };
+            typeSel.onchange = syncDeep;
+            syncDeep();
             fileInput.onchange = async (e) => {
                 const f = e.target.files && e.target.files[0];
                 if (!f) return;
+                // Every toggle has to be read BEFORE impSetBusy — it replaces the
+                // dialog body, so #imp-ai / #imp-deep are gone by the time the
+                // import routes.
                 const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
                 const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
+                const isPdf = (f.name || '').toLowerCase().endsWith('.pdf') || f.type === 'application/pdf';
+                const deep = isPdf && reportType !== 'BPI' && deepReadAllowed()
+                    && !!((document.getElementById('imp-deep') || {}).checked);
                 impSetBusy('Reading ' + f.name + '…');
                 try {
                     // BPI reports: ALWAYS use structured extraction (location, page, trade)
                     // + job match — the AI path drops the structured columns, so we don't
                     // route BPI through it even when the AI toggle is on.
-                    if (reportType === 'BPI' && ((f.name || '').toLowerCase().endsWith('.pdf') || f.type === 'application/pdf')) {
+                    if (reportType === 'BPI' && isPdf) {
                         const paged = await extractReportTextPaged(f);
                         const items = parseBpiDefects(paged);
                         if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
                         startReportReview(items, f.name, reportType, matchAddressFromText(paged, f.name), f);
                         return;
                     }
+                    // Text is still pulled locally even on the deep path — it costs
+                    // nothing, matches the property from the report header, and is
+                    // the fallback if the deep read doesn't come back.
                     const text = await extractReportText(f);
-                    await extractAndReview(text, f.name, reportType, useAI, f);
+                    await extractAndReview(text, f.name, reportType, useAI, f, deep);
                 } catch (err) {
                     console.error(err);
                     impOverlayMessage('Could not read that file: ' + (err.message || err));
@@ -8270,10 +8295,83 @@
             };
         }
 
-        // Decide between AI extraction and the built-in parser, then review.
-        async function extractAndReview(rawText, sourceName, reportType, useAI, reportFile) {
-            let items = [];
-            if (useAI) {
+        // ===========================================================================
+        //  DEEP READ — third-party private inspection reports (Spiro 2026-08-02)
+        //  Manager-only. See the note on the extract-defects edge function for why
+        //  it exists: private reports carry their structure in the LAYOUT, and the
+        //  flat path throws the layout away before Claude sees it.
+        // ===========================================================================
+        // Cost lever. Deep read pays ~2,300 tokens a page against ~350 as text, so
+        // a fat report is the one thing that can make this expensive. Every private
+        // inspection report we've seen is well under this; anything bigger falls
+        // back to the flat read rather than quietly spending the money.
+        const DEEP_MAX_PAGES = 60;
+        // 32 MB is the API's request ceiling and base64 inflates by ~4/3, so the
+        // real PDF has to stay well under. The edge function enforces its own cap;
+        // this one just gives a better message before the upload.
+        const DEEP_MAX_BYTES = 11 * 1024 * 1024;
+
+        function deepReadAllowed() {
+            return !!(window.CloudAI && window.CloudAI.deepAvailable && window.CloudAI.deepAvailable());
+        }
+        function fileToBase64(file) {
+            return new Promise((res, rej) => {
+                const fr = new FileReader();
+                fr.onload = () => { const s = String(fr.result || ''); res(s.slice(s.indexOf(',') + 1)); };
+                fr.onerror = () => rej(fr.error || new Error('Could not read the file'));
+                fr.readAsDataURL(file);
+            });
+        }
+        async function pdfPageCount(file) {
+            if (!window.pdfjsLib) return 0;
+            try {
+                const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+                return pdf.numPages || 0;
+            } catch (e) { return 0; }
+        }
+        // Resolves { items, layout } on success, or null to fall through to the
+        // flat path. Never throws — a deep read that fails must not cost the
+        // supervisor their import.
+        async function deepReadReport(reportFile) {
+            if (!reportFile) return null;
+            if (reportFile.size > DEEP_MAX_BYTES) {
+                showToast('That PDF is too big for deep read — using standard AI', true);
+                return null;
+            }
+            const pages = await pdfPageCount(reportFile);
+            if (pages > DEEP_MAX_PAGES) {
+                showToast(pages + ' pages is too long for deep read — using standard AI', true);
+                return null;
+            }
+            impSetBusy('🔬 Deep reading the report…'
+                + '<div style="font-size:13px;margin-top:10px;line-height:1.5">Claude is reading every page — headings, layout and photos.'
+                + (pages ? '<br>' + pages + ' page' + (pages === 1 ? '' : 's') + '.' : '')
+                + '<br>This takes longer than a normal import.</div>');
+            try {
+                const res = await window.CloudAI.extractDeep(
+                    await fileToBase64(reportFile), Object.keys(CALLUP_TRADE_KEYWORDS));
+                if (!res || !res.items.length) return null;
+                // The photo pairer keys off itemNo the same way it does for a BPI
+                // Tag. A private report has no numbering of its own, so the list
+                // position becomes the number — and the supervisor sees the same
+                // "1 of 24" review either way.
+                res.items.forEach((it, i) => { it.itemNo = i + 1; });
+                return res;
+            } catch (err) {
+                console.error('[deep read]', err);
+                showToast('Deep read failed — using standard AI extraction', true);
+                return null;
+            }
+        }
+
+        // Decide between deep read, AI extraction and the built-in parser, then review.
+        async function extractAndReview(rawText, sourceName, reportType, useAI, reportFile, deep) {
+            let items = [], opts = {};
+            if (deep && deepReadAllowed()) {
+                const res = await deepReadReport(reportFile);
+                if (res) { items = res.items; opts = { layout: res.layout, photoMode: 'anchor' }; }
+            }
+            if (!items.length && useAI) {
                 impSetBusy('🤖 Reading the report with AI…');
                 try {
                     items = await window.CloudAI.extract(rawText);
@@ -8282,14 +8380,14 @@
                     showToast('AI extraction failed — using basic parser', true);
                     items = parseReportDefects(rawText);
                 }
-            } else {
+            } else if (!items.length) {
                 items = parseReportDefects(rawText);
             }
             if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
             // Match the property from the report header even on the AI path, so the
             // address is pre-selected regardless of which extractor ran. The source
             // file name doubles as a match input (BPI names embed lot + street).
-            startReportReview(items, sourceName, reportType, matchAddressFromText(rawText, sourceName), reportFile);
+            startReportReview(items, sourceName, reportType, matchAddressFromText(rawText, sourceName), reportFile, opts);
         }
 
         function impSetBusy(msg) {
@@ -8399,6 +8497,25 @@
         //  BPI360 smart import — structured defects (location, page, trade) so the
         //  supervisor reviews + allocates instead of typing. (Spiro 2026-06-09)
         // ===========================================================================
+        // Every defect imported from a report is saved with its report reference in
+        // front of the description ("BPI #7 (p.3) — ..."), so a supplier's list
+        // points straight back at the page. Deep-read private reports get the same
+        // treatment under "Item #N", since they have no numbering of their own.
+        // ONE regex for the whole app: the label is written in two places and
+        // stripped in four, and they must never drift apart. (Spiro 2026-08-02)
+        const REPORT_REF_RE = /^(?:BPI|Item) #(\d+)(?:\s*\(p\.(\d+)\))?\s*—\s*/;
+        const reportRefWord = reportType => (reportType === 'BPI' || !reportType) ? 'BPI' : 'Item';
+        const stripReportRef = s => String(s || '').replace(REPORT_REF_RE, '');
+        // Split a saved description into its report reference and the defect text.
+        // { label: 'BPI #7 (p.3)' | '', body: 'the defect' } — label is '' when the
+        // defect was typed rather than imported.
+        function splitReportRef(desc) {
+            const s = String(desc || '');
+            const m = s.match(REPORT_REF_RE);
+            return m
+                ? { label: m[0].replace(/\s*—\s*$/, '').trim(), body: s.slice(m[0].length), page: m[2] || '' }
+                : { label: '', body: s, page: '' };
+        }
         // Trade inference learned from the defect language in BPI final reports.
         const BPI_TRADE_RULES = [
             ['Painter',      /\bpaint|repaint|raw timber|hinge knuckle|touch ?up|overspray|paint runs?\b/i],
@@ -8955,6 +9072,65 @@
             return out;
         }
 
+        // ---- Anchor positions (deep read) ----------------------------------------
+        // A private report has no Tag numbers, so there's nothing on the page that
+        // says "defect 7 starts here". Deep read asks Claude for a verbatim snippet
+        // (`anchor`) off the line each defect begins on; finding that snippet in the
+        // page's text layer gives us the same {itemNo, y} the BPI Tag finder
+        // produces, so ONE pairing routine serves both. (Spiro 2026-08-02)
+
+        // How many pages past its own a defect can still claim photos. Covers
+        // "photos sit under the paragraph and spill onto the next page" without
+        // letting a photo appendix 15 pages later pile onto the last defect.
+        const ANCHOR_CARRY_PAGES = 2;
+        const anchorNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+        // Page text as {y, text} lines, top of the page first.
+        function pageLines(items) {
+            const byY = new Map();
+            for (const it of items) {
+                const y = Math.round(it.transform[5]);
+                const row = byY.get(y);
+                if (row) row.push({ x: it.transform[4], s: it.str });
+                else byY.set(y, [{ x: it.transform[4], s: it.str }]);
+            }
+            const out = [];
+            for (const [y, arr] of byY) {
+                out.push({ y, text: arr.sort((a, b) => a.x - b.x).map(o => o.s).join(' ').replace(/\s+/g, ' ').trim() });
+            }
+            return out.sort((a, b) => b.y - a.y);   // PDF y counts UP, so descending = reading order
+        }
+
+        // Locate `wanted` ({itemNo, anchor}) on one page. Anchors come back from
+        // the model as prose, so matching is forgiving: punctuation and case are
+        // stripped, and a snippet that wrapped mid-line still matches on its first
+        // few words. Each line is claimed once, so two similarly-worded defects
+        // can't land on the same line.
+        function anchorPositions(items, wanted) {
+            const lines = pageLines(items).map(l => ({ y: l.y, norm: anchorNorm(l.text), taken: false }));
+            const out = [];
+            for (const w of wanted) {
+                const full = anchorNorm(w.anchor);
+                if (!full) continue;
+                const words = full.split(' ');
+                let hit = null;
+                // Whole snippet first, then shorter prefixes down to three words.
+                for (let n = words.length; n >= 3 && !hit; n--) {
+                    const probe = words.slice(0, n).join(' ');
+                    if (probe.length < 10) break;
+                    hit = lines.find(l => !l.taken && l.norm.includes(probe));
+                }
+                if (hit) { hit.taken = true; out.push({ itemNo: w.itemNo, y: hit.y }); }
+            }
+            // A page whose text layer defeated every anchor, but which holds exactly
+            // one defect, can only mean one thing — put it at the top so the photos
+            // below it still attach. With two or more we'd be guessing, so we don't.
+            if (!out.length && wanted.length === 1 && lines.length) {
+                out.push({ itemNo: wanted[0].itemNo, y: lines[0].y });
+            }
+            return out;
+        }
+
         // Tag lines on one page. Mirrors parseBpiDefects's `<Id> <rest>` line rule
         // so the two agree on what counts as a Tag.
         function bpiTagPositions(items) {
@@ -8997,27 +9173,61 @@
             return out;
         }
 
-        // Cut every supporting photo out of the report, keyed by Tag number.
-        // Only pages the parser placed a defect on are considered, so the cover
-        // logo can't produce a stray match. Resolves to Map<itemNo, [Blob]>.
-        async function extractBpiPhotos(file, defects, onProgress) {
+        // Cut every supporting photo out of the report, keyed by item number.
+        // Resolves to Map<itemNo, [Blob]>.
+        //
+        // BPI mode: only pages the parser placed a defect on are considered, and
+        // the anchor is the Tag number printed beside the photo — so the cover logo
+        // can't produce a stray match.
+        //
+        // Anchor mode (deep read, private reports): the anchor is a verbatim
+        // snippet located in the page text. Every page from the first defect
+        // onwards is scanned, because a private report routinely prints a cluster
+        // of photos below a paragraph and lets them run onto the next page — those
+        // photos carry back to the last defect above them (bounded by
+        // ANCHOR_CARRY_PAGES so a late photo appendix can't pile onto one item).
+        async function extractReportPhotos(file, defects, onProgress, mode) {
             const out = new Map();
             if (!window.pdfjsLib) return out;
+            const anchored = mode === 'anchor';
             const OPS = window.pdfjsLib.OPS;
             const wantByPage = new Map();
             for (const d of defects) {
                 if (!d || d.page == null || d.itemNo == null) continue;
+                if (anchored && !d.anchor) continue;
                 const s = wantByPage.get(d.page);
-                if (s) s.add(d.itemNo); else wantByPage.set(d.page, new Set([d.itemNo]));
+                if (s) s.push(d); else wantByPage.set(d.page, [d]);
             }
             if (!wantByPage.size) return out;
+            const firstPage = Math.min.apply(null, [...wantByPage.keys()]);
+            const lastPage = Math.max.apply(null, [...wantByPage.keys()]) + ANCHOR_CARRY_PAGES;
             const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+            let carried = null;         // last resolved anchor, for photos on a later page
+            let carriedPage = 0;
             for (let p = 1; p <= pdf.numPages; p++) {
                 if (onProgress) { try { onProgress(p, pdf.numPages); } catch (e) {} }
                 const want = wantByPage.get(p);
-                if (!want || !want.size) continue;
+                if (anchored ? (p < firstPage || p > lastPage) : (!want || !want.length)) continue;
                 const page = await pdf.getPage(p);
-                const tags = bpiTagPositions((await page.getTextContent()).items).filter(t => want.has(t.itemNo));
+                const textItems = (await page.getTextContent()).items;
+                let tags;
+                if (anchored) {
+                    tags = anchorPositions(textItems, want || []);
+                    // Photos above the first anchor on this page (or on a page with
+                    // no anchors at all) belong to the last defect seen — the
+                    // report ran its photo cluster past a page break. Sitting it
+                    // above the page gives it every photo up to the next anchor.
+                    if (carried && p - carriedPage <= ANCHOR_CARRY_PAGES) {
+                        tags = tags.concat([{ itemNo: carried, y: Infinity }]);
+                    }
+                    // Carry the BOTTOM-most anchor on this page (smallest y —
+                    // PDF y counts up), i.e. the last defect in reading order.
+                    const own = tags.filter(t => t.y !== Infinity).sort((a, b) => a.y - b.y);
+                    if (own.length) { carried = own[0].itemNo; carriedPage = p; }
+                } else {
+                    const ids = new Set((want || []).map(d => d.itemNo));
+                    tags = bpiTagPositions(textItems).filter(t => ids.has(t.itemNo));
+                }
                 if (!tags.length) continue;
                 const rects = bpiPhotoRects(await page.getOperatorList(), OPS);
                 if (!rects.length) continue;
@@ -9102,8 +9312,9 @@
 
         // ---- Step 2: review & assign each item ----
         let _review = null;
-        function startReportReview(items, reportName, reportType, matchedAddressId, reportFile) {
-            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: matchedAddressId || null, reportFile: reportFile || null, photos: new Map(), photoNote: '' };
+        function startReportReview(items, reportName, reportType, matchedAddressId, reportFile, opts) {
+            const o = opts || {};
+            _review = { items, index: 0, saved: 0, reportName, reportType: reportType || 'BPI', lastAddressId: matchedAddressId || null, reportFile: reportFile || null, photos: new Map(), photoNote: '', layout: o.layout || '', photoMode: o.photoMode || 'bpi' };
             buildBpiLearning();   // learn from assignment history before suggesting
             renderReviewItem();
             // Pull each defect's supporting photo out of the report in the
@@ -9116,10 +9327,10 @@
                     try {
                         forReview.photoNote = 'reading photos…';
                         if (_review === forReview) renderReviewItem();
-                        const map = await extractBpiPhotos(reportFile, items, (p, of) => {
+                        const map = await extractReportPhotos(reportFile, items, (p, of) => {
                             forReview.photoNote = 'reading photos… page ' + p + '/' + of;
                             if (_review === forReview && !_rvIsBusyEditing()) renderReviewItem();
-                        });
+                        }, forReview.photoMode);
                         forReview.photos = map;
                         let n = 0; for (const [, v] of map) n += v.length;
                         forReview.photoNote = n ? (n + ' report photo' + (n === 1 ? '' : 's') + ' found') : '';
@@ -9281,6 +9492,10 @@
             //   4. global history / directory — chips ONLY, never auto-filled: a sub
             //      learned from other jobs may be another region's contractor.
             const resolved = resolveTrade((item.location || '') + ' ' + (item.description || ''));
+            // Deep read returns its own trade guess. It's the LAST word, never the
+            // first: learned history and the rules know this team's jobs, and the
+            // whole point of the import learning is that it beats a cold read.
+            if (!resolved.trade && item.trade) { resolved.trade = item.trade; resolved.source = 'ai'; }
             const effTrade = resolved.trade;
             const _rvText = (item.location || '') + ' ' + (item.description || '');
             const candidates = [];   // { contractorId, icon, name, hint, note, autofill }
@@ -9359,11 +9574,14 @@
             const customLocOpt = (item.location && !locInList) ? `<option value="${locEsc}" selected>${locEsc}</option>` : '';
             const locOpts = ['<option value="">— Location —</option>', customLocOpt].concat(BPI_LOCATIONS.map(l => `<option value="${l}" ${l === item.location ? 'selected' : ''}>${l}</option>`)).join('');
             const pct = Math.round((r.index / r.items.length) * 100);
-            const tradeTag = resolved.source === 'learned' ? ' (learned' + (resolved.n ? ' ×' + resolved.n : '') + ')' : resolved.source === 'rule' ? ' (rule)' : '';
+            const tradeTag = resolved.source === 'learned' ? ' (learned' + (resolved.n ? ' ×' + resolved.n : '') + ')'
+                : resolved.source === 'rule' ? ' (rule)' : resolved.source === 'ai' ? ' (AI)' : '';
             // Only THIS-job evidence earns the authoritative note; global-history
             // suggestions live in the chips where the supervisor chooses.
             const suggestNote = autoCand ? autoCand.note : '';
-            const refLbl = item.itemNo != null ? ('BPI #' + item.itemNo + (item.page ? ', p.' + item.page : '')) : (item.page ? 'Page ' + item.page : '');
+            const refLbl = item.itemNo != null
+                ? (reportRefWord(r.reportType) + ' #' + item.itemNo + (item.page ? ', p.' + item.page : ''))
+                : (item.page ? 'Page ' + item.page : '');
             const meta = [refLbl, effTrade ? 'Trade: ' + effTrade + tradeTag : '', suggestNote].filter(Boolean).join(' · ');
             // This item's photo out of the report, shown BEFORE saving so a
             // mis-pairing is obvious while it's still fixable. Object URLs are
@@ -9383,6 +9601,7 @@
                     <div class="imp-progress">${r.saved} saved · ${r.items.length - r.index} to review</div>
                     <div class="imp-bar"><i style="width:${pct}%"></i></div>
                     ${meta ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">📄 ${meta}</div>` : ''}
+                    ${r.layout ? `<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:10px">🔬 Report read as: ${_pvEsc(r.layout)}</div>` : ''}
                     ${photoBlock}
                     <div class="imp-field">
                         <label>Defect description</label>
@@ -9469,7 +9688,7 @@
                 // items have no itemNo and get no prefix.
                 const cur = r.items[r.index];
                 const ref = (cur && typeof cur === 'object' && cur.itemNo != null)
-                    ? `BPI #${cur.itemNo}${cur.page ? ' (p.' + cur.page + ')' : ''} — ` : '';
+                    ? `${reportRefWord(r.reportType)} #${cur.itemNo}${cur.page ? ' (p.' + cur.page + ')' : ''} — ` : '';
                 // matchCompleted: this line came out of a report, and the saved
                 // description carries the report's own "BPI #N (p.X) — " reference,
                 // so an exact match IS the same report item — never a recurrence.
@@ -10162,7 +10381,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02k';
+        const APP_VERSION = '2026-08-02l';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10236,7 +10455,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02k"></script>
+    <script src="cloud-sync.js?v=2026-08-02l"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
