@@ -3,10 +3,22 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
-## View Defects screens reworked (2026-08-02) — build `2026-08-02b`
-Merged to `main`. Build stamp `2026-08-02b` in all four places (index.html
+## View Defects screens reworked (2026-08-02) — build `2026-08-02c`
+Merged to `main`. Build stamp `2026-08-02c` in all four places (index.html
 `APP_VERSION` + `cloud-sync.js?v=`, sw.js `CACHE` + the CORE `?v=` entry).
-Spiro gave deploy permission; see "Deploy status" at the end of this section.
+`2026-08-02b` reached phones, so this is `c` — never re-use a stamp that shipped.
+
+**Deploying from a Claude session doesn't work.** The container has no Vercel
+credential and the environment's network policy answers 403 to CONNECT for
+vercel.com, so `npx vercel deploy` gets as far as the interactive login and
+dies. Pushing `main` covers GitHub Pages; the Vercel copy — the one supervisors
+use — has to be deployed from a machine that's logged in.
+
+- **Supplier heading is one line.** The name ellipsises (`min-width: 0` on the
+  flex child was the missing piece), the booking date lost its year, and ✉️🔗📑
+  collapsed into one 📤 that expands on tap. Long names truncate; the full name
+  is in `title` and on the supplier's own screen. `fmtDateShort` is for that
+  button ONLY — reports and emails still use `fmtDateNice` with the year.
 
 - **Row actions are hidden until you double-tap a row** — the pencil, pin and
   camera open as a strip under the description, single tap closes it, one row

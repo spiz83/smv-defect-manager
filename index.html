@@ -1548,7 +1548,16 @@
         body.design-f1 .defect-loc { font-family: 'Titillium Web', sans-serif; text-transform: uppercase; letter-spacing: .04em; border-radius: 3px; }
 
         /* Per-supplier email button on the contractor header */
-        .contractor-name.contractor-hdr { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        /* Supplier heading: ONE line, always (Spiro 2026-08-02). A trading name
+           like "AUZ PAINTING & DECORATING PTY LTD" was wrapping to three lines
+           because the name couldn't shrink and the actions wouldn't. The name
+           now takes every pixel the actions don't and ellipsises rather than
+           wrapping; the actions gave up ~78px to make that a rare event (the
+           booking date dropped the year, and three send icons became one). */
+        .contractor-name.contractor-hdr { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; }
+        .supplier-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 2px; }
+        .supplier-name-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .supplier-chev { flex-shrink: 0; }   /* the › survives a truncated name */
         .supplier-email-btn { flex-shrink: 0; border: none; background: transparent; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 8px; }
         .supplier-email-btn:active { transform: scale(.9); }
         .supplier-actions { flex-shrink: 0; display: flex; align-items: center; gap: 4px; }
@@ -1556,6 +1565,14 @@
         .supplier-book-btn.has-booking { opacity: 1; }
         .supplier-book-btn:active { transform: scale(.9); }
         .book-lbl { font-size: 11px; font-weight: 700; color: var(--blue); }
+
+        /* One 📤 that expands into ✉️ / 🔗 / 📑 on tap. Collapsed it costs a
+           single icon; the three only take the width while they're being used,
+           and the name ellipsises further to make room for that moment. */
+        .supplier-send { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; }
+        .supplier-send .send-opts { display: none; }
+        .supplier-send.open .send-opts { display: inline-flex; align-items: center; gap: 4px; }
+        .supplier-send.open .send-toggle { background: var(--bg-secondary); }
 
         /* ============================================================
            ROW v2 — left-edge status tab, tiny bare icons, max text room
@@ -2760,13 +2777,18 @@
                     ` : Object.values(byContractor).map(group => `
                         <div class="contractor-section">
                             <div class="contractor-name contractor-hdr">
-                                <span ${group.contractor.id != null ? `onclick="viewDefectsForContractor(${group.contractor.id})" style="cursor:pointer" title="View all of this contractor's defects"` : ''}>${group.contractor.name || 'Unassigned'}${group.contractor.id != null ? ' ›' : ''}</span>
+                                <span class="supplier-name" title="${(group.contractor.name || 'Unassigned').replace(/"/g, '&quot;')}" ${group.contractor.id != null ? `onclick="viewDefectsForContractor(${group.contractor.id})" style="cursor:pointer"` : ''}><span class="supplier-name-txt">${group.contractor.name || 'Unassigned'}</span>${group.contractor.id != null ? '<span class="supplier-chev">›</span>' : ''}</span>
                                 <span class="supplier-actions">
                                     <button class="supplier-email-btn" onclick="openReassignGroup(${group.contractor.id != null ? group.contractor.id : 'null'}, ${addressId})" title="Reassign ALL of these defects to another contractor or trade">✏️</button>
                                     ${group.contractor.id != null ? `${supplierBookingBtn(group.contractor.id, addressId)}
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier with the PDF ATTACHED — opens the share sheet, pick Mail">✉️</button>
-                                    <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — ready to send, with a tap-to-open link instead of an attachment">🔗</button>
-                                    <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">📑</button>` : ''}
+                                    <span class="supplier-send">
+                                        <button class="supplier-email-btn send-toggle" onclick="toggleSupplierSend(this)" title="Send this supplier their list — tap to choose how">📤</button>
+                                        <span class="send-opts">
+                                            <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId})" title="Email this supplier with the PDF ATTACHED — opens the share sheet, pick Mail">✉️</button>
+                                            <button class="supplier-email-btn" onclick="emailSupplier(${group.contractor.id}, ${addressId}, true)" title="Email this supplier — ready to send, with a tap-to-open link instead of an attachment">🔗</button>
+                                            <button class="supplier-email-btn" onclick="generateContractorJobPdf(${group.contractor.id}, ${addressId})" title="Open a PDF of this contractor's open + pending items for this job">📑</button>
+                                        </span>
+                                    </span>` : ''}
                                 </span>
                             </div>
                             ${previewMode() ? `<div style="padding:2px 14px 8px"><span class="pv-count" data-pvcount="${group.defects.map(d => d.id).join(',')}">${group.defects.filter(d => defectStatusOf(d) !== 'completed').length} of ${group.defects.length} outstanding</span></div>` : ''}
@@ -5310,12 +5332,35 @@
             return (p.length === 3) ? `${p[2]}/${p[1]}/${p[0]}` : s;
         }
 
+        // DD/MM for the supplier heading only — the year costs 5 characters on the
+        // one line the supplier's name is fighting for, and a booking is always
+        // days away, never years (Spiro 2026-08-02). Reports and emails keep
+        // fmtDateNice and its year; the button's tooltip carries the full date.
+        function fmtDateShort(v) {
+            if (!v) return '';
+            const p = String(v).slice(0, 10).split('-');
+            return (p.length === 3) ? `${p[2]}/${p[1]}` : String(v).slice(0, 10);
+        }
+
         // ---- Supplier attendance / booking date (per contractor, per property) ----
         function supplierBookingBtn(contractorId, addressId) {
             const dt = db.getContractorBooking(contractorId, addressId);
+            const title = dt
+                ? `Attending ${fmtDateNice(dt)} — tap to change`
+                : 'Set the date this supplier will attend to fix all their items';
             return `<button class="supplier-book-btn ${dt ? 'has-booking' : ''}"
                         onclick="openSupplierBooking(${contractorId}, ${addressId})"
-                        title="Set the date this supplier will attend to fix all their items">📅${dt ? `<span class="book-lbl">${fmtDateNice(dt)}</span>` : ''}</button>`;
+                        title="${title}">📅${dt ? `<span class="book-lbl">${fmtDateShort(dt)}</span>` : ''}</button>`;
+        }
+        // The single 📤 in a supplier heading expands into ✉️ / 🔗 / 📑. Only one
+        // is open at a time, and a render closes them all — it's a transient
+        // choice, not a setting.
+        function toggleSupplierSend(btn) {
+            const wrap = btn.closest('.supplier-send');
+            if (!wrap) return;
+            const wasOpen = wrap.classList.contains('open');
+            document.querySelectorAll('.supplier-send.open').forEach(w => w.classList.remove('open'));
+            if (!wasOpen) wrap.classList.add('open');
         }
         function openSupplierBooking(contractorId, addressId) {
             const cur = db.getContractorBooking(contractorId, addressId);
@@ -10001,7 +10046,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02b';
+        const APP_VERSION = '2026-08-02c';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10075,7 +10120,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02b"></script>
+    <script src="cloud-sync.js?v=2026-08-02c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -27,6 +27,24 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   seven-control supplier toolbar is smaller than it was — still a comfortable
   tap target, and verified fully inside the screen edge.
 
+## 2026-08-02 — Supplier heading on one line
+- **Decision:** The supplier heading inside a job is now a single non-wrapping
+  line. Three changes bought the width: the name takes every pixel the actions
+  don't and **ellipsises** instead of wrapping; the booking date shows **DD/MM**,
+  no year; and the three send icons (✉️ 🔗 📑) collapsed into **one 📤 that
+  expands into all three when tapped**, one heading at a time.
+- **Why:** Spiro, with a screenshot: "AUZ PAINTING & DECORATING PTY LTD" was
+  taking three lines, because the name couldn't shrink (no `min-width: 0`) and
+  the five actions wouldn't. Three lines of heading per supplier on a job with
+  eight suppliers is most of a screen spent on names you already know.
+- **Trade-off:** A long trading name is now truncated — "AUZ PAINTING &
+  DECORA… ›". The full name is in the element's `title` and one tap away on the
+  supplier's own screen, and the `›` is a separate element so it survives the
+  truncation and the heading still reads as tappable. The year leaving the
+  booking button is display-only: `fmtDateNice` and its year still drive every
+  report and email, `fmtDateShort` is used for the button alone, and that
+  button's tooltip reads "Attending 07/08/2026 — tap to change".
+
 ## 2026-08-02 — Row actions on demand: double-tap to open a defect row
 - **Decision:** The pencil / pin / camera no longer sit on every list row. A
   **double-tap** on a row opens them as a full-width strip underneath it, at
