@@ -411,8 +411,26 @@
            ACTION icon after them opens the right-hand group. The :not() matters —
            without it the list/preview toggle takes the auto margin and floats off
            into the middle of the row. */
-        .toolbar .filter-btn + .icon-btn:not(.pv-toggle),
-        .toolbar .pv-toggle + .icon-btn { margin-left: auto; }
+        .toolbar .filter-btn + .icon-btn:not(.pv-toggle):not(.cart-btn),
+        .toolbar .pv-toggle + .icon-btn:not(.cart-btn),
+        .toolbar .cart-btn + .icon-btn { margin-left: auto; }
+
+        /* 🛒 Shopping list — a VIEW control, so it joins the left-hand group next
+           to the list/preview toggle rather than the actions on the right. The
+           count is the whole point of it being in the header: the supervisor
+           needs to know there's something to pick up without opening it. */
+        .cart-btn { position: relative; }
+        .cart-btn .cart-n {
+            position: absolute;
+            top: -3px; right: -7px;
+            min-width: 15px; height: 15px; padding: 0 3px;
+            box-sizing: border-box;
+            border-radius: 8px;
+            background: #FF4D4F; color: #fff;
+            font-size: 10px; font-weight: 700; line-height: 15px;
+            text-align: center; letter-spacing: 0;
+            box-shadow: 0 0 0 2px var(--bg-primary);
+        }
 
         /* Status filter — an icon, not a labelled pill. "Filter" plus three
            status dots and a caret cost more width than the entire right-hand
@@ -1648,7 +1666,7 @@
         .defect-text { flex: 1 1 auto !important; min-width: 0; }
         .defect-actions { gap: 2px !important; align-items: center; flex-shrink: 0; }
         /* Bare, tiny icons — no box/background */
-        .loc-btn, .comms-btn, .photo-btn, .edit-btn {
+        .loc-btn, .comms-btn, .photo-btn, .edit-btn, .order-btn {
             border: none !important; background: transparent !important;
             padding: 2px !important; font-size: 13px !important; line-height: 1; cursor: pointer;
         }
@@ -1696,9 +1714,70 @@
         }
         .defect-item.row-open .loc-btn,
         .defect-item.row-open .photo-btn,
+        .defect-item.row-open .order-btn,
         .defect-item.row-open .edit-btn { font-size: 19px !important; padding: 4px 6px !important; }
         .defect-item.row-open .loc-btn { opacity: 1; }
         .defect-item.row-open .photo-count { font-size: 11px !important; }
+        /* 🛒 Order — the fourth control on an open row. Dimmed until it's on the
+           shopping list, the same tell 📍 uses for "no location set", so the
+           strip reads at a glance without a label. Four icons at 22px gap still
+           fit a 320px phone; the strip is full width, not competing with text. */
+        .order-btn { opacity: .45; }
+        .order-btn.is-needed, .order-btn.is-ordered, .order-btn.is-done { opacity: 1; }
+        /* ── SHOPPING LIST (Spiro 2026-08-02) ────────────────────────────────
+           Read in a hardware store, one-handed, often in poor light. So: a big
+           tap target that BOTH shows the state and advances it, the item's own
+           wording at full size, and the job/supplier underneath in small text.
+           Nothing here is an icon-only control — the supervisor is not looking
+           at the screen while they're looking at a shelf. */
+        .shop-count { padding: 10px 20px 2px; font-size: 13px; color: var(--text-secondary); }
+        .shop-addr {
+            display: flex; align-items: center; gap: 8px;
+            cursor: pointer;
+        }
+        .shop-addr-n {
+            flex-shrink: 0; min-width: 22px; padding: 1px 7px;
+            border-radius: 10px; background: var(--bg-secondary);
+            color: var(--text-secondary); font-size: 12px; font-weight: 700; text-align: center;
+        }
+        .shop-item {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 9px 8px 9px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .shop-item:last-child { border-bottom: none; }
+        .shop-state {
+            flex: 0 0 auto; width: 76px;
+            display: flex; flex-direction: column; align-items: center; gap: 1px;
+            padding: 6px 2px; border: 1px solid var(--border-color); border-radius: 10px;
+            background: var(--bg-secondary); color: var(--text-secondary);
+            font-size: 11px; line-height: 1.2; cursor: pointer;
+        }
+        .shop-item.is-ordered .shop-state { border-color: var(--blue); color: var(--blue); font-weight: 700; }
+        .shop-ico { font-size: 17px; line-height: 1; }
+        .shop-body { flex: 1 1 auto; min-width: 0; padding-top: 2px; }
+        .shop-desc { font-size: 15px; line-height: 1.35; word-break: break-word; }
+        .shop-sub { margin-top: 3px; font-size: 12px; color: var(--text-secondary); }
+        .shop-x {
+            flex: 0 0 auto; background: none; border: none; cursor: pointer;
+            padding: 4px 6px; font-size: 12px; color: var(--text-secondary); opacity: .5;
+        }
+        /* Home-screen entry point, matching the Reports links it sits above. */
+        .shop-home {
+            display: flex; align-items: center; gap: 10px;
+            width: 100%; box-sizing: border-box;
+            padding: 13px 14px; margin-bottom: 18px;
+            border: 1px solid var(--brd, rgba(128,128,128,.25)); border-radius: 10px;
+            background: var(--bg-primary); color: var(--text-primary);
+            font-size: 15px; text-align: left; cursor: pointer;
+        }
+        .shop-home .shop-home-n {
+            margin-left: auto; flex-shrink: 0;
+            min-width: 22px; padding: 1px 8px; border-radius: 10px;
+            background: #FF4D4F; color: #fff; font-size: 12px; font-weight: 700; text-align: center;
+        }
+        .shop-home .shop-home-n.zero { background: var(--bg-secondary); color: var(--text-secondary); }
+
         /* Location picker grid */
         .loc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
         .loc-opt { padding: 11px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; cursor: pointer; text-align: left; }
@@ -2345,6 +2424,20 @@
                 if (defect) { defect.location = location; this.save(); }
             }
 
+            // Materials the SUPERVISOR has to source before the trade can finish.
+            // '' | 'needed' | 'ordered' | 'done'. Kept ON the defect rather than in
+            // a separate list, so it can never drift out of sync with the work it
+            // belongs to — completing the defect takes it off the shopping list for
+            // free. (Spiro 2026-08-02)
+            setDefectOrder(id, orderStatus) {
+                const defect = this.data.defects.find(d => d.id === id);
+                if (!defect) return null;
+                defect.orderStatus = orderStatus || '';
+                defect.lastUpdateAt = new Date().toISOString();
+                this.save();
+                return defect;
+            }
+
             // Edit an existing defect's description and/or supplier. contractorId
             // null clears the assignment (back to Unassigned). The cloud layer wraps
             // this name so the change direct-writes to dm_defects like status edits.
@@ -2541,6 +2634,7 @@
                     ${renderUnifiedSearch()}
 
                     ${renderMyJobsSection()}
+                    ${renderShoppingEntry()}
 
                     ${showMultiContractors() ? `
                     <div class="section-title">Multiple Contractors</div>
@@ -2694,7 +2788,7 @@
                                     : group.defects.map(defect => `
                                     <div class="defect-item">
                                         ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                        <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                        <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                     </div>
                                 `).join('')}
                             </div>
@@ -2707,7 +2801,7 @@
                                     ${group.defects.map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2781,7 +2875,7 @@
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -2841,6 +2935,7 @@
                         <div class="toolbar">
                             ${statusFilterButton()}
                             ${previewToggle()}
+                            ${shoppingToolbarBtn(addressId)}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
                             <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">✚</button>
@@ -2877,7 +2972,7 @@
                                 : group.defects.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                    <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -2889,7 +2984,7 @@
                             ${completed.map(defect => `
                                 <div class="defect-item">
                                     ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                    <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                    <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                 </div>
                             `).join('')}
                         </div>
@@ -3135,7 +3230,7 @@
                                     ${byAddressThenContractor[addressKey].contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -3252,7 +3347,7 @@
                                     ${addressGroup.contractors[contractorName].map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
-                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}</span>
+                                            <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -5222,6 +5317,80 @@
             showToast('Status set to ' + (labels[status] || status));
         }
 
+        // ===========================================================================
+        //  SHOPPING LIST — parts and materials the SUPERVISOR has to order
+        //  (Spiro 2026-08-02)
+        //
+        //  A defect can be assigned to a trade and still be blocked on the
+        //  supervisor: a part to order, materials to pick up. Those used to live in
+        //  emails and phone notes and got lost. Flagging the defect puts it on a
+        //  shopping list — per job, and across every job the supervisor holds — so
+        //  a trip to the hardware store is one screen instead of a search through
+        //  three apps.
+        //
+        //  The flag lives ON the defect, so the two can't drift: completing the
+        //  work takes the item off the list with no extra step.
+        // ===========================================================================
+        const ORDER_STATES = ['needed', 'ordered', 'done'];
+        const ORDER_META = {
+            needed:  { icon: '🛒', label: 'To order', next: 'ordered', toast: '🛒 To order' },
+            ordered: { icon: '📦', label: 'Ordered',  next: 'done',    toast: '📦 Marked as ordered' },
+            // 'done' = the PART is in hand. The defect itself stays open — the
+            // trade still has to fit it. That's the whole point of tracking the
+            // two separately.
+            done:    { icon: '✅', label: 'Got it',   next: '',        toast: '✅ Got it — off the shopping list' },
+        };
+        function orderStatusOf(d) {
+            const s = d && d.orderStatus;
+            return ORDER_STATES.indexOf(s) >= 0 ? s : '';
+        }
+        // On the shopping list until the part is in hand OR the defect is completed.
+        function onShoppingList(d) {
+            const s = orderStatusOf(d);
+            return (s === 'needed' || s === 'ordered') && defectStatusOf(d) !== 'completed';
+        }
+        function shoppingItems(addressId) {
+            return (db.data.defects || []).filter(d =>
+                onShoppingList(d) && (addressId == null || d.addressId === addressId));
+        }
+
+        // Fourth control on an expanded defect row, beside ✏️ 📍 📸.
+        function orderControl(defect) {
+            const s = orderStatusOf(defect);
+            const meta = ORDER_META[s];
+            const title = s
+                ? meta.label + ' — tap to take it off the shopping list'
+                : 'Order a part or materials for this item — puts it on the job shopping list';
+            return `<button class="order-btn ${s ? 'is-' + s : ''}" title="${title}"
+                        onclick="event.stopPropagation(); toggleDefectOrder(${defect.id})">${s ? meta.icon : '🛒'}</button>`;
+        }
+        // The row icon is a plain on/off switch. Advancing through ordered → got it
+        // happens on the shopping list itself, which is where the supervisor is
+        // standing when that changes.
+        function toggleDefectOrder(defectId) {
+            const d = db.data.defects.find(x => x.id === defectId);
+            if (!d) return;
+            const was = orderStatusOf(d);
+            db.setDefectOrder(defectId, was ? '' : 'needed');
+            render(); flushStatus();
+            showToast(was ? 'Taken off the shopping list' : '🛒 Added to the shopping list');
+        }
+        // Advance on the list: To order → Ordered → Got it (leaves the list).
+        function advanceOrder(defectId) {
+            const d = db.data.defects.find(x => x.id === defectId);
+            if (!d) return;
+            const cur = orderStatusOf(d) || 'needed';
+            const next = ORDER_META[cur].next;
+            db.setDefectOrder(defectId, next);
+            render(); flushStatus();
+            showToast(next ? ORDER_META[next].toast : ORDER_META.done.toast);
+        }
+        function clearOrder(defectId) {
+            db.setDefectOrder(defectId, '');
+            render(); flushStatus();
+            showToast('Taken off the shopping list');
+        }
+
         // Camera button + photo count, shown beside every defect.
         function photoIcon(defect) {
             const count = (window.CloudPhotos ? window.CloudPhotos.count(defect.id) : 0) || 0;
@@ -5512,6 +5681,129 @@
             const on = previewMode();
             return `<button class="icon-btn pv-toggle" onclick="event.stopPropagation(); setPreviewMode(${on ? 'false' : 'true'})" title="${on ? 'Switch to List — compact rows' : 'Switch to Preview — big cards with the report photo, for walking the house'}" aria-label="${on ? 'Switch to list view' : 'Switch to preview view'}">${on ? ICON_LIST : ICON_CARDS}</button>`;
         }
+        // 🛒 in the toolbar, beside the list/preview toggle. Job-scoped when an
+        // addressId is given. The badge is the count of items still to pick up.
+        function shoppingToolbarBtn(addressId) {
+            const n = shoppingItems(addressId).length;
+            const title = n
+                ? `Shopping list — ${n} item${n === 1 ? '' : 's'} to order for this job`
+                : 'Shopping list — nothing to order for this job yet';
+            return `<button class="icon-btn cart-btn" onclick="event.stopPropagation(); openShoppingList(${addressId == null ? 'null' : addressId})"
+                        title="${title}" aria-label="${title}">🛒${n ? `<span class="cart-n">${n > 99 ? '99+' : n}</span>` : ''}</button>`;
+        }
+        function openShoppingList(addressId) {
+            state.currentView = 'shopping';
+            state.filters = { ...state.filters, shoppingAddressId: (addressId == null ? null : addressId) };
+            window.scrollTo(0, 0);
+            render();
+        }
+
+        // The shopping list itself. ONE renderer for both entry points: a job's
+        // list is the global list filtered to that job, so the two can't drift.
+        // Grouped by address either way — that's the order a supervisor works in,
+        // and on the global list it's what makes a hardware run plannable.
+        function renderShoppingView(addressId) {
+            const scoped = addressId != null;
+            const address = scoped ? db.getAddress(addressId) : null;
+            if (scoped && !address) { state.currentView = 'home'; return renderHomeView(); }
+            const items = shoppingItems(scoped ? addressId : null);
+            // Global list respects the same job scoping as the rest of the app —
+            // a supervisor sees their own jobs, a manager sees everything.
+            const visible = new Set(scopeAddressesToUser(db.getAddresses() || []).map(a => a.id));
+            const list = scoped ? items : items.filter(d => visible.has(d.addressId));
+
+            const byAddress = new Map();
+            for (const d of list) {
+                const arr = byAddress.get(d.addressId);
+                if (arr) arr.push(d); else byAddress.set(d.addressId, [d]);
+            }
+            const groups = [...byAddress.entries()]
+                .map(([aid, defects]) => ({ address: db.getAddress(aid), defects }))
+                .filter(g => g.address)
+                .sort((a, b) => formatAddress(a.address).localeCompare(formatAddress(b.address)));
+
+            const row = (d) => {
+                const s = orderStatusOf(d) || 'needed';
+                const meta = ORDER_META[s];
+                const c = d.contractorId != null ? db.getContractor(d.contractorId) : null;
+                const sub = [d.location || '', (c && c.name) || 'Unassigned'].filter(Boolean).join(' · ');
+                return `<div class="shop-item ${s === 'ordered' ? 'is-ordered' : ''}">
+                    <button class="shop-state" onclick="advanceOrder(${d.id})"
+                            title="${meta.label} — tap for ${s === 'needed' ? 'Ordered' : 'Got it'}">
+                        <span class="shop-ico">${meta.icon}</span><span class="shop-lbl">${meta.label}</span>
+                    </button>
+                    <div class="shop-body">
+                        <div class="shop-desc">${_pvEsc(splitReportRef(d.description).body)}</div>
+                        ${sub ? `<div class="shop-sub">${_pvEsc(sub)}</div>` : ''}
+                    </div>
+                    <button class="shop-x" onclick="clearOrder(${d.id})" title="Take off the shopping list — the defect stays">✕</button>
+                </div>`;
+            };
+
+            const total = list.length;
+            const heading = scoped ? lotTitleHtml(address) : `<span class="lot-addr">Shopping List</span>`;
+            return `
+                <div class="defects-container">
+                    <div class="app-header">
+                        <a href="#" class="back-link" onclick="event.preventDefault(); ${scoped ? `viewDefectsForAddress(${addressId})` : 'showHomeView()'}">Back</a>
+                        <div class="header-title">Shopping List</div>
+                        <div style="width: 60px;"></div>
+                    </div>
+                    <div class="defects-header hdr-inline">
+                        <div class="lot-title">${heading}</div>
+                        <div class="toolbar">
+                            <button class="icon-btn" onclick="copyShoppingList(${scoped ? addressId : 'null'})" title="Copy the whole list as text">📋</button>
+                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                        </div>
+                    </div>
+                    ${!total ? `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🛒</div>
+                            <p>Nothing to order${scoped ? ' for this job' : ''} yet.<br>
+                            Tap a defect to open it, then tap 🛒 to add the part or materials here.</p>
+                        </div>
+                    ` : `
+                        <div class="shop-count">${total} item${total === 1 ? '' : 's'} to pick up${groups.length > 1 ? ` · ${groups.length} jobs` : ''}</div>
+                        ${groups.map(g => `
+                            <div class="contractor-section">
+                                <div class="contractor-name shop-addr" onclick="viewDefectsForAddress(${g.address.id})">
+                                    <span class="supplier-name"><span class="supplier-name-txt">${formatAddress(g.address)}</span><span class="supplier-chev">›</span></span>
+                                    <span class="shop-addr-n">${g.defects.length}</span>
+                                </div>
+                                ${g.defects.map(row).join('')}
+                            </div>
+                        `).join('')}
+                    `}
+                </div>`;
+        }
+
+        // Same shape as the on-screen list, for pasting into a message or a note.
+        function copyShoppingList(addressId) {
+            const items = shoppingItems(addressId == null ? null : addressId);
+            const visible = new Set(scopeAddressesToUser(db.getAddresses() || []).map(a => a.id));
+            const list = addressId != null ? items : items.filter(d => visible.has(d.addressId));
+            if (!list.length) { showToast('Nothing on the shopping list', true); return; }
+            const byAddress = new Map();
+            for (const d of list) {
+                const arr = byAddress.get(d.addressId);
+                if (arr) arr.push(d); else byAddress.set(d.addressId, [d]);
+            }
+            const lines = ['SHOPPING LIST', ''];
+            for (const [aid, defects] of byAddress) {
+                lines.push(formatAddress(db.getAddress(aid)));
+                defects.forEach((d, i) => {
+                    const s = orderStatusOf(d) || 'needed';
+                    const c = d.contractorId != null ? db.getContractor(d.contractorId) : null;
+                    const tail = [d.location || '', (c && c.name) || ''].filter(Boolean).join(' · ');
+                    lines.push('  ' + (i + 1) + '. [' + ORDER_META[s].label + '] '
+                        + splitReportRef(d.description).body + (tail ? '  (' + tail + ')' : ''));
+                });
+                lines.push('');
+            }
+            writeToClipboard(lines.join('\n').trim(),
+                '📋 ' + list.length + ' item' + (list.length === 1 ? '' : 's') + ' copied');
+        }
+
         // One card. Photo slot is left empty and filled in after render by
         // fillPreviewPhotos() — a card must never wait on the network to appear.
         function previewCard(defect) {
@@ -7471,6 +7763,9 @@
                     case 'view-all-defects':
                         content = renderAllDefectsView();
                         break;
+                    case 'shopping':
+                        content = renderShoppingView(state.filters.shoppingAddressId);
+                        break;
                     case 'manage':
                         content = renderManageScreen();
                         break;
@@ -7804,6 +8099,28 @@
                     ${body}
                 </div>`;
         }
+        // Sits directly under the job list, above Reports. Every job the
+        // supervisor holds, in one list — the point being that a hardware run is
+        // planned across jobs, not one job at a time. Always shown, even at zero,
+        // so it's in the same place every time they reach for it.
+        function renderShoppingEntry() {
+            const visible = new Set(scopeAddressesToUser(db.getAddresses() || []).map(a => a.id));
+            const items = shoppingItems(null).filter(d => visible.has(d.addressId));
+            const jobs = new Set(items.map(d => d.addressId)).size;
+            const sub = items.length
+                ? `${items.length} item${items.length === 1 ? '' : 's'} to order across ${jobs} job${jobs === 1 ? '' : 's'}`
+                : 'Parts and materials to order';
+            return `
+                <button class="shop-home" onclick="openShoppingList(null)" title="Everything to order across all your jobs">
+                    <span style="font-size:20px;line-height:1">🛒</span>
+                    <span>
+                        <span style="display:block;font-weight:600">Shopping List</span>
+                        <span style="display:block;font-size:12px;color:var(--text-secondary)">${sub}</span>
+                    </span>
+                    <span class="shop-home-n ${items.length ? '' : 'zero'}">${items.length}</span>
+                </button>`;
+        }
+
         function startDefectsForJob(addressId) {
             const address = db.getAddress(addressId);
             if (!address) { showToast('Job not found'); return; }
@@ -10381,7 +10698,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02l';
+        const APP_VERSION = '2026-08-02m';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10455,7 +10772,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02l"></script>
+    <script src="cloud-sync.js?v=2026-08-02m"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -3,19 +3,51 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-02
 
-## ⚠️ ONE MANUAL STEP OUTSTANDING — deploy the edge function
-Build `2026-08-02l` ships the **Deep read** import, but the browser half and the
-server half deploy separately. The app went out with the push to `main`; the
-edge function did NOT. Until this runs, a manager ticking Deep read gets an
-error back and the app quietly falls back to the flat AI read:
+## ⚠️ TWO MANUAL STEPS OUTSTANDING
+Neither blocks the app — both features degrade cleanly until they're done — but
+neither is finished without them. There is no CI for `supabase/**`; it has
+always been hand-run (see REFACTOR_LOG.md, same note against the 100k cap).
+
+**1. The shopping-list column** (build `2026-08-02m`). One nullable column.
+Paste `supabase/migrations/2026-08-02_defect_order_status.sql` into the SQL
+editor for project `cubwwnvzmeydyixhetfb`, or:
+
+```
+alter table public.dm_defects add column if not exists order_status text;
+```
+
+Until it runs, the app probes for the column, finds it missing, and keeps
+shopping-list flags on the phone that set them (console says so). Everything
+else syncs normally — the probe exists precisely so a missing column can't
+break every defect write.
+
+**2. The deep-read edge function** (build `2026-08-02l`, still outstanding).
 
 ```
 supabase functions deploy extract-defects --project-ref cubwwnvzmeydyixhetfb
 ```
 
-There is no CI for `supabase/functions/**` — it has always been hand-deployed
-(see REFACTOR_LOG.md, same note against the 100k input cap). Nothing else in
-this build needs a manual step.
+Until it runs, a manager ticking Deep read gets an error back and the app falls
+back to the flat AI read.
+
+## Shopping list (2026-08-02) — build `2026-08-02m`
+What the SUPERVISOR has to order, as opposed to what a trade has to fix.
+
+- **Where it is.** 🛒 is the fourth control on an expanded defect row (after
+  ✏️ 📍 📸). 🛒 in the job toolbar beside the list/preview toggle opens that
+  job's list. A **Shopping List** row on the home screen, directly under the job
+  list, opens every job the supervisor holds — that's the one that matters, a
+  hardware run is planned across jobs.
+- **States:** `''` → `needed` (To order) → `ordered` → `done` (Got it, leaves
+  the list). The row 🛒 is a plain on/off switch; the tri-state advance happens
+  on the list itself, which is where the supervisor is standing when it changes.
+- **"Got it" does not complete the defect** — the trade still has to fit the
+  part. Don't "simplify" that later; read the DECISIONS entry first.
+- **Completing the defect clears the item** with no extra step, because the flag
+  lives on the defect (`orderStatus`), not in a parallel list.
+- **Adding a synced field?** Copy `ensureOrderColumn()` in `cloud-sync.js`.
+  `defectRow()` feeds every defect write, so naming a column that doesn't exist
+  yet 400s the lot. Probe, degrade, never assume.
 
 ## Deep read — third-party private inspection reports (2026-08-02) — build `2026-08-02l`
 Manager-only. Report type **Private Inspection** + a PDF + the 🔬 Deep read

@@ -673,7 +673,10 @@
         createdAt: d.created_at,                  // for report date-range filter
         lastEmailAt: d.last_email_at, lastSmsAt: d.last_sms_at,
         lastUpdateAt: d.last_update_at, followupAt: d.followup_at,
-        bookingAt: d.booking_at                    // supplier attendance/booking date
+        bookingAt: d.booking_at,                   // supplier attendance/booking date
+        // Shopping list: '' | needed | ordered | done. Reads are safe before the
+        // migration — the pull selects '*', so this is simply undefined.
+        orderStatus: d.order_status || ''
       });
     });
     // Never drop defects silently again. This is what made Band Street look
@@ -824,7 +827,8 @@
         last_sms_at: d.lastSmsAt || null,
         last_update_at: d.lastUpdateAt || null,
         followup_at: d.followupAt || null,
-        booking_at: d.bookingAt || null
+        booking_at: d.bookingAt || null,
+        ...(orderColSupported ? { order_status: d.orderStatus || null } : {})
       }),
       changed: (a, b) =>
         a.description !== b.description || a.addressId !== b.addressId ||
@@ -835,7 +839,8 @@
         (a.lastSmsAt || '') !== (b.lastSmsAt || '') ||
         (a.lastUpdateAt || '') !== (b.lastUpdateAt || '') ||
         (a.followupAt || '') !== (b.followupAt || '') ||
-        (a.bookingAt || '') !== (b.bookingAt || ''),
+        (a.bookingAt || '') !== (b.bookingAt || '') ||
+        (a.orderStatus || '') !== (b.orderStatus || ''),
       // Defect inserts/updates now go through the direct-write layer
       // (commitDefect). The diff engine only keeps DELETES here (used when a
       // whole address is removed) — so a stale local copy can no longer push an
@@ -2171,8 +2176,39 @@
   //  reconnect/boot — no data loss.
   // ===========================================================================
   // The cloud row for one local defect.
+  // ── SHOPPING-LIST COLUMN CAPABILITY (Spiro 2026-08-02) ────────────────────
+  // The browser half of a feature ships on a push; a database column doesn't.
+  // PostgREST rejects a write naming an unknown column with a 400 — and
+  // defectRow() feeds EVERY defect write, so an un-migrated database wouldn't
+  // just lose the order flag, it would break saving a description, a supplier,
+  // a status, everything. So we probe once and only send the column when it is
+  // genuinely there. Until the migration runs the flag stays on this device and
+  // the rest of the app is untouched.
+  //   alter table public.dm_defects add column if not exists order_status text;
+  let orderColSupported = null;      // null = not probed yet
+  let orderColProbe = null;
+  function ensureOrderColumn() {
+    if (orderColSupported !== null) return Promise.resolve(orderColSupported);
+    if (orderColProbe) return orderColProbe;
+    orderColProbe = (async () => {
+      try {
+        const { error } = await sb.from('dm_defects').select('order_status').limit(1);
+        orderColSupported = !error;
+        if (error) {
+          console.warn('[CloudSync] dm_defects.order_status is missing — shopping-list flags stay on this device '
+            + 'until the migration runs. Everything else syncs normally.');
+        }
+      } catch (e) {
+        orderColSupported = false;
+      }
+      return orderColSupported;
+    })();
+    return orderColProbe;
+  }
+
   function defectRow(d) {
     return {
+      ...(orderColSupported ? { order_status: d.orderStatus || null } : {}),
       legacy_id: d.id,
       job_id: idMap.addresses[d.addressId] || null,
       contractor_id: idMap.contractors[d.contractorId] || null,
@@ -2264,6 +2300,7 @@
   async function commitDefect(legacyId) {
     const d = (db.data.defects || []).find((x) => String(x.id) === String(legacyId));
     if (!d) { outboxRemove(legacyId); return; }   // deleted locally — nothing to write
+    await ensureOrderColumn();                    // before defectRow() is built
     // Mark this write PENDING for its whole in-flight window. pullAll() bails while
     // the outbox is non-empty, so a background pull (realtime/focus) can't rebuild
     // db.data and drop/revert this just-made edit before the upsert lands. Cleared
@@ -2513,6 +2550,7 @@
     // commitDefect lets this one through.
     wrap('setDefectStatus', (a) => { statusIntent.add(Number(a[0])); return [a[0]]; });
     wrap('setDefectLocation', (a) => [a[0]]);
+    wrap('setDefectOrder', (a) => [a[0]]);
     wrap('updateDefect', (a) => [a[0]]);
     wrap('setContractorBooking', (a) => (db.data.defects || [])
       .filter((x) => x.contractorId === a[0] && x.addressId === a[1]).map((x) => x.id));

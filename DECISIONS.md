@@ -2,6 +2,56 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — Shopping list: what the SUPERVISOR has to order
+- **Decision:** A fourth control (`🛒`) on an expanded defect row flags that the
+  item is blocked on the supervisor sourcing a part or materials. Flagged items
+  appear on a **shopping list** — per job (🛒 in the job toolbar, beside the
+  list/preview toggle) and **across every job the supervisor holds** (a
+  Shopping List row on the home screen, directly under the job list). Three
+  states on the list: **To order → Ordered → Got it**, advanced by tapping the
+  state chip. "Got it" takes it off the list.
+- **Why:** a defect can be assigned to a trade and still be waiting on the
+  supervisor. Those parts lived in emails, texts and phone notes and got lost.
+  The global list is the load-bearing half: a hardware run is planned across
+  jobs, not one job at a time, so "everything I need to pick up today" has to be
+  one screen.
+- **The flag lives ON the defect, not in a separate list.** A parallel
+  shopping-list table would need its own lifecycle, its own sync, and its own
+  bugs — and would drift the first time a defect was completed or deleted
+  somewhere else. On the defect, completing the work removes the item for free,
+  and re-opening it brings the item back.
+- **"Got it" does NOT complete the defect.** The part being in hand and the work
+  being done are different facts: the trade still has to fit it. Conflating them
+  would have marked work complete that nobody had done. `done` is remembered
+  rather than cleared, so a defect that has already been sourced still says so.
+- **Trade-off — an eighth icon on the job toolbar.** It's a VIEW control, so it
+  joins the left group with the list/preview toggle rather than the actions on
+  the right; the `margin-left: auto` selector had to learn about `.cart-btn` or
+  the cart itself would have taken the auto margin and floated into the middle.
+  Verified one line, nothing clipped, at 320px.
+- **Trade-off — a fourth icon on the open row strip.** The strip is full width
+  and doesn't compete with the description, so this costs nothing the row
+  actions didn't already cost. Four at 22px gap still fit a 320px phone.
+- **Needs a manual migration** — `supabase/migrations/2026-08-02_defect_order_status.sql`
+  (one nullable column). See the capability probe below for why the app is safe
+  to ship before it runs.
+
+## 2026-08-02 — A new sync column is probed for, never assumed
+- **Decision:** `cloud-sync.js` probes `dm_defects.order_status` once per
+  session (`ensureOrderColumn`) and includes the column in a write **only** when
+  it is genuinely there.
+- **Why:** the browser half of a feature ships on a push; a database column
+  doesn't. PostgREST rejects a write naming an unknown column with a 400 — and
+  `defectRow()` builds **every** defect write. Shipping the client first without
+  a guard wouldn't have lost the order flag, it would have broken saving a
+  description, a supplier, a status, a photo — everything — for every user until
+  someone ran the SQL. That is a whole-app outage caused by a shopping-list
+  feature.
+- **Trade-off:** one extra round-trip per session, and until the migration runs
+  the flag is device-local (it still works; it just doesn't reach the
+  supervisor's other phone). Both are cheap next to the alternative. Apply the
+  same pattern to any future column: probe, degrade, never assume.
+
 ## 2026-08-02 — Deep read: private inspection reports are read as PAGES, not text
 - **Decision:** A third report path, **Deep read**, sends the actual PDF to
   Claude as a base64 `document` block instead of flattened text. It is
