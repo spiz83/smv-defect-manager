@@ -2,6 +2,29 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — Preview shows the WHOLE photo, never a crop
+- **Decision:** `.pv-photo` drops its fixed `aspect-ratio: 4/3`, and the image
+  goes from `object-fit: cover` to `width:100%; height:auto; max-height:60vh;
+  object-fit:contain`. The photo keeps its own shape at full card width;
+  anything taller than the bound is letterboxed, not cut.
+- **Why:** site photos are taken on a phone held upright, so nearly all of them
+  are PORTRAIT — and `cover` in a landscape box slices off the top and bottom,
+  which is where the defect usually is. Spiro's example: "Seal top of door" had
+  the top of the door cropped out of the card. Preview mode exists so you can
+  identify the item from the photo while walking the house; a crop defeats the
+  single thing it's for.
+- **Trade-off:** cards are no longer a uniform height, and a portrait photo
+  makes a taller card. That's the right way round — a consistent grid is worth
+  nothing if the picture doesn't show the defect. `max-height: 60vh` stops one
+  card eating a screen and a half, and the `loading photo…` placeholder keeps
+  ~140px so the list doesn't jump under your thumb when a batch lands.
+- **Test note worth keeping:** the first version of the pixel check redrew the
+  `<img>` into a canvas and sampled that. It passed against the BROKEN build —
+  `drawImage` redraws the source and ignores the CSS crop entirely. The check
+  only means something when it samples an actual screenshot of the rendered
+  element. Verified both ways: with the old CSS the top and bottom bands sample
+  as background grey.
+
 ## 2026-08-02 — Preview's MARK DONE confirms, like the status tab does
 - **Decision:** `pvToggleDone` asks "Mark this item as completed? It will be
   removed from the active list." before completing — the same wording the list

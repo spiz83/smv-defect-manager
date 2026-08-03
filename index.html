@@ -1561,13 +1561,30 @@
             text-transform: uppercase; letter-spacing: .03em;
         }
         .pv-desc { font-size: 16.5px; line-height: 1.38; font-weight: 600; margin-bottom: 11px; }
+        /* THE WHOLE PHOTO, NEVER A CROP (Spiro 2026-08-02).
+           This was a fixed 4/3 box with object-fit: cover. Site photos are taken
+           on a phone held upright, so nearly every one is PORTRAIT — and cover in
+           a landscape box slices the top and bottom off, which is precisely where
+           the defect tends to be. "Seal top of door" lost the top of the door.
+           Now the photo keeps its own shape at full width, bounded so one card
+           can't eat a screen and a half. Anything taller than the bound is
+           letterboxed by `contain` rather than cut. */
         .pv-photo {
-            width: 100%; aspect-ratio: 4 / 3; border-radius: 9px; overflow: hidden;
+            width: 100%; border-radius: 9px; overflow: hidden;
             border: 1px solid var(--border-color); background: var(--bg-secondary);
             display: flex; align-items: center; justify-content: center; cursor: zoom-in;
         }
-        .pv-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .pv-ph-wait { font-size: 11px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
+        .pv-photo img {
+            width: 100%; height: auto; max-height: 60vh;
+            object-fit: contain; display: block;
+        }
+        /* Holds the card's height while the photo loads, so the list doesn't
+           jump under your thumb when a batch lands. */
+        .pv-ph-wait {
+            font-size: 11px; color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            padding: 62px 0;
+        }
         /* Wraps rather than squeezes. A fourth control (🛒) took MARK DONE down
            to 78px on a 320px phone — narrower than its own label. It now keeps a
            130px floor and the icons drop beneath it instead, which on the
@@ -10853,7 +10870,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02t';
+        const APP_VERSION = '2026-08-02u';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10927,7 +10944,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02t"></script>
+    <script src="cloud-sync.js?v=2026-08-02u"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
