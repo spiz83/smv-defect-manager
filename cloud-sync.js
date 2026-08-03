@@ -2738,6 +2738,24 @@
       installDirectWriteHooks();    // defects write straight to the DB per change
       loadDefectOutbox();           // restore any offline direct writes awaiting retry
       await resolveRole();
+      // REPAINT THE MOMENT WE KNOW WHO THIS IS (Spiro 2026-08-02).
+      //
+      // Signing out clears `cs_identity` but NOT the cached defectTrackerDB, so
+      // after signing in as someone else the jobs are already on the phone. The
+      // boot render ran before identity resolved, though — and My Jobs filters
+      // by `supervisorId === uid`, so with uid still null it drew an empty list
+      // and the "Loading your jobs…" message.
+      //
+      // Nothing repainted after that. The next render() was at the very END of
+      // pullAll, behind reconcileLocalDefectsUp and eleven tables of sequential
+      // 1000-row paging. So a supervisor stared at "Loading your jobs…" for the
+      // length of a full sync while their jobs sat in localStorage — and the
+      // contractor search worked the whole time, because it isn't user-scoped.
+      // That asymmetry is what made it look like an addresses problem.
+      //
+      // One repaint here costs nothing and ends the wait at identity resolution
+      // (two round trips) instead of at end-of-pull.
+      if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
       showStatusBar();
       setStatus('Loading…', 'syncing');
       // Restore the persisted outbox FIRST: if we were closed/killed with
