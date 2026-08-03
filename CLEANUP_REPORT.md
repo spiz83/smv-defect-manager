@@ -20,7 +20,17 @@ There is no `npm test` in this repo. Four gates stand in for it — see
 Version stamps deliberately **not** bumped: a cleanup pass must not ship a new
 service-worker shell.
 
-**Status: baseline recorded, all gates green. Tier A in progress.**
+**Status: all four gates green at both ends. `main` untouched. Total app diff: 3 lines.**
+
+Tier A categories that had **nothing to do** — worth recording so nobody re-runs the search:
+
+| Category | Finding |
+|---|---|
+| Leftover `console.log` / `console.debug` | **Zero** in `index.html` and `cloud-sync.js`. The logging that exists is `console.warn` / `console.error` / `console.info` in the sync layer, which is deliberate ops signal — how a stuck device gets diagnosed in the field. Correctly left alone. |
+| Unused npm packages | N/A — no `package.json`. |
+| `any` types | N/A — the app is plain JS. |
+| Barrel files / Next.js special files | N/A. |
+| Commented-out code blocks | None found worth removing; the comments in this repo are explanatory, and hard rule 12 puts them out of scope. |
 
 ---
 
@@ -28,19 +38,33 @@ service-worker shell.
 
 | Hash | Change |
 |---|---|
-| _(this file + the plan)_ | `chore(cleanup): adapt the overnight plan and record the baseline` |
+| `fc672af` | `chore(cleanup): adapt the overnight plan and record the baseline` |
+| `c2b2289` | `chore(cleanup): remove three unused local variables` |
 
 ---
 
 ## 3. Deleted
 
-_Nothing yet._
+**Three unused local variables** — the only category static analysis can be trusted on in
+this codebase, because a local cannot be reached from an HTML attribute.
+
+| Symbol | Where | Initialiser | Proof |
+|---|---|---|---|
+| `isDarkMode` | `index.html:3429` (`renderManageScreen`) | `document.body.classList.contains('dark-mode')` | ESLint flags it; occurs **once** in `index.html`+`cloud-sync.js` (its own declaration); in no `on*` attribute; initialiser is a pure read |
+| `suggestedTrade` | `index.html:10169` (`renderReviewItem`) | `effTrade \|\| (learned && learned.trade) \|\| ''` | same |
+| `dateStr` | `index.html:10624` (PDF generator) | `now.toISOString().slice(0, 10)` | same |
+
+Each initialiser is side-effect-free, so removal cannot change behaviour. Total diff:
+**3 lines**. All four gates green after.
 
 ---
 
 ## 4. Attempted and reverted
 
-_Nothing yet._
+Nothing was reverted — no gate failed.
+
+**One deletion was deliberately NOT attempted**, which matters more than the three that
+were. See §5.
 
 ---
 
@@ -70,26 +94,50 @@ button. This is why the plan's deletion proof requires an explicit HTML-attribut
 The scanner (`unused.mjs`) now prints an `attr?` and `str?` column per candidate for
 exactly this reason. **A `YES` in either column is a stop sign.**
 
-### Genuinely ambiguous — need your call
+### Eleven dead top-level functions — proven dead, deliberately NOT removed
 
-These are flagged by ESLint, appear in **no** HTML handler, and their only other
-occurrences are inside string literals or documentation. Each needs a human decision;
-several look like features reachable from a screen I haven't found, or leftovers from
-the pre-cloud era.
+All eleven pass every mechanical test: ESLint flags them, each occurs **exactly once** in
+`index.html` + `cloud-sync.js` (its own declaration), none appears in any `on*` attribute,
+none is on `window.*`, none is referenced from `scripts/` or `supabase/`.
 
-| Symbol | Where | Evidence against deleting |
+Five of them carry a stronger proof still — **the DOM elements they read no longer
+exist**, so they would throw `Cannot read properties of null` if anything did call them:
+
+| Function | Reads | That id exists in `index.html`? |
 |---|---|---|
-| `searchByAddress` / `searchByContractor` / `searchByTrade` | index.html ~3549-3593 | Name appears in a string. Likely the pre-`renderUnifiedSearch` search path. Verify the unified search fully replaced them. |
-| `exportAllData` | index.html ~8136 | Backup/export — may be wired from a Settings screen or intended as a manual console tool. |
-| `resetDatabase` | index.html ~8116 | Destructive dev utility. Harmless to keep; dangerous to guess about. |
-| `handleExcelImport` | index.html ~7925 | Import path — may be dead since the BPI/AI import landed, or may still be reachable. |
-| `reloadContractorTrades` | index.html ~8103 | Sounds like an ops/repair tool for a real sync problem. |
-| `setClubTheme` / `currentClubTheme` | index.html ~8229-8238 | The F1 theme picker. |
-| `addDefectsByAddress` / `addDefectsByContractor` | index.html ~5226-5239 | Superseded by the five-block Add Defects screen? Or still called? |
-| `isDarkMode` | index.html ~3430 | Theme helper. |
+| `searchByAddress` | `#search-address` | **no** |
+| `searchByContractor` | `#search-contractor` | **no** |
+| `searchByTrade` | `#search-trade` | **no** |
+| `addDefectsByAddress` | `#add-address` | **no** |
+| `addDefectsByContractor` | `#add-contractor` | **no** |
 
-**None of these were touched.** Confirm each is genuinely unreachable and I'll remove them
-in a follow-up — one per commit, gates after each.
+The remaining six: `handleExcelImport`, `reloadContractorTrades`, `resetDatabase`,
+`exportAllData`, `currentClubTheme`, `setClubTheme`.
+
+**Why I stopped anyway** — two reasons, and I'd rather hand you the evidence than guess:
+
+1. `REFACTOR_LOG.md` records these as *deliberately retained*: "These need per-function
+   verification (some may be `onclick`-wired in ways worth double-checking on a device)
+   before a second safe removal pass. Left in place deliberately." An unattended pass
+   should not quietly reverse a previous engineer's explicit hold. The DOM-id evidence
+   above is the verification that log asked for — but confirming it is a five-second job
+   for you and an assumption for me.
+2. The same log flags a possibility worth taking seriously: *"the job-search box may be
+   silently inert — verify on device and either wire it back or drop the attributes."*
+   If any of these is orphaned because an input got deleted by accident, then it is
+   **evidence of a missing feature, not dead code** — and removing it cements the loss.
+   That risk is worth more than ~120 saved lines.
+
+Deleting all eleven is one commit whenever you say so. Total: roughly 120 lines, zero
+behaviour change on the evidence above.
+
+### A correction to `REFACTOR_LOG.md`
+
+That log lists `formatDefectEmailLine` as orphaned by the email-template refactor. **It is
+not.** It is called from `copySupplierDefects` (`index.html:6386`), which was added later
+for the per-supplier clipboard feature. Anyone working top-down from that list would have
+deleted a live function. The log entry should be struck — but per the OFF LIMITS rule those
+documents are append-only, so I have not edited it.
 
 ---
 
