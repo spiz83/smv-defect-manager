@@ -2,6 +2,33 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — 📑 on the trade view, scoped by CONTRACTOR not by trade links
+- **Decision:** the trade view (and the multiple-contractors view, which had the
+  same gap) get a Generate PDF Report button. `generateContextReport` now takes
+  `{ contractorIds, label }` — the exact contractor list the screen behind it is
+  rendering.
+- **Why scoped that way:** the obvious implementation is `tradeIds: [thisTrade]`,
+  and it would be wrong. `reportFilteredDefects` resolves a trade filter through
+  each contractor's trade LINKS, and plenty of real subs have none — they show on
+  the trade screen (which is scoped by a resolved contractor list) but a trade
+  filter drops them silently. Passing the contractor list straight through is the
+  only version where the PDF contains exactly what the supervisor is looking at.
+  The test fixture pins this: BALCA PLUMBING has no `tradeIds` and must still
+  appear.
+- **The dialog opens on those subs** — Contractor mode, the trade's subs
+  pre-ticked, plus the per-job picker that until now only appeared for a single
+  contractor. So "generate" straight away gives you the screen you came from, and
+  everything is still narrowable by job, sub and status.
+- **Two bugs found while building it, both worth remembering:**
+  - `_crMode = 'contractor'` set the variable but not the screen — the markup
+    hard-codes Trade as the selected tab. `crSetFilterMode()` now runs after the
+    overlay is built. State that only exists in a variable isn't state.
+  - `JSON.stringify(tradeName)` inside a double-quoted `onclick` emitted its own
+    double quotes and terminated the attribute early, so the button did nothing
+    at all. Added `jsAttr()` — **use it for any value interpolated into an on\*
+    handler.** The trade name is user data; this is the same class of bug as an
+    unescaped `"` in a supplier name.
+
 ## 2026-08-02 — "Save changes does nothing" — a ReferenceError I shipped
 - **Report:** Edit defect → Save changes did nothing. Modal stayed open.
 - **Cause, and it was mine.** The report-reference refactor earlier the same day

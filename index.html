@@ -2920,7 +2920,8 @@
                         <div class="toolbar">
                             ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorIds: ${jsAttr(contractorIds)}, label: ${jsAttr(tradeName)}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -3273,7 +3274,8 @@
                         <div class="toolbar">
                             ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorIds: ${jsAttr(contractorIds)}, label: ${jsAttr(contractorNames)}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -3853,6 +3855,15 @@
         //  shouldn't surface every painter. Prefixes are what people expect from
         //  a name field and keep the list short on a phone.
         // ===========================================================================
+        // A JS value safe to embed in a double-quoted HTML on* attribute.
+        // JSON.stringify alone emits its own double quotes, which terminate the
+        // attribute early and silently break the handler — a trade named
+        // "Plumber" produced onclick="…label: "Plumber"…" and the button did
+        // nothing at all. (Spiro 2026-08-02)
+        function jsAttr(v) {
+            return JSON.stringify(v == null ? null : v)
+                .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '\\u003c');
+        }
         function searchWords(s) {
             return String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
         }
@@ -10879,10 +10890,15 @@
         // pending (non-completed) defects — i.e. the jobs they're actively
         // nominated on right now. Powers the report builder's per-job picker so
         // a report can be scoped to specific jobs for one contractor.
-        function contractorJobAddresses(contractorId) {
+        // Jobs a contractor — or a whole SET of contractors, which is how a trade
+        // report is scoped — has open/pending work on. (Spiro 2026-08-02)
+        function contractorJobAddresses(contractorId, contractorIds) {
+            const want = (contractorIds && contractorIds.length)
+                ? new Set(contractorIds)
+                : (contractorId != null ? new Set([contractorId]) : null);
             const seen = new Map();
             (db.data.defects || []).forEach(d => {
-                if (d.contractorId !== contractorId) return;
+                if (want && !want.has(d.contractorId)) return;
                 const s = defectStatusOf(d);
                 if (s !== 'open' && s !== 'pending') return;
                 if (!seen.has(d.addressId)) {
@@ -10906,20 +10922,36 @@
         }
         function generateContextReport(ctx) {
             ctx = ctx || {};
-            _crMode = 'trade';
+            // A TRADE report (and the multi-contractor screen) arrives as a SET of
+            // contractors — the very same list the screen behind it is showing —
+            // rather than a single one. Scoping the PDF by that list, not by trade
+            // links, is what guarantees the report contains exactly what the
+            // supervisor is looking at: a sub with no trade link is on screen but
+            // would be dropped by a tradeIds filter. (Spiro 2026-08-02)
+            const ctxContractorIds = (ctx.contractorIds || []).filter(id => id != null);
+            _crMode = ctxContractorIds.length ? 'contractor' : 'trade';
             const tradeRows = db.data.trades.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                 .map(t => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-trade" value="${t.id}" checked style="width:auto"> ${t.name}</label>`).join('');
-            const contrRows = db.getContractors().filter(c => !c.isTradePlaceholder).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                .map(c => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-contr" value="${c.id}" style="width:auto"> ${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</label>`).join('');
+            // A trade report pre-ticks the trade's own subs, so "generate" straight
+            // away gives you the screen you came from. Trade placeholders are kept
+            // in the list here (they're excluded from the general picker) because
+            // on a trade screen they ARE the thing being reported on.
+            const preTicked = new Set(ctxContractorIds);
+            const contrRows = db.getContractors()
+                .filter(c => !c.isTradePlaceholder || preTicked.has(c.id))
+                .slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                .map(c => `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-contr" value="${c.id}" ${preTicked.has(c.id) ? 'checked' : ''} style="width:auto"> ${c.name}${c.trades && c.trades !== 'No Trade Assigned' ? ' — ' + c.trades.split(',')[0] : ''}</label>`).join('');
             const ctxLabel = ctx.addressId ? formatAddress(db.getAddress(ctx.addressId))
-                : (ctx.contractorId ? ((db.getContractor(ctx.contractorId) || {}).name || '') : 'All defects');
-            // Per-job picker: only when the report is for a specific contractor.
-            // Lists every job that contractor has open/pending defects on, all
+                : (ctx.contractorId ? ((db.getContractor(ctx.contractorId) || {}).name || '')
+                : (ctx.label || (ctxContractorIds.length ? ctxContractorIds.length + ' contractors' : 'All defects')));
+            // Per-job picker: whenever the report is scoped to a contractor or a
+            // set of them. Lists every job they have open/pending defects on, all
             // ticked by default, so the report can be narrowed to chosen jobs.
-            const jobs = ctx.contractorId ? contractorJobAddresses(ctx.contractorId) : [];
+            const jobs = (ctx.contractorId || ctxContractorIds.length)
+                ? contractorJobAddresses(ctx.contractorId, ctxContractorIds) : [];
             const jobRows = jobs.map(j =>
                 `<label class="rb-opt" style="display:flex;align-items:center;gap:8px;padding:5px 6px;font-size:14px;cursor:pointer"><input type="checkbox" class="cr-job" value="${j.id}" checked style="width:auto"> <span style="flex:1">${j.label}</span><span style="color:var(--text-secondary,#888);font-size:12px">${j.count}</span></label>`).join('');
-            const jobField = ctx.contractorId ? `
+            const jobField = jobs.length ? `
                     <div class="imp-field">
                         <label>Jobs to include</label>
                         <div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px">Only jobs ${ctxLabel} is on with open/pending defects. Untick to leave a job out.</div>
@@ -10972,6 +11004,10 @@
                     <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0 4px"><input type="checkbox" id="cr-photos" checked style="width:auto"> Include photos</label>
                     <button class="imp-btn" id="cr-go">Generate PDF →</button>
                 </div>`);
+            // The markup above hard-codes Trade as the selected tab. Setting
+            // _crMode alone changes the variable, not the screen — push it into
+            // the DOM so a trade report actually OPENS on its pre-ticked subs.
+            crSetFilterMode(_crMode);
             document.getElementById('cr-go').onclick = () => runContextReport(ctx);
         }
         function crSetFilterMode(mode) {
@@ -10997,9 +11033,10 @@
         async function runContextReport(ctx) {
             const statuses = ['open', 'pending', 'completed'].filter(s => document.getElementById('cr-st-' + s).checked);
             if (!statuses.length) { showToast('Tick at least one status', true); return; }
+            const ctxContractorIds = (ctx.contractorIds || []).filter(id => id != null);
             const o = {
                 addressIds: ctx.addressId ? [ctx.addressId] : [],
-                contractorIds: ctx.contractorId ? [ctx.contractorId] : [],
+                contractorIds: ctx.contractorId ? [ctx.contractorId] : ctxContractorIds.slice(),
                 statuses, tradeIds: null,
                 photos: document.getElementById('cr-photos').checked,
                 groupBy: 'address',   // job-first layout: each address is a header
@@ -11049,7 +11086,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02x';
+        const APP_VERSION = '2026-08-02y';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11123,7 +11160,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02x"></script>
+    <script src="cloud-sync.js?v=2026-08-02y"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
