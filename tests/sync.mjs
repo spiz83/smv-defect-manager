@@ -34,9 +34,11 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 // ── The stub. Installed as window.supabase BEFORE cloud-sync.js runs, so the
 //    real module boots on top of it. `hasOrderCol` flips the database between
 //    "migration not run" and "migration run".
-function stubScript(hasOrderCol) {
+function stubScript(hasOrderCol, role = 'manager', slow = null) {
   return `(() => {
     const HAS_ORDER = ${hasOrderCol};
+    const ROLE = ${JSON.stringify(role)};
+    const SLOW = ${JSON.stringify(slow)};
     try {
       // Skip the one-time baseline heal — it arms dirty=true, and pullAll()
       // bails while dirty, so the first pull would never run in this harness.
@@ -61,7 +63,7 @@ function stubScript(hasOrderCol) {
         { id: 'c3', legacy_id: null, name: 'Vic Plaster Adam', phone: '0402000000', email: 'adam.o@vicplaster.com', is_shared: false, added_by: 'sup-2' },
       ],
       dm_contractor_trades: [{ contractor_id: 'c1', trade_id: 't1' }],
-      jobs: [{ id: 'j1', job_number: '306648', lot: '905', street: '(11) Woodlawn Rd', suburb: 'Wollert', active: true, status: 'construction' }],
+      jobs: [{ id: 'j1', job_number: '306648', lot: '905', street: '(11) Woodlawn Rd', suburb: 'Wollert', active: true, status: 'active' }],
       dm_defects: [
         { id: 'd1', legacy_id: 1, job_id: 'j1', contractor_id: 'c1', description: 'Downpipe missing behind garage',
           status: 'open', unassigned: false, location: 'Garage', created_at: '2026-08-01T00:00:00Z',
@@ -71,11 +73,11 @@ function stubScript(hasOrderCol) {
           last_email_at: null, last_sms_at: null, last_update_at: null, followup_at: null, booking_at: null },
       ],
       job_call_up_archive: [], job_called_for_archive: [], dm_trade_learning: [],
-      v_jobs_with_current_supervisor: [{ id: 'j1', current_supervisor_id: UID, current_supervisor_name: 'Spiro', status: 'construction' }],
+      v_jobs_with_current_supervisor: [{ id: 'j1', current_supervisor_id: UID, current_supervisor_name: 'Spiro', status: 'active' }],
       bpi_trade_rules: [], bpi_ai_settings: [{ id: 1 }], deleted_rows_archive: [], dm_defect_photos: [], dm_reports: [],
     };
     if (HAS_ORDER) T.dm_defects.forEach(r => { r.order_status = null; });
-    window.__stub = { T, writes: [], pulls: 0, hasOrderCol: HAS_ORDER };
+    window.__stub = { T, writes: [], pulls: 0, hasOrderCol: HAS_ORDER, slowTable: SLOW && SLOW.table, slowMs: (SLOW && SLOW.ms) || 0 };
 
     const NO_COL = { message: 'column dm_defects.order_status does not exist', code: '42703' };
     function q(table, cols) {
@@ -85,7 +87,12 @@ function stubScript(hasOrderCol) {
         for (const f of st.filters) r = r.filter(f);
         return r.slice(st.rangeFrom, st.rangeTo + 1);
       };
-      const res = () => {
+      const res = async () => {
+        // Simulate a big table that pages slowly, so "did the app paint before
+        // the pull finished?" is an answerable question.
+        if (window.__stub.slowTable === table && window.__stub.slowMs) {
+          await new Promise(r => setTimeout(r, window.__stub.slowMs));
+        }
         // Asking for a column that doesn't exist is a hard error, exactly as
         // PostgREST behaves — this is what the capability probe relies on.
         if (!HAS_ORDER && String(st.cols || '').split(',').map(s => s.trim()).includes('order_status')) {
@@ -188,7 +195,7 @@ function stubScript(hasOrderCol) {
       }),
     };
     // profiles.role lives on a table too
-    T.profiles = [{ id: UID, role: 'manager' }];
+    T.profiles = [{ id: UID, role: ROLE }];
   })();`;
 }
 
@@ -447,6 +454,70 @@ console.log('\n=== sharing a contractor ===');
   console.log('errors:', bad.length ? bad : 'none');
   if (bad.length) fail.push('errors (share)');
   await ctx.close();
+}
+
+
+// ===========================================================================
+//  D. A supervisor's jobs must appear as soon as we know WHO they are, not at
+//     the end of the pull. Reported from site: "Loading your jobs..." for ages
+//     while the contractor search worked fine.
+// ===========================================================================
+console.log('\n=== jobs paint at identity, not at end-of-pull ===');
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 800 }, serviceWorkers: 'block' });
+  const page = await ctx2.newPage();
+  await ctx2.route('**', route => {
+    const u = route.request().url();
+    if (u.startsWith(`http://localhost:${PORT}`)) {
+      if (u.includes('/sw.js')) return route.fulfill({ status: 404, body: '' });
+      return route.continue();
+    }
+    return route.fulfill({ status: 200, contentType: u.includes('fonts.googleapis') ? 'text/css' : 'application/javascript', body: '' });
+  });
+  await page.addInitScript(stubScript(true, 'supervisor', { table: 'dm_defects', ms: 2500 }));
+  // A device that already holds cached jobs from a previous session — exactly
+  // the state after signing out and back in as someone else. Sign-out clears
+  // cs_identity but NOT this.
+  await page.addInitScript(() => {
+    localStorage.setItem('defectTrackerDB', JSON.stringify({
+      addresses: [
+        { id: 101, street: 'Lot 905, (11) Woodlawn Rd', suburb: 'Wollert', propertyNumber: '306648',
+          supervisorId: '11111111-1111-1111-1111-111111111111', jobStatus: 'active', active: true },
+        { id: 102, street: 'Lot 218, (14) Red Fruit St', suburb: 'Clyde North', propertyNumber: '305942',
+          supervisorId: 'someone-else', jobStatus: 'active', active: true },
+      ],
+      contractors: [{ id: 1, name: 'COSTAS PLUMBING', trades: 'Plumber' }],
+      trades: [{ id: 1, name: 'Plumber' }], defects: [],
+    }));
+    localStorage.removeItem('cs_identity');
+    localStorage.setItem('dm_preview', '0');
+  });
+  await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.render === 'function');
+
+  // No assertion on the transient "Loading your jobs..." frame: with a stubbed
+  // client identity resolves in microseconds, so that state is not reliably
+  // observable. The timing check below is the real proof.
+
+  const t0 = Date.now();
+  await page.waitForFunction(() => /Woodlawn/.test((document.getElementById('myjobs-list') || {}).textContent || ''),
+    null, { timeout: 20000 });
+  const paintedAt = Date.now() - t0;
+  const pullDone = await page.evaluate(async () => {
+    const t = Date.now();
+    await window.CloudSync.pull();
+    return Date.now() - t;
+  });
+  console.log(`jobs painted after ${paintedAt}ms; a full pull takes ~${pullDone}ms`);
+  check("the supervisor's job appears WITHOUT waiting for the pull",
+    paintedAt < 2000, `${paintedAt}ms vs a ~${pullDone}ms pull`);
+
+  const shown = await page.evaluate(() => (document.getElementById('myjobs-list') || {}).textContent || '');
+  check('it shows THEIR job', /Woodlawn/.test(shown), shown.replace(/\s+/g, ' ').slice(0, 70));
+  check("and not another supervisor's", !/Red Fruit/.test(shown), shown.replace(/\s+/g, ' ').slice(0, 70));
+  check('the loading message is gone', !/Loading your jobs/.test(shown));
+
+  await ctx2.close();
 }
 
 console.log(fail.length ? '\nFAILED: ' + fail.join(' | ') : '\nALL CHECKS PASSED');
