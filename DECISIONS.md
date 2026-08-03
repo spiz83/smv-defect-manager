@@ -2,6 +2,31 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — "Save changes does nothing" — a ReferenceError I shipped
+- **Report:** Edit defect → Save changes did nothing. Modal stayed open.
+- **Cause, and it was mine.** The report-reference refactor earlier the same day
+  (`REPORT_REF_RE` / `stripReportRef`) replaced a local `const clean = …` in
+  `openDefectEdit` and **deleted the declaration while three later calls to it
+  survived**. `clean` resolves to nothing in that scope, so the click threw
+  `ReferenceError: clean is not defined`.
+- **Why it looked like "nothing happens" rather than an error:** the throw
+  landed AFTER `db.updateDefect()` but BEFORE `impClose()` / `render()`. The
+  edit was written to the database; the screen just never moved. Worse than a
+  clean failure — it looked broken while quietly half-working.
+- **Why nothing caught it:** the throw is inside `if (newC && isRealSub(newC))`,
+  so it only fires when a REAL subcontractor is attached — which is the normal
+  case on site and the rare case in a test fixture. Nine browser suites, all
+  green, none of them clicked that button.
+- **The general lesson:** a syntax check (`new Function(body)`) proves the file
+  PARSES. It says nothing about whether an identifier resolves at runtime. A
+  single-file app with one 8,000-line script and no module boundaries has no
+  other backstop — deleting a helper is invisible until someone taps the button.
+- **What now catches it:** `undef.mjs` in the scratchpad runs ESLint's `no-undef`
+  across the inline script and `cloud-sync.js`, forgiving cross-block
+  declarations and the known browser/CDN globals. Verified it reports exactly
+  these three lines when the bug is reintroduced. **This belongs in the repo**
+  — see NEXT_STEPS.
+
 ## 2026-08-02 — The supplier combo: rank the matches, and show more than two
 - **Report:** typing "Har" in Reassign all still meant scrolling past a heap of
   contractors to reach HAR Painters, and only two or three were visible at once.
