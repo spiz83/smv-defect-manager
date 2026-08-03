@@ -40,6 +40,8 @@ Tier A categories that had **nothing to do** — worth recording so nobody re-ru
 |---|---|
 | `fc672af` | `chore(cleanup): adapt the overnight plan and record the baseline` |
 | `c2b2289` | `chore(cleanup): remove three unused local variables` |
+| `2300134` | `chore(cleanup): record findings — 11 proven-dead functions held back` |
+| `d2002d5` | `test: bring the suites and scanners into the repo` |
 
 ---
 
@@ -168,11 +170,7 @@ _None new this session._ Carried forward from earlier analysis, unchanged and st
 
 Ranked by value ÷ risk.
 
-1. **Commit the ten Playwright suites and the two scanners into the repo**, with a runner.
-   *Value: very high. Risk: none — additive only.* Everything protecting this app currently
-   lives in an ephemeral scratchpad and dies with the session. The `clean()` ReferenceError
-   that reached a supervisor on 2026-08-02 would have been caught by `undef.mjs` in five
-   seconds.
+1. ~~**Commit the Playwright suites and scanners into the repo.**~~ **Done — `d2002d5`.**
 2. **Fix offline id collisions with client-side UUIDs.** *Value: high. Risk: high —
    touches the sync engine.* Needs its own session and a migration plan.
 3. **Extract the inline `<script>` from `index.html` to a file.** *Value: high. Risk:
@@ -204,15 +202,26 @@ is cheap and makes everything after it safe.
 
 ---
 
-## 10. The one change to make first
+## 10. The one change to make first — DONE
 
-**Commit the test suites and the two scanners into the repo, with a runner.**
+**Commit the test suites and the scanners into the repo, with a runner.** Done in
+`d2002d5`: `tests/` now holds ten Playwright suites, three static scanners, `run.sh`,
+`setup.sh` and a README. Additive only — no app code touched. Verified from a clean
+checkout with artifacts deleted: all four gates green, 10/10 suites passing.
 
-Not because tests are virtuous, but because of the specific evidence in this session: a
-ReferenceError shipped to a supervisor's phone this week from precisely the class of
-change a cleanup pass makes, and the scanner that catches it in five seconds currently
-exists only in a temporary directory. Every other item on the Tier B list — the module
-split especially — is unsafe until this one is done.
+No `package.json` was added. One at the repo root could make Vercel treat this static
+site as a Node project and attempt a build; deps install into `tests/` with `--no-save`.
+
+The original reasoning, kept because it is still why this mattered:
+
+> Not because tests are virtuous, but because of the specific evidence in this session: a
+> a ReferenceError shipped to a supervisor's phone this week from precisely the class of
+> change a cleanup pass makes, and the scanner that catches it in five seconds existed
+> only in a temporary directory. Every other item on the Tier B list — the module split
+> especially — was unsafe until this one was done.
+
+**The next one is now item 2 on the Tier B list: offline id collisions.** That one needs
+its own session; it touches the sync engine.
 
 ---
 
