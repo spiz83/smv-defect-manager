@@ -2414,7 +2414,12 @@
                 // cloud sync diff.
                 this.lastAddWasDuplicate = !!dup;
                 if (dup) {
-                    try { if (typeof showToast === 'function') showToast('Already on the list — duplicate skipped'); } catch (e) {}
+                    // opts.quiet: the report review reports the outcome itself —
+                    // it distinguishes "skipped" from "re-opened", which this
+                    // can't. Two toasts fighting over one item is worse than none.
+                    if (!(opts && opts.quiet)) {
+                        try { if (typeof showToast === 'function') showToast('Already on the list — duplicate skipped'); } catch (e) {}
+                    }
                     return dup;
                 }
                 const id = this.nextDefectId();
@@ -3022,7 +3027,7 @@
                     </div>
 
                     <div class="defects-header">
-                        <div class="lot-title" onclick="viewDefectsForAddress(${addressId})" style="cursor: pointer;" title="View this job's defects">${formatAddress(address)} ›</div>
+                        <div class="lot-title" onclick="leaveAddDefects(() => viewDefectsForAddress(${addressId}))" style="cursor: pointer;" title="View this job's defects">${formatAddress(address)} ›</div>
                     </div>
 
                     <div style="padding: 0 14px;">
@@ -3783,6 +3788,47 @@
             return addresses.filter(a => a.supervisorId === uid);
         }
 
+        // ===========================================================================
+        //  SEARCH MATCHING (Spiro 2026-08-02)
+        //
+        //  Every search box in the app used `word.startsWith(query)` — the WHOLE
+        //  query had to prefix a SINGLE word. So any two-word search matched
+        //  nothing at all: "vic plaster", "victoria fencing", "auz painting",
+        //  "har painter", "roof plumb", "shower screen" all returned an empty
+        //  dropdown, which is why finding a supplier was a fight.
+        //
+        //  Now: every word you type must prefix-match SOME word in the target,
+        //  in any order. "vic plaster" finds "Vic Plaster Adam"; "plaster vic"
+        //  finds it too; "har painter" finds HaR because the trade is part of the
+        //  haystack. Splitting on non-alphanumerics means "&", hyphens, commas
+        //  and double spaces stop hiding names ("AUZ PAINTING & DECORATING").
+        //
+        //  Still a PREFIX match per word, not a substring one — typing "ain"
+        //  shouldn't surface every painter. Prefixes are what people expect from
+        //  a name field and keep the list short on a phone.
+        // ===========================================================================
+        function searchWords(s) {
+            return String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+        }
+        // haystack: a string, or an array of strings to search across together.
+        function matchesSearch(haystack, query) {
+            const toks = searchWords(query);
+            if (!toks.length) return true;                       // empty query matches all
+            const words = searchWords(Array.isArray(haystack) ? haystack.join(' ') : haystack);
+            if (!words.length) return false;
+            return toks.every(t => words.some(w => w.startsWith(t)));
+        }
+        // Rank: an exact word hit, then a hit on the FIRST word, then A-Z. Keeps
+        // "Painter" above "Roof Plumber" when you type "p".
+        function searchRank(haystack, query) {
+            const toks = searchWords(query);
+            const words = searchWords(Array.isArray(haystack) ? haystack.join(' ') : haystack);
+            if (!toks.length || !words.length) return 3;
+            if (toks.every(t => words.some(w => w === t))) return 0;
+            if (words[0] && words[0].startsWith(toks[0])) return 1;
+            return 2;
+        }
+
         // Autocomplete functionality
         function handleAutocomplete(input, type, inputId) {
             const value = input.value.toLowerCase();
@@ -3833,8 +3879,9 @@
                         });
                     }
                     
-                    // Otherwise, match any word starting with search term
-                    return allWords.some(word => word.startsWith(value));
+                    // Otherwise every typed word must prefix some word of the
+                    // address — so "red fruit" and "woodlawn wollert" both work.
+                    return matchesSearch(allWords, value);
                 })
                 .sort((a, b) => {
                     // Get meaningful words (actual street/suburb names, not "Lot" or numbers)
@@ -3899,24 +3946,12 @@
                     sub: [a.suburb || '', a.propertyNumber || ''].filter(Boolean).join(' · ')
                 }));
             } else if (type === 'contractor') {
-                items = db.getContractors().filter(c => {
-                    const nameWords = c.name.toLowerCase().split(' ');
-                    const tradesWords = c.trades ? c.trades.toLowerCase().split(' ') : [];
-                    return nameWords.some(word => word.startsWith(value)) ||
-                           tradesWords.some(word => word.startsWith(value));
-                })
+                // Name AND trade in one haystack, so "har painter" finds HaR the
+                // painter even though "painter" is nowhere in the name.
+                items = db.getContractors().filter(c => matchesSearch([c.name, c.trades], value))
                 .sort((a, b) => {
-                    const aFirstWord = a.name.toLowerCase().split(' ')[0];
-                    const bFirstWord = b.name.toLowerCase().split(' ')[0];
-                    const aStartsWithValue = aFirstWord.startsWith(value);
-                    const bStartsWithValue = bFirstWord.startsWith(value);
-                    
-                    // Prioritize contractors whose first word starts with the value
-                    if (aStartsWithValue && !bStartsWithValue) return -1;
-                    if (!aStartsWithValue && bStartsWithValue) return 1;
-                    
-                    // If both start with value (or both don't), sort alphabetically
-                    return a.name.localeCompare(b.name);
+                    const r = searchRank([a.name, a.trades], value) - searchRank([b.name, b.trades], value);
+                    return r || a.name.localeCompare(b.name);
                 })
                 .map(c => ({
                     label: `${c.name} - ${c.trades || 'No Trade'}`,
@@ -3925,22 +3960,10 @@
                     type: 'contractor'
                 }));
             } else if (type === 'trade') {
-                items = db.getTrades().filter(t => {
-                    const tradeWords = t.name.toLowerCase().split(' ');
-                    return tradeWords.some(word => word.startsWith(value));
-                })
+                items = db.getTrades().filter(t => matchesSearch(t.name, value))
                 .sort((a, b) => {
-                    const aFirstWord = a.name.toLowerCase().split(' ')[0];
-                    const bFirstWord = b.name.toLowerCase().split(' ')[0];
-                    const aStartsWithValue = aFirstWord.startsWith(value);
-                    const bStartsWithValue = bFirstWord.startsWith(value);
-                    
-                    // Prioritize trades whose first word starts with the value
-                    if (aStartsWithValue && !bStartsWithValue) return -1;
-                    if (!aStartsWithValue && bStartsWithValue) return 1;
-                    
-                    // If both start with value (or both don't), sort alphabetically
-                    return a.name.localeCompare(b.name);
+                    const r = searchRank(a.name, value) - searchRank(b.name, value);
+                    return r || a.name.localeCompare(b.name);
                 })
                 .map(t => ({
                     label: t.name,
@@ -4036,17 +4059,12 @@
             const isNumeric = /^\d/.test(value);
             
             const addresses = scopeAddressesToUser(db.getAddresses()).filter(a => {
-                const streetWords = a.street.toLowerCase().split(' ');
-                const suburbWords = a.suburb.toLowerCase().split(' ');
                 const lotNumber = a.propertyNumber ? a.propertyNumber.toLowerCase() : '';
-                
                 if (isNumeric) {
                     return lotNumber.startsWith(value) ||
-                           streetWords.some(word => word.startsWith(value));
+                           searchWords(a.street).some(word => word.startsWith(value));
                 }
-                
-                return streetWords.some(word => word.startsWith(value)) || 
-                       suburbWords.some(word => word.startsWith(value));
+                return matchesSearch([a.street, a.suburb], value);
             }).sort((a, b) => {
                 if (isNumeric) {
                     const aLotMatch = a.propertyNumber && a.propertyNumber.toLowerCase().startsWith(value);
@@ -4114,13 +4132,12 @@
             
             if (!dropdown) return;
             
-            const contractors = db.getContractors().filter(c => 
-                {
-                const nameWords = c.name.toLowerCase().split(' ');
-                const tradesWords = c.trades ? c.trades.toLowerCase().split(' ') : [];
-                return nameWords.some(word => word.startsWith(value)) ||
-                       tradesWords.some(word => word.startsWith(value));
-            });
+            const contractors = db.getContractors()
+                .filter(c => matchesSearch([c.name, c.trades], value))
+                .sort((a, b) => {
+                    const r = searchRank([a.name, a.trades], value) - searchRank([b.name, b.trades], value);
+                    return r || a.name.localeCompare(b.name);
+                });
             
             if (contractors.length === 0 || value === '') {
                 dropdown.classList.remove('active');
@@ -4160,17 +4177,12 @@
             const isNumeric = /^\d/.test(value);
             
             const addresses = scopeAddressesToUser(db.getAddresses()).filter(a => {
-                const streetWords = a.street.toLowerCase().split(' ');
-                const suburbWords = a.suburb.toLowerCase().split(' ');
                 const lotNumber = a.propertyNumber ? a.propertyNumber.toLowerCase() : '';
-                
                 if (isNumeric) {
                     return lotNumber.startsWith(value) ||
-                           streetWords.some(word => word.startsWith(value));
+                           searchWords(a.street).some(word => word.startsWith(value));
                 }
-                
-                return streetWords.some(word => word.startsWith(value)) || 
-                       suburbWords.some(word => word.startsWith(value));
+                return matchesSearch([a.street, a.suburb], value);
             }).sort((a, b) => {
                 if (isNumeric) {
                     const aLotMatch = a.propertyNumber && a.propertyNumber.toLowerCase().startsWith(value);
@@ -4231,13 +4243,12 @@
             
             if (!dropdown) return;
             
-            const contractors = db.getContractors().filter(c => 
-                {
-                const nameWords = c.name.toLowerCase().split(' ');
-                const tradesWords = c.trades ? c.trades.toLowerCase().split(' ') : [];
-                return nameWords.some(word => word.startsWith(value)) ||
-                       tradesWords.some(word => word.startsWith(value));
-            });
+            const contractors = db.getContractors()
+                .filter(c => matchesSearch([c.name, c.trades], value))
+                .sort((a, b) => {
+                    const r = searchRank([a.name, a.trades], value) - searchRank([b.name, b.trades], value);
+                    return r || a.name.localeCompare(b.name);
+                });
             
             if (contractors.length === 0 || value === '') {
                 dropdown.classList.remove('active');
@@ -6628,13 +6639,12 @@
             
             if (!dropdown) return;
             
-            const contractors = db.getContractors().filter(c => 
-                {
-                const nameWords = c.name.toLowerCase().split(' ');
-                const tradesWords = c.trades ? c.trades.toLowerCase().split(' ') : [];
-                return nameWords.some(word => word.startsWith(value)) ||
-                       tradesWords.some(word => word.startsWith(value));
-            });
+            const contractors = db.getContractors()
+                .filter(c => matchesSearch([c.name, c.trades], value))
+                .sort((a, b) => {
+                    const r = searchRank([a.name, a.trades], value) - searchRank([b.name, b.trades], value);
+                    return r || a.name.localeCompare(b.name);
+                });
             
             if (contractors.length === 0 || value === '') {
                 dropdown.classList.remove('active');
@@ -6702,17 +6712,12 @@
             const isNumeric = /^\d/.test(value);
             
             const addresses = scopeAddressesToUser(db.getAddresses()).filter(a => {
-                const streetWords = a.street.toLowerCase().split(' ');
-                const suburbWords = a.suburb.toLowerCase().split(' ');
                 const lotNumber = a.propertyNumber ? a.propertyNumber.toLowerCase() : '';
-                
                 if (isNumeric) {
                     return lotNumber.startsWith(value) ||
-                           streetWords.some(word => word.startsWith(value));
+                           searchWords(a.street).some(word => word.startsWith(value));
                 }
-                
-                return streetWords.some(word => word.startsWith(value)) || 
-                       suburbWords.some(word => word.startsWith(value));
+                return matchesSearch([a.street, a.suburb], value);
             }).sort((a, b) => {
                 if (isNumeric) {
                     const aLotMatch = a.propertyNumber && a.propertyNumber.toLowerCase().startsWith(value);
@@ -8198,14 +8203,27 @@
             initializeAddressDefectForm();
         }
         // Leaving an Add Defects screen — warn if anything was keyed in but not saved.
-        function backFromAddDefects() {
+        // Anything keyed into the Add Defects form and not saved yet.
+        function addDefectsIsDirty() {
             let dirty = false;
             document.querySelectorAll('#app input, #app textarea').forEach(f => {
                 if ((f.tagName === 'TEXTAREA' || f.type === 'text') && f.value && f.value.trim()) dirty = true;
             });
-            if (dirty && !confirm('Changes have not been saved.\n\nDo you wish to proceed without saving?')) return;
-            showHomeView();
+            return dirty;
         }
+        // EVERY way off the Add Defects screen goes through here.
+        //
+        // The Back link was guarded; the job title above the form was not — and
+        // it's a full-width tappable heading sitting right under the header, so
+        // tapping it threw away everything typed with no warning. Spiro reported
+        // the prompt had "stopped working"; it had only ever covered one of the
+        // two exits. (2026-08-02)
+        function leaveAddDefects(go) {
+            if (addDefectsIsDirty() &&
+                !confirm('Changes have not been saved.\n\nDo you wish to proceed without saving?')) return;
+            go();
+        }
+        function backFromAddDefects() { leaveAddDefects(showHomeView); }
 
         // ---- Add a missing contractor on the spot (never get stuck) ----------
         // Supervisors: the new contractor is PRIVATE to them until a manager
@@ -10099,7 +10117,33 @@
                 // ticked off sailed past the duplicate guard and doubled the list.
                 const savedDefect = db.addDefect(
                     { addressId, contractorId: contractorId || null, description: ref + desc, location, status: 'open', unassigned: !contractorId },
-                    { matchCompleted: true });
+                    { matchCompleted: true, quiet: true });
+                // RE-OPEN A COMPLETED MATCH (Spiro 2026-08-02).
+                //
+                // matchCompleted stops a re-import doubling the list — right, and
+                // it stays. But it also meant a completed defect the report raises
+                // AGAIN was silently left closed. The inspector has listed the item
+                // a second time; that means it isn't fixed. Leaving it completed
+                // loses a live defect with nothing on screen to say so, which is
+                // how a whole re-import could look like it "did nothing".
+                //
+                // Re-opening keeps both properties: no duplicate row, and nothing
+                // dropped. The summary at the end says exactly what happened, so a
+                // report imported twice by mistake is one glance to spot.
+                let outcome = 'added';
+                if (db.lastAddWasDuplicate) {
+                    outcome = 'dup';
+                    if (savedDefect && defectStatusOf(savedDefect) === 'completed') {
+                        db.setDefectStatus(savedDefect.id, 'open');
+                        flushStatus();
+                        outcome = 'reopened';
+                    }
+                }
+                r.tally = r.tally || { added: 0, dup: 0, reopened: 0 };
+                r.tally[outcome]++;
+                showToast(outcome === 'added' ? 'Saved'
+                    : outcome === 'reopened' ? '⚠️ Was marked complete — re-opened, the report raised it again'
+                    : 'Already on the list — skipped');
                 // Attach this item's supporting photo, cut out of the report PDF.
                 // Goes through CloudPhotos.savePhoto — the durable path that keeps
                 // the blob on the phone first and retries until it uploads, so an
@@ -10142,11 +10186,28 @@
         }
         async function finishReview() {
             const r = _review || { saved: 0, reportName: 'Report', lastAddressId: null };
+            const t = r.tally || { added: 0, dup: 0, reopened: 0 };
             impClose();
             if (r.saved > 0 && window.CloudReports) {
                 try { await window.CloudReports.add({ name: r.reportName, addressLegacyId: r.lastAddressId, defectCount: r.saved, reportType: r.reportType, file: r.reportFile }); } catch (e) {}
             }
-            showToast(r.saved > 0 ? `Imported ${r.saved} defect(s) from the report` : 'No defects saved');
+            // A REPORT IMPORT ALWAYS ENDS WITH AN ACCOUNT OF ITSELF.
+            //
+            // Re-importing a report the job had already been through added
+            // nothing (correctly — the duplicate guard held) and said nothing, so
+            // it read as a broken import: "I uploaded the whole report and only
+            // the old outstanding items are there." The numbers are the answer.
+            // (Spiro 2026-08-02)
+            if (r.saved > 0 && (t.dup || t.reopened)) {
+                const lines = [`${r.saved} item${r.saved === 1 ? '' : 's'} reviewed from this report.`, ''];
+                if (t.added) lines.push(`• ${t.added} new defect${t.added === 1 ? '' : 's'} added`);
+                if (t.reopened) lines.push(`• ${t.reopened} RE-OPENED — already on the list and marked complete, but the report raised ${t.reopened === 1 ? 'it' : 'them'} again`);
+                if (t.dup) lines.push(`• ${t.dup} already on the list, left as ${t.dup === 1 ? 'it is' : 'they are'}`);
+                if (!t.added) lines.push('', 'Nothing new was added — every item was already on this job.');
+                alert(lines.join('\n'));
+            } else {
+                showToast(r.saved > 0 ? `Imported ${r.saved} defect(s) from the report` : 'No defects saved');
+            }
             render();
             _review = null;
         }
@@ -10784,7 +10845,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02r';
+        const APP_VERSION = '2026-08-02s';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10858,7 +10919,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02r"></script>
+    <script src="cloud-sync.js?v=2026-08-02s"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

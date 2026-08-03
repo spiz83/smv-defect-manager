@@ -67,6 +67,22 @@ What the SUPERVISOR has to order, as opposed to what a trade has to fix.
   It also covers **sharing a contractor**: a row with a legacy_id, a row with
   `legacy_id = NULL` (the duplicate-insert case), and an RLS refusal.
 
+## Search, re-import and the unsaved guard (2026-08-02) — build `2026-08-02s`
+- **Search is one matcher now.** `matchesSearch(haystack, query)` /
+  `searchRank()` — every word you type must prefix some word in the target, any
+  order, supplier trade included in the haystack. Used by the contractor, trade
+  and address autocompletes and the Add Defects supplier box. **Don't add a
+  fourth hand-rolled `startsWith` filter** — that's what made every two-word
+  search return nothing.
+- **A report import always ends with a summary** (`finishReview`) when anything
+  was skipped or re-opened, and a completed defect the report raises again is
+  RE-OPENED rather than silently left closed. `addDefect(..., {quiet:true})`
+  suppresses its own duplicate toast so the review can report the real outcome.
+- **`leaveAddDefects(go)` guards every exit** from Add Defects. If you add
+  another way off that screen, route it through this or you reintroduce the
+  silent data loss.
+- Covered by `fixes.mjs` in the scratchpad.
+
 ## Pushing a row whose cloud `legacy_id` is NULL (2026-08-02)
 `upsert(row, { onConflict: 'legacy_id' })` **cannot** match a row whose
 `legacy_id` is NULL — NULL never conflicts in Postgres — so it inserts a

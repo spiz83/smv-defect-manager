@@ -2,6 +2,52 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — Search: every word you type, not the whole phrase
+- **Decision:** one matcher (`matchesSearch` / `searchRank`) behind every search
+  box. **Each word you type must prefix-match some word in the target, in any
+  order**, across a haystack that includes the supplier's TRADE as well as the
+  name. Splitting on non-alphanumerics, so `&`, hyphens and double spaces stop
+  hiding names.
+- **Why:** every box used `word.startsWith(query)` — the WHOLE query had to
+  prefix a SINGLE word, so **any two-word search returned an empty dropdown**.
+  Verified before fixing: "vic plaster", "victoria fencing", "auz painting",
+  "har painter", "roof plumb", "shower screen" — all nothing. That is the whole
+  of "the search function sucks in general"; it wasn't ranking, it was a filter
+  that couldn't match a phrase.
+- **Trade-off:** still a prefix match per word, NOT a substring one. Typing
+  "ain" won't surface every painter. Prefixes are what people expect of a name
+  field and they keep the list short on a phone — a substring match turns three
+  letters into forty rows.
+
+## 2026-08-02 — Re-importing a report accounts for itself, and re-opens
+- **Report:** the whole BPI report was uploaded a second time and "only the
+  items outstanding last time" appeared.
+- **What was happening:** the duplicate guard was doing its job (`matchCompleted`
+  stops a re-import doubling the list — the Band Street fix, 2026-07-30) but
+  said nothing. Nothing was added, so the import looked broken.
+- **Decision 1 — re-open.** A completed defect that the report raises AGAIN is
+  re-opened. The inspector has listed it a second time; that means it isn't
+  fixed. Leaving it closed silently loses a live defect, which is the worse
+  failure by a distance: a duplicate is visible and deletable, a missing defect
+  is neither. The duplicate guard still holds, so no second row is created.
+- **Decision 2 — always report.** An import that skipped or re-opened anything
+  ends with a summary: N added, N re-opened, N already present, and plainly
+  "Nothing new was added" when that's the case. A report imported twice by
+  mistake is now one glance to spot.
+- **Trade-off:** re-importing an OLD report by mistake will re-open items that
+  were genuinely finished. Accepted — it's visible in the summary and one tap
+  each to re-complete, against the alternative of silently dropping items a
+  re-inspection has failed.
+
+## 2026-08-02 — Every exit from Add Defects is guarded
+- **Decision:** `leaveAddDefects(go)` wraps every route off the screen; the Back
+  link and the job-title heading both go through it.
+- **Why:** Spiro reported the unsaved-changes prompt had "stopped working". It
+  hadn't — it had only ever covered the Back link. The job title above the form
+  (`viewDefectsForAddress`) is a full-width tappable heading directly under the
+  header, and tapping it discarded everything typed with no warning at all.
+- **Trade-off:** none. An empty form still leaves without nagging.
+
 ## 2026-08-02 — "Shared contractor keeps coming back" — two bugs, not one
 - **Report:** approving a supervisor-added contractor under the admin login
   didn't stick; the review list refreshed and they reappeared.
