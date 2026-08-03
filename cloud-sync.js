@@ -1880,6 +1880,37 @@
         return out;
       } catch (e) { console.warn('[CloudPhotos] thumbs', e && e.message); return {}; }
     },
+    // EVERY photo per defect, for MANY defects, still in two round trips.
+    // Preview mode pages through a defect's photos on the card, so it needs the
+    // whole set — thumbs() deliberately returns only the first. Same two calls
+    // however many photos there are. (Spiro 2026-08-02)
+    thumbsAll: async (legacyIds) => {
+      try {
+        const pairs = (legacyIds || [])
+          .map((lid) => [lid, idMap.defects[lid]])
+          .filter(([, uuid]) => !!uuid);
+        if (!pairs.length) return {};
+        const byUuid = {};
+        pairs.forEach(([lid, uuid]) => { byUuid[uuid] = lid; });
+        const { data: rows, error } = await sb.from('dm_defect_photos')
+          .select('defect_id, storage_path, created_at')
+          .in('defect_id', pairs.map(([, uuid]) => uuid))
+          .order('created_at', { ascending: true });
+        if (error || !rows || !rows.length) return {};
+        const { data: signed } = await sb.storage.from(PHOTO_BUCKET)
+          .createSignedUrls(rows.map((r) => r.storage_path), 3600);
+        const urlByPath = {};
+        (signed || []).forEach((x) => { if (x && x.signedUrl) urlByPath[x.path] = x.signedUrl; });
+        const out = {};
+        rows.forEach((r) => {
+          const lid = byUuid[r.defect_id];
+          const url = urlByPath[r.storage_path];
+          if (lid == null || !url) return;
+          (out[lid] = out[lid] || []).push(url);
+        });
+        return out;
+      } catch (e) { console.warn('[CloudPhotos] thumbsAll', e && e.message); return {}; }
+    },
     // Signed URLs (valid 7 days) for emailing photo links to a supplier
     getLinks: async (legacyId) => {
       const uuid = idMap.defects[legacyId];

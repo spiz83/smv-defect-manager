@@ -38,6 +38,12 @@ What the SUPERVISOR has to order, as opposed to what a trade has to fix.
   job's list. A **Shopping List** row on the home screen, directly under the job
   list, opens every job the supervisor holds — that's the one that matters, a
   hardware run is planned across jobs.
+- **Preview cards carry a photo carousel** (2026-08-02): `1/3` counter top-right,
+  `‹`/`›` arrows, and `📷` to add from camera or gallery. `CloudPhotos.thumbsAll()`
+  fetches every photo for every visible card in TWO round trips — don't replace it
+  with a per-card `getLinks()` call, that's 24 cards × 2 requests in a driveway.
+  Paging and adding both update the card IN PLACE; a `render()` here throws the
+  supervisor back to the top of the job.
 - **Preview mode has it too** (`pvOrderBtn` / `pvToggleOrder`), added
   2026-08-02 — walking the house is exactly when you notice a part is needed.
   It updates the card IN PLACE, like `pvToggleDone`: a full `render()` throws

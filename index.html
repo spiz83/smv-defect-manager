@@ -1570,9 +1570,38 @@
            can't eat a screen and a half. Anything taller than the bound is
            letterboxed by `contain` rather than cut. */
         .pv-photo {
+            position: relative;
             width: 100%; border-radius: 9px; overflow: hidden;
             border: 1px solid var(--border-color); background: var(--bg-secondary);
             display: flex; align-items: center; justify-content: center; cursor: zoom-in;
+        }
+        /* Paging controls, only drawn when there IS more than one photo. Dark
+           translucent so they read over a bright brick wall or a dark ceiling
+           cavity alike — a light chip disappears against half the photos on a
+           building site. Big enough for a thumb, inset so neither sits under the
+           phone's edge-swipe gesture zone. */
+        .pv-nav {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            width: 34px; height: 46px; border: none; border-radius: 8px;
+            background: rgba(15,23,42,.55); color: #fff;
+            font-size: 24px; line-height: 1; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; padding: 0; z-index: 2;
+        }
+        .pv-prev { left: 8px; }
+        .pv-next { right: 8px; }
+        .pv-pcount {
+            position: absolute; top: 8px; right: 8px; z-index: 2;
+            background: rgba(15,23,42,.62); color: #fff;
+            border-radius: 999px; padding: 3px 9px;
+            font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
+            letter-spacing: .02em; pointer-events: none;
+        }
+        /* The add-photo control is a <label> wrapping a hidden file input, so it
+           needs the button metrics spelled out. */
+        .pv-addphoto {
+            position: relative; box-sizing: border-box;
+            display: inline-flex; align-items: center; justify-content: center;
         }
         .pv-photo img {
             width: 100%; height: auto; max-height: 60vh;
@@ -5874,6 +5903,7 @@
                         <span class="pv-minis">
                             <button class="pv-mini" onclick="event.stopPropagation(); openDefectEdit(${defect.id})" title="Edit">✏️</button>
                             <button class="pv-mini" onclick="event.stopPropagation(); openLocationPicker(${defect.id})" title="Location">📍</button>
+                            ${pvPhotoBtn(defect)}
                             ${pvOrderBtn(defect)}
                         </span>
                     </div>
@@ -5972,19 +6002,128 @@
         }
         // Fill every visible card's photo in ONE batch, after the list is on
         // screen. Cards render instantly; photos arrive when they arrive.
+        // ===========================================================================
+        //  PREVIEW PHOTOS — all of them, paged on the card (Spiro 2026-08-02)
+        //  One card used to show ONE photo (the report shot) and there was no way
+        //  to add another without leaving preview. An item routinely needs three
+        //  or four: the defect, the context, the fix. So the card now pages
+        //  through every photo the defect has, says how many there are, and can
+        //  take a new one from the camera or the gallery without leaving.
+        // ===========================================================================
+        let _pvPhotos = {};        // legacyId -> [url]
+        let _pvBlobUrls = [];      // object URLs for not-yet-uploaded photos
+        function _pvRevokeBlobUrls() {
+            _pvBlobUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
+            _pvBlobUrls = [];
+        }
+        // Photos still on THIS phone, not yet uploaded. Appended last (they're the
+        // newest), so a photo taken in a black spot is on the card immediately
+        // instead of looking like it didn't save.
+        async function _pvPendingUrls(id) {
+            const cp = window.CloudPhotos;
+            if (!cp || !cp.pendingPhotos || !cp.pendingCount || !cp.pendingCount(id)) return [];
+            try {
+                const items = await cp.pendingPhotos(id);
+                return (items || []).map(it => {
+                    const u = URL.createObjectURL(it.blob);
+                    _pvBlobUrls.push(u);
+                    return u;
+                });
+            } catch (e) { return []; }
+        }
         async function fillPreviewPhotos() {
             if (!previewMode()) return;
             const slots = [...document.querySelectorAll('[data-pvphoto]')];
-            if (!slots.length || !(window.CloudPhotos && window.CloudPhotos.thumbs)) return;
+            const cp = window.CloudPhotos;
+            if (!slots.length || !cp || !(cp.thumbsAll || cp.thumbs)) return;
             const ids = slots.map(el => Number(el.getAttribute('data-pvphoto')));
-            const urls = await window.CloudPhotos.thumbs(ids);
-            slots.forEach(el => {
+            _pvRevokeBlobUrls();
+            const cloud = cp.thumbsAll
+                ? await cp.thumbsAll(ids)
+                // Older cached cloud-sync.js: one url per defect. Still works.
+                : Object.fromEntries(Object.entries(await cp.thumbs(ids)).map(([k, v]) => [k, [v]]));
+            for (const el of slots) {
                 const id = Number(el.getAttribute('data-pvphoto'));
-                const u = urls[id];
-                el.innerHTML = u
-                    ? `<img src="${u}" loading="lazy" alt="report photo">`
-                    : '<div class="pv-ph-wait">photo unavailable offline</div>';
-            });
+                _pvPhotos[id] = (cloud[id] || []).concat(await _pvPendingUrls(id));
+                pvRenderPhoto(el, id, 0);
+            }
+        }
+        // Draw ONE photo plus its controls. Index is kept on the slot, so paging
+        // never touches the rest of the card or the scroll position.
+        function pvRenderPhoto(slot, id, index) {
+            const urls = _pvPhotos[id] || [];
+            if (!urls.length) {
+                slot.innerHTML = '<div class="pv-ph-wait">photo unavailable offline</div>';
+                return;
+            }
+            const i = Math.max(0, Math.min(index, urls.length - 1));
+            slot.setAttribute('data-pvindex', String(i));
+            const many = urls.length > 1;
+            slot.innerHTML =
+                `<img src="${urls[i]}" loading="lazy" alt="defect photo">`
+                + (many ? `<button class="pv-nav pv-prev" aria-label="Previous photo"
+                        onclick="event.stopPropagation(); pvStepPhoto(${id}, -1)">‹</button>
+                    <button class="pv-nav pv-next" aria-label="Next photo"
+                        onclick="event.stopPropagation(); pvStepPhoto(${id}, 1)">›</button>
+                    <span class="pv-pcount">${i + 1}/${urls.length}</span>` : '');
+        }
+        // Wraps at both ends — with three or four photos, hunting for the arrow
+        // that isn't greyed out is worse than just looping.
+        function pvStepPhoto(id, delta) {
+            const slot = document.querySelector(`[data-pvphoto="${id}"]`);
+            const urls = _pvPhotos[id] || [];
+            if (!slot || urls.length < 2) return;
+            const cur = Number(slot.getAttribute('data-pvindex') || 0);
+            pvRenderPhoto(slot, id, (cur + delta + urls.length) % urls.length);
+        }
+        // 📷 on the card. accept="image/*" is what gives iOS the Camera / Photo
+        // Library / Files sheet, so "take one" and "pick one" are the same button.
+        function pvPhotoBtn(defect) {
+            return `<label class="pv-mini pv-addphoto" title="Add a photo — camera or gallery">📷<input
+                type="file" accept="image/*" multiple onchange="pvAddPhoto(event, ${defect.id})"
+                style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0"></label>`;
+        }
+        async function pvAddPhoto(ev, id) {
+            const files = Array.from(ev.target.files || []);
+            ev.target.value = '';                       // allow re-picking the same file
+            if (!files.length) return;
+            const cp = window.CloudPhotos;
+            if (!cp || !cp.savePhoto) { showToast('Log in to use photos', true); return; }
+            // Mark-up editor for a single photo, same as the gallery; a multi-pick
+            // uploads as-is because editing each one is tedious.
+            for (const f of files) {
+                let img = f;
+                if (files.length === 1 && cp.editPhoto) {
+                    img = await cp.editPhoto(f);
+                    if (!img) return;                   // cancelled in the editor
+                }
+                await cp.savePhoto(id, img);
+            }
+            showToast(files.length === 1 ? '📸 Photo added' : `📸 ${files.length} photos added`);
+            await pvRefreshPhotos(id);
+        }
+        // Re-read ONE defect's photos and redraw its card in place — a full
+        // render would throw you back to the top of the job.
+        async function pvRefreshPhotos(id) {
+            const cp = window.CloudPhotos;
+            if (cp && cp.refreshCounts) cp.refreshCounts();
+            let slot = document.querySelector(`[data-pvphoto="${id}"]`);
+            if (!slot) {
+                // The card had no photo, so it was rendered without a slot. Give
+                // it one rather than re-rendering the whole list.
+                const card = document.querySelector(`.pv-card[data-pv="${id}"]`);
+                const act = card && card.querySelector('.pv-act');
+                if (!act) { render(); return; }
+                slot = document.createElement('div');
+                slot.className = 'pv-photo';
+                slot.setAttribute('data-pvphoto', String(id));
+                slot.onclick = (e) => { e.stopPropagation(); if (window.CloudPhotos) window.CloudPhotos.openGallery(id); };
+                act.parentNode.insertBefore(slot, act);
+            }
+            const cloud = (cp && cp.thumbsAll) ? await cp.thumbsAll([id]) : {};
+            _pvPhotos[id] = (cloud[id] || []).concat(await _pvPendingUrls(id));
+            // Land on the photo just added, not back at the first one.
+            pvRenderPhoto(slot, id, Math.max(0, _pvPhotos[id].length - 1));
         }
 
         function statusFilterButton() {
@@ -10870,7 +11009,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02u';
+        const APP_VERSION = '2026-08-02v';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10944,7 +11083,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02u"></script>
+    <script src="cloud-sync.js?v=2026-08-02v"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -2,6 +2,36 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — Preview cards page through every photo, and can take a new one
+- **Decision:** a preview card now shows **all** of a defect's photos, not just
+  the first: a `1/3` counter in the photo's top-right corner, `‹` / `›` arrows
+  down each side, and a `📷` in the action row that opens the camera or the
+  gallery (`accept="image/*"` is what gives iOS the Camera / Photo Library /
+  Files sheet, so one control covers both).
+- **Why:** an item routinely needs three or four shots — the defect, the
+  context, the fix — and preview mode showed one with no way to add another
+  without leaving the screen. Preview is where you're standing in front of the
+  thing, so it's the natural place to photograph it.
+- **How it stays cheap:** `CloudPhotos.thumbsAll()` returns every photo for many
+  defects in the same **two** round trips `thumbs()` used for one each — one
+  select, one batch signing call. Paging swaps the `<img>` src and the counter
+  and touches nothing else, so it never re-renders the list or moves your place
+  in a long job.
+- **Arrows wrap at both ends.** With three or four photos, hunting for the arrow
+  that isn't greyed out is worse than just looping.
+- **A photo taken with no signal appears immediately** — pending (not yet
+  uploaded) blobs are appended to the card's set from
+  `CloudPhotos.pendingPhotos`, so it can never look like it didn't save. The
+  object URLs are revoked on the next fill.
+- **Trade-off — the action row now wraps on a phone.** Four icons plus MARK DONE
+  don't fit one line at 390px, so MARK DONE takes the full width and the icons
+  sit beneath it. That's the better layout anyway: the primary action gets the
+  whole width and every target grows. The `.pv-minis` wrapper keeps the four
+  together, or they break mid-set.
+- **Trade-off — a card with no photo still shows no photo box.** Adding the
+  first one inserts the box in place rather than re-rendering, so an empty card
+  stays clean and you keep your scroll position either way.
+
 ## 2026-08-02 — Preview shows the WHOLE photo, never a crop
 - **Decision:** `.pv-photo` drops its fixed `aspect-ratio: 4/3`, and the image
   goes from `object-fit: cover` to `width:100%; height:auto; max-height:60vh;
