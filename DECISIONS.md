@@ -2,6 +2,20 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — Preview's MARK DONE confirms, like the status tab does
+- **Decision:** `pvToggleDone` asks "Mark this item as completed? It will be
+  removed from the active list." before completing — the same wording the list
+  view's status tab has always used. Un-completing stays instant; that's the
+  undo.
+- **Why:** Spiro, from site. It was the only route to `completed` in the app
+  with no confirmation, and the easiest one to hit by accident: preview is
+  walked one-handed at arm's length and MARK DONE is the biggest target on the
+  card. The item then drops off the list on the next render, so a mis-tap reads
+  as "it vanished" with nothing to undo from.
+- **Trade-off:** a tap more per item when working through a job in preview. Both
+  modes now cost the same, and the list mode has carried that prompt for months
+  without complaint.
+
 ## 2026-08-02 — Search: every word you type, not the whole phrase
 - **Decision:** one matcher (`matchesSearch` / `searchRank`) behind every search
   box. **Each word you type must prefix-match some word in the target, in any

@@ -5920,6 +5920,14 @@
         function pvToggleDone(id) {
             const d = db.data.defects.find(x => x.id === id); if (!d) return;
             const next = defectStatusOf(d) === 'completed' ? 'open' : 'completed';
+            // Confirm before COMPLETING, the same as the status tab in list mode
+            // (Spiro 2026-08-02). Preview is walked one-handed with a phone at
+            // arm's length and the button is the biggest target on the card, so
+            // it's the easiest thing in the app to hit by accident — and the item
+            // then drops off the list on the next render, which reads as "it
+            // vanished". Un-completing is the undo and needs no prompt.
+            if (next === 'completed' &&
+                !confirm('Mark this item as completed? It will be removed from the active list.')) return;
             db.setDefectStatus(id, next);
             flushStatus();
             const card = document.querySelector(`.pv-card[data-pv="${id}"]`);
@@ -10845,7 +10853,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02s';
+        const APP_VERSION = '2026-08-02t';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -10919,7 +10927,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02s"></script>
+    <script src="cloud-sync.js?v=2026-08-02t"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
