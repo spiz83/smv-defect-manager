@@ -12,3 +12,4 @@ _check.js
 # Local env files
 .env
 .env.*
+tests/artifacts/
