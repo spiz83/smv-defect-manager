@@ -2,6 +2,31 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-02 — The supplier combo: rank the matches, and show more than two
+- **Report:** typing "Har" in Reassign all still meant scrolling past a heap of
+  contractors to reach HAR Painters, and only two or three were visible at once.
+- **Bug 1 — the ordering, not the filter.** `.rv-combo-list` pickers (Reassign
+  all, Edit defect, BPI review) used a bare `label.includes(query)` and then
+  sorted the survivors **A-Z**. "Har" therefore matched every name or trade
+  containing those three letters anywhere — Bharat, Charlie, Ace Hardware,
+  Maharaj — and alphabetical order dropped HAR Painters into the middle of its
+  own result list. Note this is a DIFFERENT code path from the autocompletes
+  fixed earlier the same day; that fix never reached these.
+- **Decision:** `comboItems()` ranks. Word-prefix hits first (rank 0-2, via the
+  shared `matchesSearch`/`searchRank`), then plain substring hits (rank 4), A-Z
+  within each band. Substring matches are KEPT rather than dropped — anything
+  findable before stays findable, it just sorts below the thing you meant.
+- **Bug 2 — the modal was clipping the list.** `.rv-combo-list` is absolutely
+  positioned inside `#imp-body`, and `#imp-card` is `overflow:hidden` sized to
+  its content. On a short dialog the list had nowhere to go, so raising its
+  `max-height` alone would have changed nothing.
+- **Decision:** `#imp-body.combo-open` reserves `min(440px, 56vh)` underneath
+  while any list is open, toggled by `syncComboRoom()`; the list itself goes
+  240px → `min(420px, 52vh)`. Nine rows visible instead of two.
+- **Trade-off:** the modal grows while the list is open and the body scrolls.
+  Better than a two-row window into a list of forty — choosing between similar
+  supplier names is exactly what you can't do two at a time.
+
 ## 2026-08-02 — Preview cards page through every photo, and can take a new one
 - **Decision:** a preview card now shows **all** of a defect's photos, not just
   the first: a `1/3` counter in the photo's top-right corner, `‹` / `›` arrows

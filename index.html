@@ -3864,6 +3864,46 @@
             if (!words.length) return false;
             return toks.every(t => words.some(w => w.startsWith(t)));
         }
+        // Rows for a `.rv-combo-list` dropdown (Reassign all, Edit defect, BPI
+        // review), RANKED. (Spiro 2026-08-02)
+        //
+        // These pickers used a bare `label.includes(query)` and then sorted the
+        // survivors A-Z. Typing "Har" therefore listed every contractor with
+        // those three letters anywhere in the name OR the trade — and put them in
+        // alphabetical order, so "HAR Painters" sat a long scroll down its own
+        // result list. The filter wasn't the problem; the ordering was.
+        //
+        // Word-prefix hits come first (rank 0-2, what you almost always mean),
+        // then plain substring hits (rank 4) so nothing that used to be findable
+        // stops being findable. A-Z within each band.
+        function comboRank(label, query) {
+            if (matchesSearch(label, query)) return searchRank(label, query);
+            return String(label || '').toLowerCase().includes(String(query || '').trim().toLowerCase()) ? 4 : 9;
+        }
+        function comboItems(options, query, esc) {
+            const q = (query || '').trim();
+            let hits = options;
+            if (q) {
+                hits = options
+                    .map(o => ({ o, r: comboRank(o.label, q) }))
+                    .filter(x => x.r < 9)
+                    .sort((a, b) => a.r - b.r || a.o.label.localeCompare(b.o.label))
+                    .map(x => x.o);
+            }
+            hits = hits.slice(0, 40);
+            return hits.length
+                ? hits.map(o => `<div class="rv-combo-item" data-id="${o.id}">${esc(o.label)}</div>`).join('')
+                : '<div class="rv-combo-empty">No matches</div>';
+        }
+        // A combo list is absolutely positioned INSIDE the modal's scrolling body,
+        // and the card clips it — on a short dialog like "Reassign all" that left
+        // barely two rows visible. Reserve room underneath while any list is open
+        // so the body can scroll into it.
+        function syncComboRoom() {
+            const body = document.getElementById('imp-body');
+            if (body) body.classList.toggle('combo-open', !!document.querySelector('.rv-combo-list.open'));
+        }
+
         // Rank: an exact word hit, then a hit on the FIRST word, then A-Z. Keeps
         // "Painter" above "Roof Plumber" when you type "p".
         function searchRank(haystack, query) {
@@ -5607,12 +5647,9 @@
             const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
             const currentLabel = () => { const o = options.find(x => String(x.id) === String(hidden.value)); return o ? o.label : ''; };
             const draw = (q) => {
-                q = (q || '').trim().toLowerCase();
-                const hits = (q ? options.filter(o => o.label.toLowerCase().includes(q)) : options).slice(0, 40);
-                list.innerHTML = hits.length
-                    ? hits.map(o => `<div class="rv-combo-item" data-id="${o.id}">${esc(o.label)}</div>`).join('')
-                    : '<div class="rv-combo-empty">No matches</div>';
+                list.innerHTML = comboItems(options, q, esc);
                 list.classList.add('open');
+                syncComboRoom();
             };
             input.addEventListener('focus', () => {
                 if (input.value && input.value === currentLabel()) input.value = '';
@@ -5621,7 +5658,7 @@
             });
             input.addEventListener('input', () => { if (!input.value.trim()) hidden.value = ''; draw(input.value); });
             input.addEventListener('blur', () => setTimeout(() => {
-                list.classList.remove('open');
+                list.classList.remove('open'); syncComboRoom();
                 if (!input.value.trim() && hidden.value) input.value = currentLabel();
             }, 150));
             list.addEventListener('mousedown', (e) => {
@@ -5631,7 +5668,7 @@
                 const o = options.find(x => x.id === id);
                 input.value = o ? o.label : '';
                 hidden.value = id;
-                list.classList.remove('open');
+                list.classList.remove('open'); syncComboRoom();
             });
         }
 
@@ -8689,10 +8726,16 @@
               .rv-combo{position:relative;}
               .rv-combo-input{width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--border-color,#ccc);
                 border-radius:12px;font:inherit;background:var(--input-bg,#fff);color:var(--text-primary,#111);}
+              /* Roughly 9 rows instead of 5. The list is for choosing between
+                 suppliers with similar names, which you can't do two at a time. */
               .rv-combo-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:10;display:none;
                 background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ddd);border-radius:12px;
-                max-height:240px;overflow:auto;box-shadow:0 12px 32px rgba(0,0,0,.22);}
+                max-height:min(420px,52vh);overflow:auto;box-shadow:0 12px 32px rgba(0,0,0,.22);
+                -webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
               .rv-combo-list.open{display:block;}
+              /* …and the modal has to make room, or the card clips it to two rows
+                 however tall the list is allowed to be (Spiro 2026-08-02). */
+              #imp-body.combo-open{padding-bottom:min(440px,56vh);}
               .rv-combo-item{padding:11px 13px;cursor:pointer;font-size:14px;line-height:1.3;
                 border-bottom:1px solid var(--border-color,#f0f0f0);}
               .rv-combo-item:last-child{border-bottom:0;}
@@ -9998,12 +10041,9 @@
             const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
             const currentLabel = () => { const o = options.find(x => String(x.id) === String(hidden.value)); return o ? o.label : ''; };
             const draw = (q) => {
-                q = (q || '').trim().toLowerCase();
-                const hits = (q ? options.filter(o => o.label.toLowerCase().includes(q)) : options).slice(0, 40);
-                list.innerHTML = hits.length
-                    ? hits.map(o => `<div class="rv-combo-item" data-id="${o.id}">${esc(o.label)}</div>`).join('')
-                    : '<div class="rv-combo-empty">No matches</div>';
+                list.innerHTML = comboItems(options, q, esc);
                 list.classList.add('open');
+                syncComboRoom();
             };
             // Tapping the field clears the shown label so the FIRST keystroke starts
             // a fresh search (the hidden selection is kept and restored on blur if
@@ -10015,7 +10055,7 @@
             });
             input.addEventListener('input', () => { if (!input.value.trim()) hidden.value = ''; draw(input.value); });
             input.addEventListener('blur', () => setTimeout(() => {
-                list.classList.remove('open');
+                list.classList.remove('open'); syncComboRoom();
                 if (!input.value.trim() && hidden.value) input.value = currentLabel();   // restore if untouched
             }, 150));
             // mousedown (fires before the input's blur) so the click registers.
@@ -10026,7 +10066,7 @@
                 const o = options.find(x => x.id === id);
                 input.value = o ? o.label : '';
                 hidden.value = id;
-                list.classList.remove('open');
+                list.classList.remove('open'); syncComboRoom();
                 const cur = _review.items[_review.index];
                 if (kind === 'address') {
                     const dEl = document.getElementById('rv-desc'), lEl = document.getElementById('rv-location');
@@ -11009,7 +11049,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-02v';
+        const APP_VERSION = '2026-08-02w';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11083,7 +11123,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-02v"></script>
+    <script src="cloud-sync.js?v=2026-08-02w"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
