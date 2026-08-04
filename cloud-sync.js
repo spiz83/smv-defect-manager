@@ -2490,7 +2490,7 @@
         if (error && String(error.code) === '23505') {
           // Match the index exactly: contractor_id NULL has to be looked up with
           // `is`, not `eq` (eq null matches nothing in PostgREST).
-          let q = sb.from('dm_defects').select('id, legacy_id')
+          let q = sb.from('dm_defects').select('id, legacy_id, status')
             .eq('job_id', row.job_id)
             .eq('description', row.description);
           q = row.contractor_id == null
@@ -2498,7 +2498,41 @@
             : q.eq('contractor_id', row.contractor_id);
           const { data: found } = await q.maybeSingle();
           if (found) {
-            console.info('[CloudSync] defect #' + d.id + ' already exists in the cloud — adopting it instead of adding a duplicate');
+            // RE-OPEN A RECURRENCE ("I added 5 items and only 2 showed up").
+            //
+            // The local duplicate guard in db.addDefect() deliberately ignores
+            // COMPLETED defects, so an item that was ticked off months ago can be
+            // raised again — a closed defect genuinely can recur. The unique index
+            // has no status column, so that re-raise collides with the completed
+            // row and lands here.
+            //
+            // Adopting alone silently threw the new raise away: the pull rebuilds
+            // db.data from the cloud keyed by the CLOUD row's legacy_id, so the
+            // freshly raised defect had no row of its own and vanished, while the
+            // old completed row came back in its place. The supervisor saw
+            // "✓ 5 defect(s) added successfully", then two of them on the list.
+            //
+            // The row IS the right row — there can only be one per
+            // (job, description, supplier) — so re-open it rather than lose the
+            // raise. Same resolution the report-import path already uses when it
+            // re-reads a line that had been completed.
+            const localStatus = row.status || 'open';
+            if (found.status === 'completed' && localStatus !== 'completed') {
+              const { error: reopenErr } = await sb.from('dm_defects')
+                .update({ status: localStatus, completed_at: null })
+                .eq('id', found.id).select('id').maybeSingle();
+              if (reopenErr) {
+                // Couldn't re-open it — queue for retry rather than adopt a
+                // completed row and drop the raise on the next pull.
+                console.warn('[CloudSync] defect #' + d.id + ' recurred but could not be re-opened', reopenErr);
+                outboxAdd(legacyId);
+                return;
+              }
+              found.status = localStatus;
+              console.info('[CloudSync] defect #' + d.id + ' recurred — re-opened the completed row instead of losing the raise');
+            } else {
+              console.info('[CloudSync] defect #' + d.id + ' already exists in the cloud — adopting it instead of adding a duplicate');
+            }
             data = found; error = null;
           }
         }

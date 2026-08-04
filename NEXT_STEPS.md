@@ -283,6 +283,7 @@ originals. NULL the legacy_id before deleting.
 | i | Any unrelated edit pushed the whole row incl. a stale status. Status may now only leave `completed` on explicit intent (`statusIntent`) |
 | j | **My regression from c.** Carry-over only filled gaps, so completing an existing defect let the cloud's open copy win ~800ms later. Un-pushed rows now OVERLAY the pull |
 | k | `commitDefect` inserted a duplicate when it had no uuid (upsert can't match CH Tracker's NULL legacy_id). Now defers instead of inserting |
+| l | **"I add 5 items and only 2 show."** Re-raising a defect that had been completed collided with the unique index on `(job_id, description, contractor_id)`; adopt-on-conflict claimed the old COMPLETED row, so the raise vanished on the next pull and the item reappeared ticked off. The collided row is now RE-OPENED before it is adopted (`tests/recur.mjs`) |
 
 ## Test harness — rebuild if missing
 Serve the repo on :8099, drive real Chromium via Playwright.

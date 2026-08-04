@@ -1,6 +1,36 @@
 # Decisions Log
 
 Newest at top. Format: date — decision — why — trade-off accepted.
+## 2026-08-04 — a re-raised defect RE-OPENS its completed row instead of vanishing
+- **Decision:** when `commitDefect` hits the unique index on
+  `(job_id, description, contractor_id)` (23505) and the row it collides with is
+  `completed` while the local defect is not, the adopt-on-conflict branch now
+  **re-opens that row** before claiming it. If the re-open write fails the defect
+  is queued in the outbox rather than adopted.
+- **Why:** reported as "I add 5 items and only 2 show in the report", and it is
+  real — `tests/recur.mjs` reproduces it exactly (5 raised, 2 left after one
+  background pull). Two rules that are each correct disagree: `db.addDefect()`
+  deliberately does NOT match completed defects, because a closed item genuinely
+  can recur and must be re-raisable; the database index has no status column, so
+  the re-raise collides with the old completed row. Adopting alone threw the
+  raise away — the pull rebuilds `db.data` keyed by the CLOUD row's legacy_id, so
+  the newly raised defect had no row of its own and disappeared, while the old
+  completed row came back in its place. The supervisor saw
+  "✓ 5 defect(s) added successfully" and then two items.
+- **Why re-open rather than loosen the local guard:** the index permits exactly
+  one row per (job, description, supplier), so the colliding row IS the defect —
+  there is nowhere else for the raise to go. Re-opening is also what the
+  report-import path already does when it re-reads a line that had been completed,
+  so this is one resolution rule, not two. Making the local guard match completed
+  rows would break re-raising by design and still miss every collision the phone
+  can't see (another supervisor's row, a hidden job, a CH Tracker row).
+- **Trade-off accepted:** a recurrence re-uses the original row, so it keeps that
+  row's id and creation date rather than getting a fresh one — the item's history
+  is one row with two lives, not two rows. Worth it: the alternative is silent
+  data loss, and the index makes a second row impossible anyway.
+- **Blast radius:** one branch that previously only ran on a 23505, which cannot
+  fire at all on a database without the index (control case in `tests/recur.mjs`
+  covers that). All 12 suites green.
 
 ## 2026-08-02 — 📑 on the trade view, scoped by CONTRACTOR not by trade links
 - **Decision:** the trade view (and the multiple-contractors view, which had the
