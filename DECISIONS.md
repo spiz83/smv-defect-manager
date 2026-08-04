@@ -28,6 +28,29 @@ Newest at top. Format: date — decision — why — trade-off accepted.## 2026-
 - **Blast radius:** the block only runs when a PARTIAL trade selection is ticked
   (`o.tradeIds` non-null). All trades ticked, or Contractor mode, is unchanged —
   covered by cases D and E in the suite.
+## 2026-08-04 (c) — ✏️ Reassign all on the TRADE view's supplier groups
+- **Decision:** each supplier group in the trade view gets the same ✏️ button the
+  job view has, calling the existing `openReassignGroup(contractorId, addressId)`.
+  No new machinery — that function already works off (address, contractor) and was
+  simply unreachable from this screen.
+- **Why:** a BPI import files items against the TRADE PLACEHOLDER ("PLUMBER") when
+  it can't name the sub, so the Plumber trade view shows two groups on one job —
+  COSTAS PLUMBING and PLUMBER — and the items under the placeholder never appear
+  in a report scoped to Costas. The supervisor could see exactly what needed
+  moving and had no way to move it: the group header on this screen was a bare
+  name with no actions.
+- **Also:** the toast now says "— no longer on the <trade> list" when the new
+  supplier doesn't carry the trade being viewed. Reassigning from a trade screen
+  can move items off the very list you are looking at, and they vanish on the
+  re-render; unexplained, that reads as the move having failed.
+- **Trade-off accepted:** reassign-all moves ACTIVE defects only (`db.getDefects`
+  excludes completed) — unchanged from the job view, where the same button has
+  behaved this way since 2026-07-11. Completed items stay with the old supplier.
+- **Blast radius:** one group header gained a button; the shared reassign dialog
+  is untouched apart from the extra toast clause. `tests/tradereassign.mjs` drives
+  the real screen: the button renders on every group, the move is scoped to ONE
+  job (a second job's placeholder items are untouched), the waterhammer item
+  reaches a COSTAS PLUMBING report afterwards, and the off-trade move is flagged.
 
 ## 2026-08-04 — a re-raised defect RE-OPENS its completed row instead of vanishing
 - **Decision:** when `commitDefect` hits the unique index on
