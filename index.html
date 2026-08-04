@@ -11059,7 +11059,47 @@
                 // matching trade aren't silently dropped. Partial = filter to it.
                 o.tradeIds = (selT.length && selT.length < allTrades) ? selT : null;
             }
-            const list = reportFilteredDefects(o);
+            let list = reportFilteredDefects(o);
+            // NOTHING LEAVES A REPORT SILENTLY (Spiro 2026-08-04).
+            //
+            // A trade filter resolves a defect's trade through its CONTRACTOR'S
+            // trade links (dm_contractor_trades). Plenty of real subs have none —
+            // the sync hands them tradeIds: [] and trades: 'No Trade Assigned' —
+            // and a defect with no supplier at all has nothing to resolve either.
+            // Both were dropped without a word: the PDF simply came out short, or
+            // the dialog claimed "No defects match those filters" about defects
+            // that plainly did match. That is how a waterhammer item raised
+            // against COSTAS PLUMBING went missing from a Plumber report.
+            //
+            // The filter itself is unchanged — a report asked for Plumber should
+            // not quietly fill up with everyone else's work. What changes is that
+            // the supervisor is told what is being left out, by supplier, and
+            // gets to decide.
+            if (o.tradeIds && o.tradeIds.length) {
+                const inScope = reportFilteredDefects({ ...o, tradeIds: null });
+                const kept = new Set(list.map(d => d.id));
+                // Only the ones the filter could say NOTHING about: no supplier at
+                // all, or a supplier carrying no trade links. A sub linked to a
+                // DIFFERENT trade was excluded on purpose and must stay out —
+                // otherwise a Plumber report quietly fills up with the painter's
+                // work, which is a worse bug than the one being fixed.
+                const missed = inScope.filter(d => {
+                    if (kept.has(d.id)) return false;
+                    const c = db.getContractor(d.contractorId);
+                    if (!c) return true;
+                    return !c.isTradePlaceholder && !(c.tradeIds || []).length;
+                });
+                if (missed.length) {
+                    const who = [...new Set(missed.map(d =>
+                        (db.getContractor(d.contractorId) || {}).name || 'Unassigned'))].sort();
+                    const ok = confirm(
+                        `${missed.length} defect(s) would be left out of this report.\n\n` +
+                        `These suppliers have no trade assigned, so they match no trade:\n` +
+                        who.map(n => '• ' + n).join('\n') +
+                        `\n\nInclude their defects anyway?`);
+                    if (ok) list = list.concat(missed);
+                }
+            }
             if (!list.length) { showToast('No defects match those filters', true); return; }
             impSetBusy('Generating PDF… (' + list.length + ' defect' + (list.length > 1 ? 's' : '') + ')' + (o.photos ? ' with photos' : ''));
             try { await generateDefectPDF(list, o); impClose(); showToast('PDF report ready'); }
@@ -11083,7 +11123,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-03a';
+        const APP_VERSION = '2026-08-04a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11157,7 +11197,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-03a"></script>
+    <script src="cloud-sync.js?v=2026-08-04a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
