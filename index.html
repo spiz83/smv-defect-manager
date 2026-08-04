@@ -2937,7 +2937,13 @@
                             </div>
                             ${Object.values(addressGroup.contractors).map(contractorGroup => `
                                 <div class="contractor-section">
-                                    <div class="contractor-name">${contractorGroup.contractor.name}</div>
+                                    <div class="contractor-name contractor-hdr">
+                                        <span class="supplier-name" title="${(contractorGroup.contractor.name || 'Unassigned').replace(/"/g, '&quot;')}"><span class="supplier-name-txt">${contractorGroup.contractor.name || 'Unassigned'}</span></span>
+                                        ${addressGroup.address && addressGroup.address.id != null ? `
+                                        <span class="supplier-actions">
+                                            <button class="supplier-email-btn" onclick="openReassignGroup(${contractorGroup.contractor.id != null ? contractorGroup.contractor.id : 'null'}, ${addressGroup.address.id})" title="Reassign ALL of these defects to another contractor or trade">✏️</button>
+                                        </span>` : ''}
+                                    </div>
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
                                             ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
@@ -5639,8 +5645,20 @@
                             { observation: (d.location ? d.location + ' ' : '') + cleanDesc, source: 'reassign', jobId: window.CloudLearning.jobUuidForAddress(d.addressId) }); } catch (e) {} }
                     }
                 }
+                // Reassigning from the TRADE view can move items off the very list
+                // being looked at — the new supplier may not carry this trade — and
+                // they then just disappear as the screen re-renders. Say so, or it
+                // reads as the move having gone wrong.
+                let gone = '';
+                try {
+                    if (state.currentView === 'view-defects-trade' && state.filters
+                        && Array.isArray(state.filters.contractorIds)
+                        && !state.filters.contractorIds.includes(newId)) {
+                        gone = ` — no longer on the ${state.filters.tradeName || 'this'} list`;
+                    }
+                } catch (e) {}
                 impClose(); render(); flushStatus();
-                showToast(`Moved ${groupDefects.length} defect${groupDefects.length === 1 ? '' : 's'} to ${newC.name}`);
+                showToast(`Moved ${groupDefects.length} defect${groupDefects.length === 1 ? '' : 's'} to ${newC.name}${gone}`);
             };
         }
         // Self-contained predictive supplier dropdown for the edit modal (mirrors
@@ -11123,7 +11141,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-04a';
+        const APP_VERSION = '2026-08-04b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11197,7 +11215,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-04a"></script>
+    <script src="cloud-sync.js?v=2026-08-04b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
