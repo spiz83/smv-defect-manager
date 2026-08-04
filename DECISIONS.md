@@ -27,7 +27,36 @@ Newest at top. Format: date — decision — why — trade-off accepted.## 2026-
   it is the only signal the supervisor gets that the report is incomplete.
 - **Blast radius:** the block only runs when a PARTIAL trade selection is ticked
   (`o.tradeIds` non-null). All trades ticked, or Contractor mode, is unchanged —
-  covered by cases D and E in the suite.
+  covered by cases D and E in the suite.## 2026-08-04 (d) — approvals are one-way: the diff engine may not un-share
+- **Decision:** `diffEntity` takes an optional `updateGuard`, applied to the
+  UPDATE patch and to the update loop's fallback upsert (never to inserts).
+  Contractors use it to strip `is_shared`/`added_by` whenever the value being
+  pushed is `is_shared: false`.
+- **Why:** reported as "these keep coming up over and over even after I've
+  approved them", with four contractors sat in *Contractors to review* on a
+  build that already had the 2026-08-02r share fix. That fix was real but
+  incomplete: it made the manager's OWN write verified and reversible, and said
+  nothing about the other phones. The supervisor who added the contractor still
+  holds it locally as private, and the engine sent the WHOLE row on an update —
+  so the next time anything about that contractor changed on their phone (a
+  corrected number is the obvious one), it pushed `is_shared: false` over the
+  approval. Back in the review list on the following pull. For ever.
+- **Why a downgrade guard rather than dropping the columns outright:** pushing
+  `true` is harmless and idempotent, and leaving that path alone keeps the change
+  to the one direction that loses data. Inserts are untouched, so a brand-new
+  supervisor-added contractor still arrives private and still needs approving —
+  pinned as its own case in `tests/share.mjs`.
+- **Why the fallback upsert is guarded too:** with no uuid yet — a cold boot,
+  before the first pull has filled `idMap` — every update takes that branch. An
+  unguarded fallback would reopen the identical hole on the sync that runs first,
+  which is the worst possible one to leave open.
+- **Trade-off accepted:** there is now no way to un-share a contractor by editing
+  one on a phone. There was never a supported way — the UI offers Share and
+  Delete, nothing else — so this removes an accident, not a feature.
+- **Blast radius:** one optional parameter, used by one entity. `tests/share.mjs`
+  fails on all three revert checks without it; `sync.mjs` (which covers the
+  manager-side share paths, including the RLS refusal) still passes unchanged.
+
 ## 2026-08-04 (c) — ✏️ Reassign all on the TRADE view's supplier groups
 - **Decision:** each supplier group in the trade view gets the same ✏️ button the
   job view has, calling the existing `openReassignGroup(contractorId, addressId)`.

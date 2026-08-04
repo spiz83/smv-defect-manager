@@ -830,7 +830,24 @@
       toRow: (c) => ({ legacy_id: c.id, name: c.name, email: c.email || null, phone: c.phone || null,
                        is_shared: c.isShared !== false, added_by: c.addedBy || null }),
       changed: (a, b) => a.name !== b.name || a.email !== b.email || a.phone !== b.phone ||
-                         ((a.isShared !== false) !== (b.isShared !== false)) || (a.addedBy || '') !== (b.addedBy || '')
+                         ((a.isShared !== false) !== (b.isShared !== false)) || (a.addedBy || '') !== (b.addedBy || ''),
+      // APPROVALS ARE ONE-WAY (Spiro 2026-08-04 — "they keep coming back").
+      //
+      // is_shared/added_by have a dedicated write path: the manager's Share
+      // button, via commitContractor. This engine exists for ordinary field
+      // edits — a name, a phone number, an email. It was sending the WHOLE row
+      // on an update, so the supervisor's phone, which still holds its own copy
+      // as private, pushed is_shared:false straight over the manager's approval
+      // the next time anything about that contractor changed. The contractor
+      // was back in "Contractors to review" on the following pull, for ever:
+      // approve, revert, approve, revert.
+      //
+      // Only a DOWNGRADE is stripped. Pushing true is harmless and idempotent,
+      // and a brand-new private contractor still arrives for review because
+      // inserts do not pass through here.
+      updateGuard: (patch) => {
+        if (patch.is_shared === false) { delete patch.is_shared; delete patch.added_by; }
+      }
     });
 
     // Addresses are CH Tracker jobs — read-only, never pushed.
@@ -886,7 +903,11 @@
   // update and adopt theirs on the next pull (last-write-wins → cloud-wins on a
   // real conflict). Used for dm_defects.status so a "completed" set in the CH
   // Tracker (or another phone) can't be reverted to "open" by a stale push.
-  async function diffEntity({ cur, snap, table, map, toRow, changed, concurrencyCol, deletesOnly }) {
+  // updateGuard (optional): last chance to strip fields from a patch that is
+  // about to UPDATE an existing cloud row. Inserts are untouched — a brand-new
+  // row must carry every column. Used to stop a field with its own dedicated
+  // write path riding along on an unrelated edit. See the contractors call.
+  async function diffEntity({ cur, snap, table, map, toRow, changed, concurrencyCol, deletesOnly, updateGuard }) {
     const curMap = byId(cur);
     const inserts = [], updates = [], deletes = [];
 
@@ -977,12 +998,18 @@
         if (uuid) {
           const patch = { ...row };
           delete patch.legacy_id;      // never restamp the unique column on an update
+          if (updateGuard) updateGuard(patch);
           const res = await sb.from(table).update(patch).eq('id', uuid).select('id, legacy_id').maybeSingle();
           data = res.data; error = res.error;
         }
         // No uuid, or the row it pointed at is gone → (re)create by legacy_id.
+        // Guarded too: with no uuid yet (cold boot, before the first pull has
+        // filled idMap) EVERY update lands here, so leaving it unguarded would
+        // reopen the same hole on exactly the sync that runs first.
         if (!error && !data) {
-          const res = await sb.from(table).upsert(row, { onConflict: 'legacy_id' }).select('id, legacy_id').single();
+          const reRow = { ...row };
+          if (updateGuard) updateGuard(reRow);
+          const res = await sb.from(table).upsert(reRow, { onConflict: 'legacy_id' }).select('id, legacy_id').single();
           data = res.data; error = res.error;
         }
         if (error) throw error;

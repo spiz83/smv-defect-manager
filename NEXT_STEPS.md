@@ -285,6 +285,7 @@ originals. NULL the legacy_id before deleting.
 | k | `commitDefect` inserted a duplicate when it had no uuid (upsert can't match CH Tracker's NULL legacy_id). Now defers instead of inserting |
 | l | **"I add 5 items and only 2 show."** Re-raising a defect that had been completed collided with the unique index on `(job_id, description, contractor_id)`; adopt-on-conflict claimed the old COMPLETED row, so the raise vanished on the next pull and the item reappeared ticked off. The collided row is now RE-OPENED before it is adopted (`tests/recur.mjs`) |
 | m | **"My Plumber report was missing an item."** A trade filter matches through the contractor's trade LINKS; a sub with none was dropped silently, and when it was the only match the dialog said "No defects match those filters" about defects that did. The report now names the unlinked suppliers and offers to include them (`tests/tradefilter.mjs`) |
+| n | **"Approved contractors keep coming back."** The 2026-08-02r fix verified the MANAGER's write but not the other phones. A supervisor's device still holding the contractor as private pushed `is_shared:false` over the approval on any unrelated edit. The diff engine can no longer downgrade `is_shared` (`tests/share.mjs`) |
 
 ## Test harness — rebuild if missing
 Serve the repo on :8099, drive real Chromium via Playwright.
