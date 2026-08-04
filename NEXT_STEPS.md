@@ -284,6 +284,7 @@ originals. NULL the legacy_id before deleting.
 | j | **My regression from c.** Carry-over only filled gaps, so completing an existing defect let the cloud's open copy win ~800ms later. Un-pushed rows now OVERLAY the pull |
 | k | `commitDefect` inserted a duplicate when it had no uuid (upsert can't match CH Tracker's NULL legacy_id). Now defers instead of inserting |
 | l | **"I add 5 items and only 2 show."** Re-raising a defect that had been completed collided with the unique index on `(job_id, description, contractor_id)`; adopt-on-conflict claimed the old COMPLETED row, so the raise vanished on the next pull and the item reappeared ticked off. The collided row is now RE-OPENED before it is adopted (`tests/recur.mjs`) |
+| m | **"My Plumber report was missing an item."** A trade filter matches through the contractor's trade LINKS; a sub with none was dropped silently, and when it was the only match the dialog said "No defects match those filters" about defects that did. The report now names the unlinked suppliers and offers to include them (`tests/tradefilter.mjs`) |
 
 ## Test harness — rebuild if missing
 Serve the repo on :8099, drive real Chromium via Playwright.

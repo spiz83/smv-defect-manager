@@ -1,6 +1,34 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-04 (b) — a trade report says what it is leaving out
+- **Decision:** `runContextReport` now compares the trade-filtered list against
+  the same scope with the trade filter removed. Any defect the filter could say
+  **nothing** about — no supplier at all, or a supplier carrying no trade links —
+  is named in a confirm, by supplier, with the option to include it. A sub linked
+  to a DIFFERENT trade is still excluded, silently and on purpose.
+- **Why:** reported as "I exported a Plumber report and a waterhammer item
+  against COSTAS PLUMBING wasn't in it". A trade filter resolves a defect's trade
+  through `dm_contractor_trades`, and plenty of real subs have no row there — the
+  sync hands them `tradeIds: []` / `trades: 'No Trade Assigned'`. Their defects
+  were dropped with nothing said. Worse, when they were the ONLY defects in
+  scope, the dialog claimed **"No defects match those filters"** about defects
+  that plainly did match — the most misleading message in the app.
+- **Why not include them automatically:** a report asked for Plumber must not
+  quietly fill with the painter's work. `tests/tradefilter.mjs` pins that
+  direction too: answering yes adds the two unlinked COSTAS items and still
+  leaves AUZ PAINTING's item out.
+- **Why not infer the trade from the supplier's name:** "COSTAS PLUMBING"
+  obviously reads as a plumber to a human, and that is exactly the kind of guess
+  that puts the wrong sub's work in a report sent to a builder. The missing trade
+  link is a data condition; the app's job is to make it visible, not to guess
+  around it.
+- **Trade-off accepted:** a job carrying unlinked suppliers now prompts on every
+  trade report until those links are set. That is the point — it is one tap, and
+  it is the only signal the supervisor gets that the report is incomplete.
+- **Blast radius:** the block only runs when a PARTIAL trade selection is ticked
+  (`o.tradeIds` non-null). All trades ticked, or Contractor mode, is unchanged —
+  covered by cases D and E in the suite.
+
 ## 2026-08-04 — a re-raised defect RE-OPENS its completed row instead of vanishing
 - **Decision:** when `commitDefect` hits the unique index on
   `(job_id, description, contractor_id)` (23505) and the row it collides with is
