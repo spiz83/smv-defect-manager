@@ -2070,14 +2070,37 @@
   };
 
   // ----- Ad-hoc PDF sharing: upload a generated PDF, get a SHORT shareable link -
-  // Used by the "email a link" 🔗 buttons. A link in the email body isn't an
-  // attachment, so iOS Mail fills the Subject. We upload to the PUBLIC
-  // 'shared-pdfs' bucket under a short random name and return a short
-  // /go.html?f=… redirect on our own domain — short enough that mail apps
-  // auto-linkify it (so the trade taps it, no copy-paste). Unguessable name.
+  // Used by the "email a link" 🔗 buttons, and by every report opened rather
+  // than downloaded. A link in the email body isn't an attachment, so iOS Mail
+  // fills the Subject. We upload to the PUBLIC 'shared-pdfs' bucket and return
+  // a short /go.html?f=… redirect on our own domain — short enough that mail
+  // apps auto-linkify it (so the trade taps it, no copy-paste).
+  //
+  // THE OBJECT PATH IS `<random>/<report name>.pdf` (Spiro 2026-08-07).
+  // The random folder is what keeps the link unguessable; the LAST path
+  // segment is what a browser, Mail and Files name the saved file, so it has
+  // to be the report's real name. This used to be a flat `k3j9x2m1.pdf`, which
+  // is exactly the gibberish a trade was receiving: the PDF was named properly
+  // by buildReportFilename and then thrown away right here. Do not flatten it
+  // back — and do not drop the random folder either: a clean name alone is
+  // guessable AND collides with every other supervisor's report of the same
+  // day (upsert would hand a trade someone else's defect list).
   const SHARE_BUCKET = 'shared-pdfs';
   let _lastShareKey = null;   // object name of the most recent uploadTempPdf (for CloudMail)
   const SHARE_BASE = 'https://smv-defect-manager.vercel.app/go.html?f=';
+  // The caller's filename, reduced to something safe as BOTH a URL path segment
+  // and a filename on every OS: letters, digits, dot, dash, underscore. Any
+  // directory part is dropped, so nothing here can climb out of its folder.
+  const shareFileName = (filename) => {
+    let base = String(filename == null ? '' : filename)
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // 'Bäyhill' → 'Bayhill', not 'B-yhill'
+      .split(/[\\/]/).pop()
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/^[-.]+/, '')
+      .slice(0, 80);
+    if (!base) return 'Defect-Report.pdf';
+    return /\.pdf$/i.test(base) ? base : base.replace(/\.[^.]*$/, '') + '.pdf';
+  };
   window.CloudShare = {
     uploadTempPdf: async (blob, filename) => {
       // Cleared per call: the fallback branch below uploads to a DIFFERENT
@@ -2087,12 +2110,15 @@
       _lastShareKey = null;
       try {
         const rand = (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).slice(-12);
-        const name = rand + '.pdf';
+        const safe = shareFileName(filename || (blob && blob.name));
+        const name = rand + '/' + safe;
         const up = await sb.storage.from(SHARE_BUCKET).upload(name, blob, { contentType: 'application/pdf', upsert: true });
         if (up.error) {
-          // Fallback: private bucket + long signed URL still works (just not short).
+          // Fallback: private bucket + long signed URL still works (just not
+          // short). Keep the real report name on the end of the path there too,
+          // so even the degraded route doesn't save as gibberish.
           console.error('[CloudShare] upload', up.error);
-          const path = `shared/${Date.now()}_defects.pdf`;
+          const path = `shared/${rand}/${safe}`;
           const alt = await sb.storage.from(REPORT_BUCKET).upload(path, blob, { contentType: 'application/pdf', upsert: true });
           if (alt.error) return null;
           const { data } = await sb.storage.from(REPORT_BUCKET).createSignedUrl(path, 604800);

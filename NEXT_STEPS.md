@@ -1,7 +1,32 @@
 # Next Steps / Handover
 
 STATUS: Active — mid-incident
-LAST UPDATED: 2026-08-02
+LAST UPDATED: 2026-08-07
+
+## PDF filenames (2026-08-07) — build `2026-08-07a`, branch `claude/pdf-report-filename-cleanup-plff0r`
+Every generated report is now `<Who>_<dd.mm>_Items.pdf` — `Bayhill_12.06_Items.pdf`.
+Full reasoning in DECISIONS.md; the parts that will bite a later change:
+
+- **The name is built in ONE place** — `buildReportFilename` in `index.html`.
+  Job screen, supplier screen, trade screen, report builder and both email
+  buttons all reach it. Don't add a second namer.
+- **The name lives or dies in `uploadTempPdf`** (`cloud-sync.js`). The object
+  path is `<random>/<report name>.pdf`. The random folder is the unguessable
+  part; the LAST segment is what a phone names the saved file. Flattening it
+  back is exactly the bug that was fixed — the app named the PDF properly and
+  the upload replaced it with `k3j9x2m1abcd.pdf`. Dropping the random folder is
+  just as wrong: with `upsert: true`, two supervisors' same-day reports for the
+  same supplier would overwrite each other.
+- **`CloudShare.lastKey()` now contains a `/`.** The `email-supplier-defects`
+  edge function (not in this repo) takes that key and downloads it —
+  `storage.from(bucket).download('<folder>/<file>.pdf')` is fine, but if that
+  function ever validates the key shape, it needs to allow one slash.
+- **Deploy note:** nothing to run in Supabase. The `shared-pdfs` bucket takes a
+  foldered path with no policy change (it has never keyed off `foldername`).
+  If an upload ever IS refused, the private-bucket + signed-URL fallback already
+  carries the report name, so it degrades readably rather than breaking.
+- **Covered by `tests/pdfname.mjs`** (gate 3, 15 suites now). Reverting either
+  half — the namer or the upload path — fails it.
 
 ## ⚠️ TWO MANUAL STEPS OUTSTANDING
 Neither blocks the app — both features degrade cleanly until they're done — but

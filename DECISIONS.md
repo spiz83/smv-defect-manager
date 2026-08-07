@@ -1,6 +1,52 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-04 (b) — a trade report says what it is leaving out
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-07 — every PDF is named after what is in it
+
+- **Decision:** one filename shape for every generated report, from every
+  screen: **`<Who>_<dd.mm>_Items.pdf`** — `Bayhill_12.06_Items.pdf`. `<Who>` is
+  resolved in the order a supervisor would say it out loud: the single supplier
+  the report is for, else the trade, else the job (`1933Lahar` — lot + street,
+  street type dropped), else what it spans (`3Jobs`, `2Suppliers`, `All`).
+  Spiro's words, 2026-08-07: *"abbreviated name of contractor or trade followed
+  by the date (only dd/mm) + items"*.
+- **The actual bug was not in the namer.** `buildReportFilename` already
+  produced something readable and `CloudShare.uploadTempPdf` **threw it away**,
+  uploading to a flat 12-character random key. Every report that is *opened*
+  rather than downloaded goes through that upload — the 📑 on a supplier inside
+  a job, every report on iOS, both email links — so what a trade actually tapped
+  and what their phone saved was `k3j9x2m1abcd.pdf`. The last segment of a URL
+  path is what names a download; that segment was the gibberish.
+- **Fix:** the object path is now `<random>/<report name>.pdf`. The random
+  folder keeps the link unguessable; the last segment carries the real name.
+  **Do not flatten it back, and do not drop the random folder either** — a clean
+  name alone is guessable AND collides, and `upsert: true` would hand one
+  supervisor's trade another supervisor's defect list. `go.html` accepts the
+  foldered form (and still accepts flat keys, so links already sitting in a
+  trade's inbox keep working) and refuses any segment that could climb out.
+- **Why dd.mm and no year:** asked for. A defect list is a this-week document —
+  a supplier reading `12.06` knows exactly which visit it was. The year was
+  noise in a name that has to be recognisable at a glance on a phone.
+- **Why the trade name is threaded down as `opts.tradeName`:** a trade report is
+  scoped by the trade's SET of contractors (see 2026-08-02 — trade links are
+  blank on many subs), so by the time the file is named there is no trade in the
+  opts at all and it would have come out `5Suppliers`. An explicitly TICKED
+  trade still wins over the screen it was opened from — the file has to say
+  what is in it, not where it started.
+- **Abbreviation rule:** take words from the front until there are at least two
+  characters. `BAYHILL PLUMBING PTY LTD` → `Bayhill`; `Downeys Group Aust (VIC)
+  P/L T/A DGA Roofing` → `Downeys`; `H & K Painting` → `HK`, not `H`. Accents
+  are folded first (NFD) or `Bäyhill` fragments into `BYhill`.
+- **Trade-off accepted:** a supplier report scoped to ONE job is named after the
+  supplier only, so a supervisor generating the same supplier's list for three
+  jobs on one day gets three files with the same name (`(1)`, `(2)` in
+  Downloads). That is the format as asked for, and the common case — the
+  supplier email — is one job at a time. Adding the job would read
+  `Bayhill_1933Lahar_12.06_Items.pdf` if that turns out to matter on site.
+- **Covered by** `tests/pdfname.mjs`: the name out of every screen, the name
+  surviving the real `cloud-sync.js` upload, the sanitiser against hostile
+  input, and `go.html` accepting the new form while refusing traversal.
+
+## 2026-08-04 (b) — a trade report says what it is leaving out
 - **Decision:** `runContextReport` now compares the trade-filtered list against
   the same scope with the trade filter removed. Any defect the filter could say
   **nothing** about — no supplier at all, or a supplier carrying no trade links —

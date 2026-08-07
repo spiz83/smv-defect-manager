@@ -23,15 +23,27 @@
     // A share link points here as /go.html?f=<file>. We just forward to the PDF
     // in the public 'shared-pdfs' bucket. Keeping the redirect on this short
     // domain is what lets the emailed link stay short enough to auto-linkify.
+    //
+    // `f` is now `<random>/<Report Name>.pdf` — the random folder keeps the
+    // link unguessable, and the last segment is what the phone names the saved
+    // file (Spiro 2026-08-07: no more k3j9x2m1.pdf). Flat, folderless keys are
+    // still accepted so links already sitting in a trade's inbox keep working.
     (function () {
       var f = new URLSearchParams(location.search).get('f') || '';
       var sub = document.getElementById('sub');
-      if (!/^[A-Za-z0-9._-]+$/.test(f)) {
+      var parts = f.split('/');
+      // Every segment must be an ordinary name — no empties, and nothing that
+      // could climb back out of the bucket folder.
+      var ok = f.length <= 200 && parts.length <= 2 && parts.every(function (p) {
+        return /^[A-Za-z0-9._-]+$/.test(p) && p !== '.' && p !== '..';
+      });
+      if (!ok) {
         document.querySelector('.msg').textContent = 'This link is invalid or has expired.';
         document.querySelector('.spin').style.display = 'none';
         return;
       }
-      var url = 'https://cubwwnvzmeydyixhetfb.supabase.co/storage/v1/object/public/shared-pdfs/' + f;
+      var url = 'https://cubwwnvzmeydyixhetfb.supabase.co/storage/v1/object/public/shared-pdfs/'
+        + parts.map(encodeURIComponent).join('/');
       sub.innerHTML = 'If it doesn’t open automatically, <a href="' + url + '">tap here</a>.';
       location.replace(url);
     })();

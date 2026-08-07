@@ -47,6 +47,7 @@ changes. That has happened twice.
 | `deep` | Deep-read private-report import: admin gate, photo anchoring, fallbacks |
 | `fixes` | Search matching; the unsaved-changes guard; report re-import and re-opening |
 | `hdr` | Supplier heading on one line; booking button; send-group expansion |
+| `pdfname` | Report filenames from every screen; the name survives the upload; `go.html` |
 | `pvgallery` | Preview photo carousel: counter, arrows, paging, adding a photo |
 | `pvphoto` | Preview photos are never cropped |
 | `rows` | Tap-to-open row actions |

@@ -2920,7 +2920,7 @@
                         <div class="toolbar">
                             ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorIds: ${jsAttr(contractorIds)}, label: ${jsAttr(tradeName)}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorIds: ${jsAttr(contractorIds)}, label: ${jsAttr(tradeName)}, tradeName: ${jsAttr(tradeName)}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
@@ -6671,6 +6671,9 @@
                 if (singleAddressId != null) pdfOpts.addressIds = [singleAddressId];
                 else if (state.currentView === 'view-defects-contractor' && state.filters.contractorId) pdfOpts.contractorIds = [state.filters.contractorId];
                 else if (state.filters && state.filters.contractorIds) pdfOpts.contractorIds = state.filters.contractorIds;
+                // So a trade list emailed from the trade screen is named after
+                // the trade rather than counted as "5Suppliers".
+                if (state.currentView === 'view-defects-trade' && state.filters && state.filters.tradeName) pdfOpts.tradeName = state.filters.tradeName;
                 return await generateDefectPDF(list, pdfOpts);
             };
 
@@ -10598,37 +10601,91 @@
             catch (e) { console.error(e); impOverlayMessage('Could not generate PDF: ' + (e.message || e)); }
         }
 
-        // PDF filename: <lot><streetname>_defects_<contractor-initials>_<d.m>.pdf
-        // e.g. 903woodlawn_defects_HK_9.6.pdf. Each part is dropped when it doesn't
-        // apply (report not scoped to a single job / single contractor).
+        // ── PDF FILENAME ────────────────────────────────────────────────────
+        // <Who>_<dd.mm>_Items.pdf — e.g. Bayhill_12.06_Items.pdf.
+        //
+        // Spiro 2026-08-07: "any time a pdf report is created, regardless of
+        // whether it is from a JOB screen or a Supplier screen, it is to be
+        // renamed and not have jibberish in the filename … abbreviated name of
+        // contractor or trade, followed by the date (only dd/mm), + items."
+        //
+        // <Who> is whatever the report is actually ABOUT, resolved in the order
+        // a supervisor would name it out loud: the supplier it is going to,
+        // else the trade, else the job, else what it spans. EVERY generated PDF
+        // comes through here — job screen 📑, supplier screen 📑, the report
+        // builder, ✉️ / 🔗 email — and cloud-sync uploads under this name too,
+        // so what the trade taps open is never called `k3j9x2m1.pdf` again.
+        //
+        // Whatever comes out of here has to survive being a URL path segment
+        // and a filename on iOS, Android, Windows and macOS, so: letters,
+        // digits, `.`, `-` and `_` only. Nothing else is ever emitted.
+
+        // A name squeezed down to one filename-safe word, each kept word
+        // capitalised. Words are taken from the front until there are at least
+        // two characters, which is what makes the abbreviation useful on both
+        // shapes of trading name:
+        //   'BAYHILL PLUMBING PTY LTD'                    → Bayhill
+        //   'Downeys Group Aust (VIC) P/L T/A DGA Roofing' → Downeys
+        //   'H & K Painting'                               → HK
+        function reportNameWord(text, max) {
+            // Fold accents first, or 'Bäyhill' splits into 'B' + 'yhill' and the
+            // abbreviation comes out as BYhill instead of Bayhill.
+            const flat = String(text == null ? '' : text).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const words = flat.split(/[^a-z0-9]+/i).filter(Boolean);
+            let out = '';
+            for (const w of words) {
+                out += w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+                if (out.length >= 2) break;
+            }
+            return out.slice(0, max || 18);
+        }
+        // A job named the way the site names it: lot number + street, no street
+        // type. 'Lot 903, 12 Woodlawn Drive' → 903Woodlawn.
+        function reportJobWord(addressId) {
+            const STREET_TYPES = /\b(rd|road|st|street|ave|avenue|dr|drive|drv|ct|court|cres|crescent|pl|place|blvd|boulevard|ln|lane|tce|terrace|cl|close|pde|parade|cct|circuit|gr|grove|hwy|highway|way|esp|esplanade|sq|square|vista|cir|circle|grn|green|rise|view|walk|prom|promenade)\b/gi;
+            const a = db.getAddress(addressId);
+            if (!a) return '';
+            const lot = String(a.lotNo || (String(a.street || '').match(/lot\s*(\d+)/i) || [])[1] || '').replace(/\D/g, '');
+            const raw = (a.streetName || a.street || '').replace(/^\s*\(?\d+[a-z]?\)?[\s,]+/i, '').replace(/,.*$/, '');
+            // Stripping the street type off 'The Grove' would leave 'The', so
+            // only take the stripped form when something is actually left.
+            const stripped = raw.replace(STREET_TYPES, ' ').replace(/[^a-z0-9]/gi, '');
+            const nm = reportNameWord(stripped || raw, 16);
+            return (lot + nm).slice(0, 20);
+        }
         function buildReportFilename(opts) {
             opts = opts || {};
             const now = new Date();
-            // Date as d.m.yy, e.g. 21.7.26.
-            const dm = now.getDate() + '.' + (now.getMonth() + 1) + '.' + String(now.getFullYear()).slice(-2);
-            // Supplier report → "<supplier><date>", e.g. downeys21.7.26. The
-            // supplier is abbreviated to the first word of their name, lower-cased
-            // (Downeys Group Aust (VIC) P/L T/A DGA Roofing → downeys).
+            const pad = (n) => String(n).padStart(2, '0');
+            const dm = pad(now.getDate()) + '.' + pad(now.getMonth() + 1);   // 12.06
+
+            let who = '';
+            // 1 · The supplier it is going to. This is the common case — the
+            //     supplier email, and 📑 on a supplier group inside a job.
             if (opts.contractorIds && opts.contractorIds.length === 1) {
                 const c = db.getContractor(opts.contractorIds[0]);
-                const who = c && c.name ? c.name.trim().split(/\s+/)[0].replace(/[^a-z0-9]/gi, '').toLowerCase() : '';
-                if (who) return who + dm + '.pdf';
+                who = reportNameWord(c && c.name);
             }
-            // Otherwise fall back to a job-based name when scoped to one address.
-            const STREET_TYPES = /\b(rd|road|st|street|ave|avenue|dr|drive|drv|ct|court|cres|crescent|pl|place|blvd|boulevard|ln|lane|tce|terrace|cl|close|pde|parade|cct|circuit|gr|grove|hwy|highway|way|esp|esplanade|sq|square|vista|cir|circle|grn|green|rise|view|walk|prom|promenade)\b/gi;
-            let addrPart = '';
-            if (opts.addressIds && opts.addressIds.length === 1) {
-                const a = db.getAddress(opts.addressIds[0]);
-                if (a) {
-                    const lot = String(a.lotNo || (String(a.street || '').match(/lot\s*(\d+)/i) || [])[1] || '').replace(/\D/g, '');
-                    let nm = (a.streetName || a.street || '').replace(/^\s*\(?\d+[a-z]?\)?[\s,]+/i, '').replace(/,.*$/, '').replace(STREET_TYPES, ' ');
-                    nm = nm.replace(/[^a-z0-9]/gi, '').toLowerCase();
-                    addrPart = lot + nm;
-                }
+            // 2 · The trade, when the report covers a whole trade rather than
+            //     one sub. An explicitly TICKED trade comes first: the dialog
+            //     can be opened on the Plumber screen and narrowed to Painter,
+            //     and the file has to say what is in it, not where it started.
+            //     The trade screen itself scopes by its SET of contractors, so
+            //     its trade name is handed down as tradeName or it is lost.
+            if (!who && opts.tradeIds && opts.tradeIds.length === 1) {
+                const t = (db.data.trades || []).find(x => x.id === opts.tradeIds[0]);
+                who = reportNameWord(t && t.name);
             }
-            let name = addrPart ? (addrPart + '_defects') : 'defects';
-            name += '_' + dm;
-            return name + '.pdf';
+            if (!who && opts.tradeName) who = reportNameWord(opts.tradeName);
+            // 3 · The job — a report generated from the job screen.
+            if (!who && opts.addressIds && opts.addressIds.length === 1) who = reportJobWord(opts.addressIds[0]);
+            // 4 · Nothing single to name it after: say what it spans, rather
+            //     than fall back to something that describes nothing.
+            if (!who && opts.addressIds && opts.addressIds.length > 1) who = opts.addressIds.length + 'Jobs';
+            if (!who && opts.contractorIds && opts.contractorIds.length > 1) who = opts.contractorIds.length + 'Suppliers';
+            if (!who) who = 'All';
+
+            return who + '_' + dm + '_Items.pdf';
         }
 
         async function generateDefectPDF(list, opts) {
@@ -11055,6 +11112,10 @@
                 statuses, tradeIds: null,
                 photos: document.getElementById('cr-photos').checked,
                 groupBy: 'address',   // job-first layout: each address is a header
+                // A trade report is scoped by the trade's SET of subs, so the
+                // trade's own name would otherwise be lost by the time the file
+                // is named. Carried for buildReportFilename only.
+                tradeName: ctx.tradeName || '',
             };
             // Per-job scope (contractor reports only): honour the ticked jobs.
             // All ticked → whole-contractor report (o.addressIds stays empty).
@@ -11141,7 +11202,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-04b';
+        const APP_VERSION = '2026-08-07a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11215,7 +11276,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-04b"></script>
+    <script src="cloud-sync.js?v=2026-08-07a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
