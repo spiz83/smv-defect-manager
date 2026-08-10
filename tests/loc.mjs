@@ -77,12 +77,20 @@ const check = (label, cond, detail) => { console.log((cond ? 'PASS  ' : 'FAIL  '
 const shot = async n => page.screenshot({ path: join(ARTIFACTS, n + '.png') });
 
 // ── abbreviateLocation ───────────────────────────────────────────────────
+// The codes Spiro named on 2026-08-10, verbatim: bathroom BTH, bedroom four
+// B4, ensuite ENS, laundry LDRY, kitchen KIT, living LIV.
 const abbr = await page.evaluate(() => ({
+  bath:      abbreviateLocation('Bathroom'),
+  bed4:      abbreviateLocation('Bedroom 4'),
+  ensuite:   abbreviateLocation('Ensuite'),
+  laundry:   abbreviateLocation('Laundry'),
+  kitchen:   abbreviateLocation('Kitchen'),
+  living:    abbreviateLocation('Living'),
+  lounge:    abbreviateLocation('Lounge'),
   long:      abbreviateLocation('Garage Internal PA Door'),
   master:    abbreviateLocation('Master Bedroom'),
   wir:       abbreviateLocation('Walk In Robe'),
   elevation: abbreviateLocation('Rear Elevation'),
-  short:     abbreviateLocation('Kitchen'),
   lower:     abbreviateLocation('walk in robe'),
   spaced:    abbreviateLocation('  Powder   Room '),
   unknown:   abbreviateLocation('Bedroom 6'),
@@ -91,16 +99,41 @@ const abbr = await page.evaluate(() => ({
   nullish:   abbreviateLocation(null),
 }));
 console.log('\nabbreviateLocation:', JSON.stringify(abbr));
-check('long name shortens', abbr.long === 'Garage Int PA', abbr.long);
-check('Master Bedroom → Master Bed', abbr.master === 'Master Bed', abbr.master);
+check('Bathroom → BTH', abbr.bath === 'BTH', abbr.bath);
+check('Bedroom 4 → B4', abbr.bed4 === 'B4', abbr.bed4);
+check('Ensuite → ENS', abbr.ensuite === 'ENS', abbr.ensuite);
+check('Laundry → LDRY', abbr.laundry === 'LDRY', abbr.laundry);
+check('Kitchen → KIT', abbr.kitchen === 'KIT', abbr.kitchen);
+check('Living → LIV', abbr.living === 'LIV', abbr.living);
+check('Lounge keeps its own code, not LIV', abbr.lounge === 'LNG', abbr.lounge);
+check('longest name is a code too', abbr.long === 'GAR INT PA', abbr.long);
+check('Master Bedroom → MBR', abbr.master === 'MBR', abbr.master);
 check('Walk In Robe → WIR', abbr.wir === 'WIR', abbr.wir);
-check('Rear Elevation → Rear Elev', abbr.elevation === 'Rear Elev', abbr.elevation);
-check('short name passes through', abbr.short === 'Kitchen', abbr.short);
+check('Rear Elevation → REAR ELEV', abbr.elevation === 'REAR ELEV', abbr.elevation);
 check('lookup is case-insensitive', abbr.lower === 'WIR', abbr.lower);
-check('lookup tolerates stray spaces', abbr.spaced === 'Powder', abbr.spaced);
-check('unlisted location still shortens', abbr.unknown === 'Bed 6', abbr.unknown);
-check('free-typed location shortens by word', abbr.freeText === 'Store Cpd', abbr.freeText);
+check('lookup tolerates stray spaces', abbr.spaced === 'PDR', abbr.spaced);
+check('typed "Bedroom 6" → B6', abbr.unknown === 'B6', abbr.unknown);
+check('free-typed location becomes a code too', abbr.freeText === 'STORE CPD', abbr.freeText);
 check('no location → empty, never "undefined"', abbr.empty === '' && abbr.nullish === '', `${abbr.empty}|${abbr.nullish}`);
+
+// The table has to cover the picker. A location with no code renders in a
+// different style from the row above it; two locations sharing a code send a
+// trade to the wrong room. Both are silent until someone is standing in a house.
+const table = await page.evaluate(() => {
+  const missing = DEFECT_LOCATIONS.filter(l => !LOCATION_ABBR[l]);
+  const seen = {}, dupes = [];
+  for (const l of DEFECT_LOCATIONS) {
+    const c = LOCATION_ABBR[l];
+    if (!c) continue;
+    if (seen[c]) dupes.push(`${seen[c]} + ${l} → ${c}`); else seen[c] = l;
+  }
+  const longest = DEFECT_LOCATIONS.map(l => LOCATION_ABBR[l] || l).sort((a, b) => b.length - a.length)[0];
+  return { n: DEFECT_LOCATIONS.length, missing, dupes, longest };
+});
+console.log('\ntable:', JSON.stringify(table));
+check('every picker location has a code', table.missing.length === 0, table.missing.join(', '));
+check('no two locations share a code', table.dupes.length === 0, table.dupes.join(', '));
+check('even the longest code is short', table.longest.length <= 10, `"${table.longest}"`);
 
 // ── the composed line ────────────────────────────────────────────────────
 await page.evaluate(() => viewDefectsForAddress(1));
@@ -113,6 +146,7 @@ const rows = await page.evaluate(() => [...document.querySelectorAll('.defects-c
     text: t ? t.textContent.trim() : '',
     ref: t && t.querySelector('.defect-line-ref') ? t.querySelector('.defect-line-ref').textContent : null,
     loc: t && t.querySelector('.defect-line-loc') ? t.querySelector('.defect-line-loc').textContent : null,
+    locTitle: t && t.querySelector('.defect-line-loc') ? t.querySelector('.defect-line-loc').title : null,
     h: Math.round(r.getBoundingClientRect().height),
   };
 }));
@@ -121,12 +155,12 @@ rows.forEach(r => console.log('  ' + JSON.stringify(r)));
 
 check('all five defects rendered', rows.length === 5, `${rows.length}`);
 check('ref then location then item',
-  rows[0].text === 'BPI #18 (p.7) — Garage Int PA — Seal gap between garage boundary wall flashing and brick',
+  rows[0].text === 'BPI #18 (p.7) — GAR INT PA — Seal gap between garage boundary wall flashing and brick',
   rows[0].text);
 check('BPI number and page survive as the prefix', rows[0].ref === 'BPI #18 (p.7)', String(rows[0].ref));
-check('location is abbreviated on the row', rows[0].loc === 'Garage Int PA', String(rows[0].loc));
+check('location is a code on the row', rows[0].loc === 'GAR INT PA', String(rows[0].loc));
 check('typed defect leads with the location, no stray dash',
-  rows[1].text === 'Laundry — Flyscreen missing both laundry and kitchen' && rows[1].ref === null,
+  rows[1].text === 'LDRY — Flyscreen missing both laundry and kitchen' && rows[1].ref === null,
   rows[1].text);
 check('no location → ref then item, no stray dash',
   rows[2].text === 'BPI #16 (p.6) — See above the bathroom window, roof sheet sitting up' && rows[2].loc === null,
@@ -134,7 +168,7 @@ check('no location → ref then item, no stray dash',
 check('neither → the item alone',
   rows[3].text === 'Levels - issue with retaining soil' && rows[3].ref === null && rows[3].loc === null,
   rows[3].text);
-check('Master Bedroom shortens on the row', rows[4].loc === 'Master Bed', String(rows[4].loc));
+check('Master Bedroom → MBR on the row', rows[4].loc === 'MBR', String(rows[4].loc));
 
 // The location has to be FINDABLE, not just present — that is the whole ask.
 const colours = await page.evaluate(() => {
@@ -148,6 +182,12 @@ check('location is set apart from the item wording',
   colours.loc !== colours.body && colours.locWeight >= '600', JSON.stringify(colours));
 check('reference is muted, not competing with the location',
   colours.ref !== colours.loc && colours.ref !== colours.body, JSON.stringify(colours));
+
+// A code is only safe if it can be turned back into a room name without
+// opening the picker — press and hold the row, or hover on a desktop.
+check('the full room name is on the code as a title',
+  rows[0].locTitle === 'Garage Internal PA Door' && rows[4].locTitle === 'Master Bedroom',
+  `${rows[0].locTitle} | ${rows[4].locTitle}`);
 
 // A row that grows is a row that scrolls — the reason the location is
 // abbreviated at all. The two short items must still be single-line.
@@ -179,7 +219,7 @@ await page.waitForTimeout(250);
 await shot('31-loc-supplier');
 const supLoc = await page.evaluate(() =>
   [...document.querySelectorAll('.defects-container .defect-item .defect-line-loc')].map(e => e.textContent));
-check('supplier view shows locations as well', supLoc.length === 3 && supLoc[0] === 'Garage Int PA', JSON.stringify(supLoc));
+check('supplier view shows locations as well', supLoc.length === 3 && supLoc[0] === 'GAR INT PA', JSON.stringify(supLoc));
 
 console.log('\nerrors:', errs.length ? errs : 'none');
 if (errs.length) fail.push('page errors');

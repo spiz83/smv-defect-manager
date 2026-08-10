@@ -5432,29 +5432,47 @@
         //  the supplier email (formatDefectEmailLine), so what a supervisor
         //  reads on the phone is what the trade receives.
         //
-        //  ABBREVIATED, because the row is a phone-width line. 'Garage Internal
-        //  PA Door — ' in front of a three-line description costs a whole line
-        //  of screen on every item. Only the names that are actually long are
-        //  listed here; everything else already fits and passes through as-is.
+        //  A SHORT CODE, not a shortened word. Spiro, 2026-08-10: *"bathroom
+        //  would read BTH, bedroom four would read B4, ensuite would read ENS,
+        //  laundry LDRY, kitchen KIT, living room or lounge LIV, and so on."*
+        //  These are the abbreviations already on a floor plan, which is what a
+        //  supervisor has been reading all day — three or four upper-case
+        //  characters cost a word of the row instead of a line of the screen.
+        //
+        //  EVERY entry in DEFECT_LOCATIONS has a code here, deliberately: one
+        //  that fell through to the fallback would render in a different style
+        //  from the row above it. tests/loc.mjs fails if a location is added to
+        //  the picker without a code, and fails again if two locations end up
+        //  sharing one — a list that calls two rooms the same thing is worse
+        //  than one that names neither.
         // ---------------------------------------------------------------------
         const LOCATION_ABBR = {
-            'Hallway': 'Hall',
-            'Master Bedroom': 'Master Bed',
-            'Bedroom 1': 'Bed 1', 'Bedroom 2': 'Bed 2', 'Bedroom 3': 'Bed 3',
-            'Bedroom 4': 'Bed 4', 'Bedroom 5': 'Bed 5',
-            'Walk In Robe': 'WIR',
-            'Linen Cupboard': 'Linen',
-            'Bathroom': 'Bath',
-            'Powder Room': 'Powder',
-            'Garage Internal PA Door': 'Garage Int PA',
-            'Garage External PA Door': 'Garage Ext PA',
-            'Front Elevation': 'Front Elev',
-            'Left Elevation': 'Left Elev',
-            'Right Elevation': 'Right Elev',
-            'Rear Elevation': 'Rear Elev',
-            'Facade / External': 'Facade',
-            'General Internal': 'Gen Int',
-            'General External': 'Gen Ext',
+            'Throughout': 'ALL',
+            'Entry': 'ENTRY', 'Hallway': 'HALL', 'Stairs': 'STAIRS',
+            'Kitchen': 'KIT', 'Pantry': 'PTY', 'Meals': 'MEALS', 'Dining': 'DIN',
+            // Living and Lounge are separate rooms in the picker, so they get
+            // separate codes even though Spiro named LIV for both — a plan with
+            // both would otherwise send a trade to whichever one it found first.
+            'Living': 'LIV', 'Lounge': 'LNG', 'Family': 'FAM',
+            'Rumpus': 'RUM', 'Theatre': 'THTR', 'Sitting': 'SIT',
+            'Retreat': 'RTRT', 'Study': 'STUDY',
+            'Master Bedroom': 'MBR',
+            'Bedroom 1': 'B1', 'Bedroom 2': 'B2', 'Bedroom 3': 'B3',
+            'Bedroom 4': 'B4', 'Bedroom 5': 'B5',
+            'Walk In Robe': 'WIR', 'Linen Cupboard': 'LIN',
+            'Ensuite': 'ENS', 'Bathroom': 'BTH', 'Powder Room': 'PDR', 'Toilet': 'WC',
+            'Laundry': 'LDRY',
+            'Garage': 'GAR',
+            'Garage Internal PA Door': 'GAR INT PA',
+            'Garage External PA Door': 'GAR EXT PA',
+            'Front Door': 'FRT DOOR', 'Alfresco': 'ALF', 'Porch': 'PORCH',
+            'Balcony': 'BALC', 'Driveway': 'D/WAY', 'Backyard': 'B/YARD',
+            'Front Elevation': 'FRT ELEV', 'Left Elevation': 'LH ELEV',
+            'Right Elevation': 'RH ELEV', 'Rear Elevation': 'REAR ELEV',
+            'Facade / External': 'FACADE',
+            'Roof': 'ROOF', 'Roof Space': 'ROOF SP',
+            'General Internal': 'GEN INT', 'General External': 'GEN EXT',
+            'Other': 'OTHER',
         };
         // Lookup is case- and space-insensitive: locations also arrive typed by
         // hand (the review screen takes a custom one) and 'walk in robe' has to
@@ -5464,19 +5482,28 @@
             for (const k in LOCATION_ABBR) m[k.toLowerCase().replace(/\s+/g, ' ')] = LOCATION_ABBR[k];
             return m;
         })();
-        // Fallback for anything not in the table — a typed 'Bedroom 6', 'Store
-        // Cupboard'. Word-level, so an unknown location still shortens instead
-        // of being dropped or truncated mid-word.
+        // Fallback for a location TYPED rather than picked — 'Bedroom 6',
+        // 'Store Cupboard'. Word-level, then upper-cased, so a custom one comes
+        // out as a code in the same style as the table instead of being the one
+        // sentence-case row in a screen full of codes.
         const LOCATION_WORD_ABBR = [
             [/\bwalk[- ]?in robes?\b/gi, 'WIR'],
-            [/\bbedrooms?\b/gi, 'Bed'],
-            [/\bbathrooms?\b/gi, 'Bath'],
-            [/\belevations?\b/gi, 'Elev'],
-            [/\bcupboards?\b/gi, 'Cpd'],
-            [/\bgeneral\b/gi, 'Gen'],
-            [/\binternal\b/gi, 'Int'],
-            [/\bexternal\b/gi, 'Ext'],
+            [/\bbedroom\s*(\d+)\b/gi, 'B$1'],
+            [/\bbedrooms?\b/gi, 'BED'],
+            [/\bbathrooms?\b/gi, 'BTH'],
+            [/\bensuites?\b/gi, 'ENS'],
+            [/\bkitchens?\b/gi, 'KIT'],
+            [/\blaundry\b/gi, 'LDRY'],
+            [/\bcupboards?\b/gi, 'CPD'],
+            [/\belevations?\b/gi, 'ELEV'],
+            [/\bgeneral\b/gi, 'GEN'],
+            [/\binternal\b/gi, 'INT'],
+            [/\bexternal\b/gi, 'EXT'],
         ];
+        // The fallback does NOT truncate. A code nobody recognises is worth
+        // less than a long one they do, and a typed location is rare — the
+        // picker covers 48. The full wording is never lost either way: it is on
+        // the 📍 button, the preview card, and every email / PDF / clipboard line.
         function abbreviateLocation(loc) {
             const s = String(loc == null ? '' : loc).trim();
             if (!s) return '';
@@ -5484,23 +5511,28 @@
             if (hit) return hit;
             let out = s;
             for (const [re, to] of LOCATION_WORD_ABBR) out = out.replace(re, to);
-            return out;
+            return out.toUpperCase().replace(/\s+/g, ' ');
         }
 
-        // One defect → the three parts of the line a supervisor reads:
-        //   { ref: 'BPI #18 (p.7)', loc: 'Garage Int PA', body: 'Seal gap …' }
+        // One defect → the parts of the line a supervisor reads:
+        //   { ref: 'BPI #18 (p.7)', loc: 'GAR INT PA', body: 'Seal gap …' }
         // ref is '' on a typed defect (no report behind it) and loc is '' when
         // no location was ever set; both drop out of the line rather than
-        // leaving a stray dash.
+        // leaving a stray dash. `full` is the unabbreviated location, kept so
+        // the code on the row can always be turned back into a room name.
         function defectLineParts(d) {
             const ref = splitReportRef(d && d.description);
-            return { ref: ref.label, loc: abbreviateLocation(d && d.location), body: ref.body.trim() };
+            const full = String((d && d.location) || '').trim();
+            return { ref: ref.label, loc: abbreviateLocation(full), full, body: ref.body.trim() };
         }
         function defectLineHtml(d) {
             const p = defectLineParts(d);
             return [
                 p.ref ? `<span class="defect-line-ref">${_pvEsc(p.ref)}</span>` : '',
-                p.loc ? `<span class="defect-line-loc">${_pvEsc(p.loc)}</span>` : '',
+                // title= is the escape hatch for a code that hasn't been learnt
+                // yet: press and hold the row, or hover on a desktop, and the
+                // full room name is there without opening the location picker.
+                p.loc ? `<span class="defect-line-loc" title="${_pvEsc(p.full)}">${_pvEsc(p.loc)}</span>` : '',
                 p.body ? _pvEsc(p.body) : '',
             ].filter(Boolean).join(' — ');
         }
