@@ -1,7 +1,37 @@
 # Next Steps / Handover
 
 STATUS: Active — mid-incident
-LAST UPDATED: 2026-08-07
+LAST UPDATED: 2026-08-10
+
+## Location on the defect row (2026-08-10) — build `2026-08-10a`, branch `claude/defect-location-display-uqef29`
+Every defect row reads `BPI #18 (p.7) — Garage Int PA — Seal gap…`: reference,
+location, item. **Not deployed** — the branch is pushed and the stamp is bumped
+in all four places, but nothing has reached `main`, so no phone has it yet.
+Full reasoning in DECISIONS.md. The parts that will bite a later change:
+
+- **The line is composed in ONE place** — `defectLineHtml()` in `index.html`,
+  beside `DEFECT_LOCATIONS`. All seven defect-list screens call it. Its text
+  twin is `formatDefectEmailLine()`, which every non-visual output now uses
+  (supplier email, both Copy to Clipboard paths, `db.exportToText`, the PDF
+  card). Same order in both; the on-screen one abbreviates, the text one does
+  not. Don't add a third.
+- **`formatDefectEmailLine` is misnamed now** — it is every text rendering of a
+  defect, not just the email. Left alone deliberately: `tests/deep.mjs`,
+  `REFACTOR_LOG.md` and `CLEANUP_REPORT.md` all name it, and the rename buys
+  nothing the doc comment doesn't.
+- **The saved description must stay bare.** `description` still begins with
+  `BPI #N (p.P) — ` and nothing else. The re-import duplicate guard,
+  `matchCompleted`, and trade learning all match on that text — writing the
+  location into it would double every item on the next import of the same
+  report. `tests/loc.mjs` fails if anyone does.
+- **`LOCATION_ABBR` only lists names that are actually long.** Adding a
+  self-mapping entry (`'Kitchen': 'Kitchen'`) is noise — unlisted names pass
+  through, and `LOCATION_WORD_ABBR` catches free-typed ones by word.
+- **`.defect-loc` was already taken** by a location-dropdown pill lower in the
+  stylesheet. These spans are `.defect-line-ref` / `.defect-line-loc`. Reusing
+  the old name renders them grey and clipped at 104px, which is how the first
+  attempt failed.
+- **Covered by `tests/loc.mjs`** (gate 3, 16 suites now).
 
 ## PDF filenames (2026-08-07) — build `2026-08-07a`, branch `claude/pdf-report-filename-cleanup-plff0r`
 Every generated report is now `<Who>_<dd.mm>_Items.pdf` — `Bayhill_12.06_Items.pdf`.

@@ -500,6 +500,17 @@
             padding-left: 8px;
         }
 
+        /* The report reference and the LOCATION, inline at the head of a defect
+           row (see defectLineHtml). Both are set apart from the item wording so
+           the eye finds "which room" without reading the sentence — the whole
+           point of putting the location there. Colour only: no boxes, no extra
+           line, because a row that grows is a row that scrolls.
+           NOT `.defect-loc` — that name is already taken further down by a
+           location-dropdown pill (max-width, ellipsis, its own background),
+           which silently swallowed these spans the first time round. */
+        .defect-line-ref { color: var(--text-secondary); font-weight: 500; }
+        .defect-line-loc { color: var(--blue); font-weight: 700; }
+
         .defect-checkbox {
             width: 24px;
             height: 24px;
@@ -2581,7 +2592,7 @@
                         const bk = ds[0] ? this.getContractorBooking(ds[0].contractorId, ds[0].addressId) : '';
                         text += `\n${contractorName}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
                         ds.forEach(defect => {
-                            text += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
+                            text += `• ${formatDefectEmailLine(defect)}\n`;
                         });
                     });
                     text += '\n';
@@ -2852,7 +2863,7 @@
                                     ? group.defects.map(defect => previewCard(defect)).join('')
                                     : group.defects.map(defect => `
                                     <div class="defect-item">
-                                        ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                        ${statusTab(defect)}<span class="defect-text">${defectLineHtml(defect)}</span>
                                         <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                     </div>
                                 `).join('')}
@@ -2865,7 +2876,7 @@
                                     <div class="contractor-name" ${group.address && group.address.id != null ? `onclick="viewDefectsForAddress(${group.address.id})" style="cursor:pointer" title="View this address's defects"` : ''}>${formatAddress(group.address)}${group.address && group.address.id != null ? ' ›' : ''}</div>
                                     ${group.defects.map(defect => `
                                         <div class="defect-item">
-                                            ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                            ${statusTab(defect)}<span class="defect-text">${defectLineHtml(defect)}</span>
                                             <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                         </div>
                                     `).join('')}
@@ -2946,7 +2957,7 @@
                                     </div>
                                     ${contractorGroup.defects.map(defect => `
                                         <div class="defect-item">
-                                            ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                            ${statusTab(defect)}<span class="defect-text">${defectLineHtml(defect)}</span>
                                             <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                         </div>
                                     `).join('')}
@@ -3043,7 +3054,7 @@
                                 ? group.defects.map(defect => previewCard(defect)).join('')
                                 : group.defects.map(defect => `
                                 <div class="defect-item">
-                                    ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                    ${statusTab(defect)}<span class="defect-text">${defectLineHtml(defect)}</span>
                                     <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                 </div>
                             `).join('')}
@@ -3055,7 +3066,7 @@
                             <div class="contractor-name">✓ Completed (${completed.length})</div>
                             ${completed.map(defect => `
                                 <div class="defect-item">
-                                    ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                    ${statusTab(defect)}<span class="defect-text">${defectLineHtml(defect)}</span>
                                     <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                 </div>
                             `).join('')}
@@ -3302,7 +3313,7 @@
                                     </div>
                                     ${byAddressThenContractor[addressKey].contractors[contractorName].map(defect => `
                                         <div class="defect-item">
-                                            ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                            ${statusTab(defect)}<span class="defect-text">${defectLineHtml(defect)}</span>
                                             <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                         </div>
                                     `).join('')}
@@ -3419,7 +3430,7 @@
                                     </div>
                                     ${addressGroup.contractors[contractorName].map(defect => `
                                         <div class="defect-item">
-                                            ${statusTab(defect)}<span class="defect-text">${defect.description}</span>
+                                            ${statusTab(defect)}<span class="defect-text">${defectLineHtml(defect)}</span>
                                             <span class="defect-actions">${editControl(defect)}${locationControl(defect)}${photoIcon(defect)}${orderControl(defect)}</span>
                                         </div>
                                     `).join('')}
@@ -5407,6 +5418,93 @@
             'Roof','Roof Space',
             'General Internal','General External',
             'Other'];
+
+        // ---------------------------------------------------------------------
+        //  THE LOCATION BELONGS ON THE ROW (Spiro 2026-08-10)
+        //
+        //  A defect list read "BPI #18 (p.7) — Seal gap between garage boundary
+        //  wall flashing and brick" and said nothing about WHERE. The location
+        //  was captured on import and sat behind the 📍 button, one tap per
+        //  item — so going through a job meant opening the BPI report again to
+        //  find out which room each item was in.
+        //
+        //  It now leads the sentence:  ref — location — item.  Same order as
+        //  the supplier email (formatDefectEmailLine), so what a supervisor
+        //  reads on the phone is what the trade receives.
+        //
+        //  ABBREVIATED, because the row is a phone-width line. 'Garage Internal
+        //  PA Door — ' in front of a three-line description costs a whole line
+        //  of screen on every item. Only the names that are actually long are
+        //  listed here; everything else already fits and passes through as-is.
+        // ---------------------------------------------------------------------
+        const LOCATION_ABBR = {
+            'Hallway': 'Hall',
+            'Master Bedroom': 'Master Bed',
+            'Bedroom 1': 'Bed 1', 'Bedroom 2': 'Bed 2', 'Bedroom 3': 'Bed 3',
+            'Bedroom 4': 'Bed 4', 'Bedroom 5': 'Bed 5',
+            'Walk In Robe': 'WIR',
+            'Linen Cupboard': 'Linen',
+            'Bathroom': 'Bath',
+            'Powder Room': 'Powder',
+            'Garage Internal PA Door': 'Garage Int PA',
+            'Garage External PA Door': 'Garage Ext PA',
+            'Front Elevation': 'Front Elev',
+            'Left Elevation': 'Left Elev',
+            'Right Elevation': 'Right Elev',
+            'Rear Elevation': 'Rear Elev',
+            'Facade / External': 'Facade',
+            'General Internal': 'Gen Int',
+            'General External': 'Gen Ext',
+        };
+        // Lookup is case- and space-insensitive: locations also arrive typed by
+        // hand (the review screen takes a custom one) and 'walk in robe' has to
+        // land on the same entry as 'Walk In Robe'.
+        const LOCATION_ABBR_KEYS = (() => {
+            const m = {};
+            for (const k in LOCATION_ABBR) m[k.toLowerCase().replace(/\s+/g, ' ')] = LOCATION_ABBR[k];
+            return m;
+        })();
+        // Fallback for anything not in the table — a typed 'Bedroom 6', 'Store
+        // Cupboard'. Word-level, so an unknown location still shortens instead
+        // of being dropped or truncated mid-word.
+        const LOCATION_WORD_ABBR = [
+            [/\bwalk[- ]?in robes?\b/gi, 'WIR'],
+            [/\bbedrooms?\b/gi, 'Bed'],
+            [/\bbathrooms?\b/gi, 'Bath'],
+            [/\belevations?\b/gi, 'Elev'],
+            [/\bcupboards?\b/gi, 'Cpd'],
+            [/\bgeneral\b/gi, 'Gen'],
+            [/\binternal\b/gi, 'Int'],
+            [/\bexternal\b/gi, 'Ext'],
+        ];
+        function abbreviateLocation(loc) {
+            const s = String(loc == null ? '' : loc).trim();
+            if (!s) return '';
+            const hit = LOCATION_ABBR_KEYS[s.toLowerCase().replace(/\s+/g, ' ')];
+            if (hit) return hit;
+            let out = s;
+            for (const [re, to] of LOCATION_WORD_ABBR) out = out.replace(re, to);
+            return out;
+        }
+
+        // One defect → the three parts of the line a supervisor reads:
+        //   { ref: 'BPI #18 (p.7)', loc: 'Garage Int PA', body: 'Seal gap …' }
+        // ref is '' on a typed defect (no report behind it) and loc is '' when
+        // no location was ever set; both drop out of the line rather than
+        // leaving a stray dash.
+        function defectLineParts(d) {
+            const ref = splitReportRef(d && d.description);
+            return { ref: ref.label, loc: abbreviateLocation(d && d.location), body: ref.body.trim() };
+        }
+        function defectLineHtml(d) {
+            const p = defectLineParts(d);
+            return [
+                p.ref ? `<span class="defect-line-ref">${_pvEsc(p.ref)}</span>` : '',
+                p.loc ? `<span class="defect-line-loc">${_pvEsc(p.loc)}</span>` : '',
+                p.body ? _pvEsc(p.body) : '',
+            ].filter(Boolean).join(' — ');
+        }
+
         function locationControl(defect) {
             const cur = defect.location || '';
             return `<button class="loc-btn ${cur ? 'has-loc' : ''}" title="${cur || 'Set location'}" onclick="event.stopPropagation(); openLocationPicker(${defect.id})">📍</button>`;
@@ -6253,7 +6351,7 @@
                     textContent += `${formatAddress(group.address)}\n`;
                     textContent += `\n${contractor.name}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
                     group.defects.forEach(defect => {
-                        textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
+                        textContent += `• ${formatDefectEmailLine(defect)}\n`;
                     });
                     textContent += '\n';
                 });
@@ -6282,7 +6380,7 @@
                     if (bk) bookingDates.add(fmtDateNice(bk));
                     textContent += `\n${contractorName}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
                     ds.forEach(defect => {
-                        textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
+                        textContent += `• ${formatDefectEmailLine(defect)}\n`;
                     });
                 });
                 textContent += '\n';
@@ -6317,7 +6415,7 @@
                         if (bk) bookingDates.add(fmtDateNice(bk));
                         textContent += `\n${contractorName}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
                         ds.forEach(defect => {
-                            textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
+                            textContent += `• ${formatDefectEmailLine(defect)}\n`;
                         });
                     });
                     textContent += '\n';
@@ -6351,7 +6449,7 @@
                         if (bk) bookingDates.add(fmtDateNice(bk));
                         textContent += `\n${contractorName}${bk ? '  —  Attend: ' + fmtDateNice(bk) : ''}\n`;
                         ds.forEach(defect => {
-                            textContent += `• ${defect.location ? defect.location + ' - ' : ''}${defect.description}\n`;
+                            textContent += `• ${formatDefectEmailLine(defect)}\n`;
                         });
                     });
                     textContent += '\n';
@@ -6426,18 +6524,26 @@
             document.body.removeChild(textarea);
         }
 
-        // Email ONE supplier their open items (with photo links) for this address
-        // One defect → an email line ordered "BPI #N (p.P) — Location — item"
+        // One defect → a text line ordered "BPI #N (p.P) — Location — item"
         // ("Item #N" for a private report). The saved description already starts
         // with that reference, so we peel it off, slot the location in after it,
         // then the item text. Typed defects carry no ref and fall back to
         // "Location — item".
+        //
+        // Despite the name this is now EVERY text rendering of a defect — the
+        // supplier email, both Copy to Clipboard paths, the export, and the PDF
+        // card. On screen defectLineHtml() builds the same order with the
+        // location abbreviated to fit a phone row; here there is no width limit,
+        // so the location is written out in full. Keeping one order across all
+        // of them is the point: what the supervisor reads is what the trade
+        // receives. (Spiro 2026-08-10)
         function formatDefectEmailLine(d) {
             const desc = (d.description || '').trim();
             const loc = (d.location || '').trim();
             const ref = splitReportRef(desc);
             return [ref.label, loc, ref.body.trim()].filter(Boolean).join(' — ');
         }
+        // Email ONE supplier their open items (with photo links) for this address.
         async function emailSupplier(contractorId, addressId, asLink = false) {
             const c = db.getContractor(contractorId);
             const addr = formatAddress(db.getAddress(addressId));
@@ -10828,7 +10934,7 @@
             };
             const descLinesFor = (d) => {
                 doc.setFontSize(8.5);
-                const descTxt = (d.location ? d.location + ' — ' : '') + (d.description || '(no description)');
+                const descTxt = formatDefectEmailLine(d) || '(no description)';
                 return clampLines(doc.splitTextToSize(descTxt, innerW), 2);
             };
             const measureCard = (d, imgs) => {
@@ -11202,7 +11308,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-07a';
+        const APP_VERSION = '2026-08-10a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11276,7 +11382,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-07a"></script>
+    <script src="cloud-sync.js?v=2026-08-10a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

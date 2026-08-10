@@ -1,6 +1,54 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-07 — every PDF is named after what is in it
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-10 — the location leads the defect line
+
+- **Decision:** every defect row now reads **`BPI #18 (p.7) — Garage Int PA —
+  Seal gap between garage boundary wall flashing and brick`**: report
+  reference, then location, then the item. Spiro's words, 2026-08-10: *"when
+  I'm viewing items it doesn't actually tell me where that location of it is,
+  so I have to go back into the BPI reports to find out."*
+- **The location was never missing — it was one tap deep.** The BPI import has
+  captured a location per item since 2026-06-09 and it sat behind the 📍
+  button. Going through a job meant tapping every row, or re-opening the report
+  PDF. The data was right there; the row just didn't say it.
+- **Order is ref → location → item**, matching `formatDefectEmailLine`, which
+  already read that way for the supplier email. That was the tie-breaker for
+  where the location goes: what the supervisor reads on the phone is now
+  literally the line the trade receives.
+- **On screen the location is ABBREVIATED, in text it is not.** `Garage
+  Internal PA Door — ` in front of a three-line description costs a whole line
+  of a phone row on every item, which is the same problem as making them tap.
+  `LOCATION_ABBR` (in `index.html`, beside `DEFECT_LOCATIONS`) shortens only the
+  names that are actually long — `Walk In Robe → WIR`, `Master Bedroom → Master
+  Bed`, `Garage Internal PA Door → Garage Int PA`. Short names pass through
+  untouched, so the table stays small and says what it's for. An email and a
+  PDF have no width limit, so they keep the location written out in full.
+- **Free-typed locations still shorten.** The review screen accepts a custom
+  location, so the table can't be the whole answer: `LOCATION_WORD_ABBR` is a
+  word-level fallback (`Bedroom → Bed`, `Cupboard → Cpd`, `Elevation → Elev`)
+  and lookup is case- and whitespace-insensitive, so `walk in robe` lands on the
+  same entry as `Walk In Robe`.
+- **This is a DISPLAY change. The saved description is untouched.** It still
+  starts with the bare `BPI #N (p.P) — ` reference and nothing else. Everything
+  load-bearing keys off that stored text — the duplicate guard on re-import,
+  `matchCompleted`, trade learning, `REPORT_REF_RE`. Baking the location into
+  the description would have doubled every item the next time its report was
+  imported. `defectLineHtml()` composes the line at render time from
+  `description` + `location`; `tests/loc.mjs` asserts the stored text is
+  unchanged so nobody "simplifies" it into the database later.
+- **Class named `.defect-line-loc`, not `.defect-loc`.** `.defect-loc` already
+  exists further down the stylesheet as a location-dropdown pill with its own
+  background, `max-width: 104px` and an ellipsis. The first version of this
+  reused the name and the pill silently ate the span — it rendered grey and
+  clipped instead of blue and whole. In one 11,000-line file, check the name
+  before you take it.
+- **Trade-off accepted:** an abbreviation is not the report's wording. A
+  supervisor cross-checking a row against the BPI page sees `Garage Int PA`
+  where the PDF says `Garage Internal PA Door`. Judged worth it — the 📍 button,
+  the preview card and every text output still carry the full name, and the
+  alternative was a location nobody reads because it costs a line.
+
+## 2026-08-07 — every PDF is named after what is in it
 
 - **Decision:** one filename shape for every generated report, from every
   screen: **`<Who>_<dd.mm>_Items.pdf`** — `Bayhill_12.06_Items.pdf`. `<Who>` is
