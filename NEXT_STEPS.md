@@ -1,7 +1,44 @@
 # Next Steps / Handover
 
 STATUS: Active — mid-incident
-LAST UPDATED: 2026-08-07
+LAST UPDATED: 2026-08-12
+
+## Location on the defect row (2026-08-12) — build `2026-08-12a`, branch `claude/defect-location-display-uqef29`
+Every defect row reads `BPI #18 (p.7) — GAR INT PA — Seal gap…`: reference,
+location code, item. **Not deployed** — the branch is pushed and the stamp is
+bumped in all four places, but nothing has reached `main`, so no phone has it
+yet. Full reasoning in DECISIONS.md. The parts that will bite a later change:
+
+- **The line is composed in ONE place** — `defectLineHtml()` in `index.html`,
+  beside `DEFECT_LOCATIONS`. All seven defect-list screens call it. Its text
+  twin is `formatDefectEmailLine()`, which every non-visual output now uses
+  (supplier email, both Copy to Clipboard paths, `db.exportToText`, the PDF
+  card). Same order in both; the on-screen one abbreviates, the text one does
+  not. Don't add a third.
+- **`formatDefectEmailLine` is misnamed now** — it is every text rendering of a
+  defect, not just the email. Left alone deliberately: `tests/deep.mjs`,
+  `REFACTOR_LOG.md` and `CLEANUP_REPORT.md` all name it, and the rename buys
+  nothing the doc comment doesn't.
+- **The saved description must stay bare.** `description` still begins with
+  `BPI #N (p.P) — ` and nothing else. The re-import duplicate guard,
+  `matchCompleted`, and trade learning all match on that text — writing the
+  location into it would double every item on the next import of the same
+  report. `tests/loc.mjs` fails if anyone does.
+- **`LOCATION_ABBR` must cover every entry in `DEFECT_LOCATIONS`, with no two
+  sharing a code.** Add a location to the picker and you add a code, or gate 3
+  fails — `tests/loc.mjs` checks both. They are floor-plan codes (`BTH`, `B4`,
+  `ENS`, `LDRY`, `KIT`, `MBR`), not shortened words; shortened words were tried
+  first and still ate most of the width. `LOCATION_WORD_ABBR` only catches
+  locations someone TYPED rather than picked.
+- **Living is `LIV`, Lounge is `LNG`.** Spiro named `LIV` for both. They are
+  separate rooms in the picker, so they keep separate codes — collapsing them
+  sends a trade to whichever of the two the plan has. Change it only if he says
+  so knowing that.
+- **`.defect-loc` was already taken** by a location-dropdown pill lower in the
+  stylesheet. These spans are `.defect-line-ref` / `.defect-line-loc`. Reusing
+  the old name renders them grey and clipped at 104px, which is how the first
+  attempt failed.
+- **Covered by `tests/loc.mjs`** (gate 3, 16 suites now).
 
 ## PDF filenames (2026-08-07) — build `2026-08-07a`, branch `claude/pdf-report-filename-cleanup-plff0r`
 Every generated report is now `<Who>_<dd.mm>_Items.pdf` — `Bayhill_12.06_Items.pdf`.

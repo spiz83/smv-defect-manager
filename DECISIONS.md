@@ -1,6 +1,72 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-07 — every PDF is named after what is in it
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 — the location leads the defect line
+
+- **Decision:** every defect row now reads **`BPI #18 (p.7) — GAR INT PA —
+  Seal gap between garage boundary wall flashing and brick`**: report
+  reference, then location, then the item. Spiro's words, 2026-08-12: *"when
+  I'm viewing items it doesn't actually tell me where that location of it is,
+  so I have to go back into the BPI reports to find out."*
+- **The location was never missing — it was one tap deep.** The BPI import has
+  captured a location per item since 2026-06-09 and it sat behind the 📍
+  button. Going through a job meant tapping every row, or re-opening the report
+  PDF. The data was right there; the row just didn't say it.
+- **Order is ref → location → item**, matching `formatDefectEmailLine`, which
+  already read that way for the supplier email. That was the tie-breaker for
+  where the location goes: what the supervisor reads on the phone is now
+  literally the line the trade receives.
+- **On screen the location is a CODE; in text it is written out in full.**
+  `Garage Internal PA Door — ` in front of a three-line description costs a
+  whole line of a phone row on every item, which is the same problem as making
+  them tap. `LOCATION_ABBR` (in `index.html`, beside `DEFECT_LOCATIONS`) is the
+  floor-plan shorthand a supervisor has been reading all day: `BTH`, `B4`,
+  `ENS`, `LDRY`, `KIT`, `LIV`, `WIR`, `MBR`, `GAR INT PA`. Spiro's words,
+  2026-08-12: *"bathroom would read BTH, bedroom four would read B4, ensuite
+  would read ENS, laundry LDRY, kitchen KIT, living room or lounge LIV, and so
+  on."* Emails, the clipboard and the PDF have no width limit and keep the full
+  wording.
+- **Shortened words were the first attempt and were wrong.** `Master Bed`,
+  `Garage Int PA`, `Bath` — readable, but they still ate most of the width the
+  location was supposed to save, and half a word reads as a typo rather than as
+  a label. A code is a different kind of thing from the sentence beside it,
+  which is exactly what makes it scannable.
+- **Every one of the 48 picker locations has a code, and no two share one.**
+  A location with no entry would fall through to the generic fallback and
+  render sentence-case in a screen full of codes. A shared code is worse: Spiro
+  named `LIV` for both Living and Lounge, but they are separate rooms in
+  `DEFECT_LOCATIONS`, so Lounge got `LNG` — a plan with both would otherwise
+  send a trade to whichever room it found first. `tests/loc.mjs` asserts both
+  properties, so adding a location to the picker without a code fails the gate.
+- **Free-typed locations become codes too.** The review screen accepts a custom
+  location, so the table can't be the whole answer: `LOCATION_WORD_ABBR` is a
+  word-level fallback (`Bedroom 6 → B6`, `Store Cupboard → STORE CPD`) and the
+  result is upper-cased so it matches the table's style. Lookup is case- and
+  whitespace-insensitive, so `walk in robe` lands on `WIR`.
+- **The code carries the full room name as a `title`.** Press and hold the row,
+  or hover on a desktop, and `GAR INT PA` says `Garage Internal PA Door` — so a
+  code nobody has learnt yet is never a dead end, without opening the picker.
+- **This is a DISPLAY change. The saved description is untouched.** It still
+  starts with the bare `BPI #N (p.P) — ` reference and nothing else. Everything
+  load-bearing keys off that stored text — the duplicate guard on re-import,
+  `matchCompleted`, trade learning, `REPORT_REF_RE`. Baking the location into
+  the description would have doubled every item the next time its report was
+  imported. `defectLineHtml()` composes the line at render time from
+  `description` + `location`; `tests/loc.mjs` asserts the stored text is
+  unchanged so nobody "simplifies" it into the database later.
+- **Class named `.defect-line-loc`, not `.defect-loc`.** `.defect-loc` already
+  exists further down the stylesheet as a location-dropdown pill with its own
+  background, `max-width: 104px` and an ellipsis. The first version of this
+  reused the name and the pill silently ate the span — it rendered grey and
+  clipped instead of blue and whole. In one 11,000-line file, check the name
+  before you take it.
+- **Trade-off accepted:** a code is not the report's wording. A supervisor
+  cross-checking a row against the BPI page sees `GAR INT PA` where the PDF says
+  `Garage Internal PA Door`, and a code has to be learnt once. Judged worth it —
+  these are the abbreviations already on the plans, the long-press title, the 📍
+  button, the preview card and every text output all still carry the full name,
+  and the alternative was a location nobody reads because it costs a line.
+
+## 2026-08-07 — every PDF is named after what is in it
 
 - **Decision:** one filename shape for every generated report, from every
   screen: **`<Who>_<dd.mm>_Items.pdf`** — `Bayhill_12.06_Items.pdf`. `<Who>` is
