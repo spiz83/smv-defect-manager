@@ -4,6 +4,9 @@ STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-12
 
 ## 📋 Copy address on the search rows (2026-08-12) — build `2026-08-12b`
+**DEPLOYED 2026-08-12** — merged to `main`; Vercel verified serving
+`deffixer-shell-2026-08-12b`, `APP_VERSION 2026-08-12b` and
+`copyAddressToClipboard`.
 An address row in the top search gained a 📋 beside 👁️ ✚. It copies
 `formatAddress()` — `Lot 1023, Coollegrean Road, Wollert - 306725` — the same
 string every heading and report already uses, so a pasted address matches what
