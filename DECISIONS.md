@@ -1,6 +1,27 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 — the location leads the defect line
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 (b) — 📋 copy the whole address off a search row
+
+- **Decision:** an address row in the top search gets a 📋 before 👁️ ✚. It
+  copies `formatAddress()` — `Lot 1023, Coollegrean Road, Wollert - 306725`.
+  Asked for with the spot circled on a screenshot.
+- **Why the string is `formatAddress()` and not a new one:** that is already the
+  address on every screen heading, every report and every supplier email. A
+  second format would mean the thing pasted into a text message didn't match the
+  thing on screen, which is how a job number ends up one digit out. The search
+  row shows the address split over two lines because that reads fastest when
+  picking a job; the joined-up form is what gets sent to people.
+- **Address rows only.** A contractor or trade row has no address to copy, so it
+  keeps two icons and one respectively — pinned in `tests/addrcopy.mjs`.
+- **Trade-off accepted:** three 40px icons on a 390px row push the street line
+  into its ellipsis sooner — `Lot 1023, Coollegrea…`. The lot number leads and
+  the suburb and job number sit on the second line, so everything that
+  identifies a job is still fully visible; it is the tail of the street name
+  that goes. `tests/addrcopy.mjs` measures the geometry (nothing off the right
+  edge, no wrap, ≥150px left for the text) because this app has twice shipped a
+  row that pushed its leftmost control out of reach.
+
+## 2026-08-12 — the location leads the defect line
 
 - **Decision:** every defect row now reads **`BPI #18 (p.7) — GAR INT PA —
   Seal gap between garage boundary wall flashing and brick`**: report

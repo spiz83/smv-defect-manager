@@ -43,6 +43,7 @@ changes. That has happened twice.
 
 | Suite | Covers |
 |---|---|
+| `addrcopy` | 📋 Copy address on a top-search row: the string, and three icons fitting a phone row |
 | `combo` | Supplier picker ranking (Reassign all / Edit defect / review); Edit defect → Save |
 | `deep` | Deep-read private-report import: admin gate, photo anchoring, fallbacks |
 | `fixes` | Search matching; the unsaved-changes guard; report re-import and re-opening |
