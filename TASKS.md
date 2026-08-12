@@ -1,8 +1,7 @@
 # Tasks
 
 ## Current sprint
-- [ ] Deploy build `2026-08-12a` (location on the defect row) — merge
-      `claude/defect-location-display-uqef29` to `main`; pushing `main` ships it.
+- [ ] Nothing in flight.
 
 ## Backlog (prioritised, top = next)
 - [ ] Run the two outstanding Supabase migrations by hand — see the
@@ -14,5 +13,5 @@
 ## Done
 - 2026-08-12 — Location leads the defect row (`BPI #18 (p.7) — GAR INT PA —
   item`), a floor-plan code on screen and the full room name in every text
-  output. `tests/loc.mjs`.
+  output. `tests/loc.mjs`. Shipped as build `2026-08-12a`.
 - 2026-08-07 — Every generated PDF is named after what is in it.

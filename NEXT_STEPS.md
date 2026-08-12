@@ -5,9 +5,11 @@ LAST UPDATED: 2026-08-12
 
 ## Location on the defect row (2026-08-12) — build `2026-08-12a`, branch `claude/defect-location-display-uqef29`
 Every defect row reads `BPI #18 (p.7) — GAR INT PA — Seal gap…`: reference,
-location code, item. **Not deployed** — the branch is pushed and the stamp is
-bumped in all four places, but nothing has reached `main`, so no phone has it
-yet. Full reasoning in DECISIONS.md. The parts that will bite a later change:
+location code, item. **DEPLOYED 2026-08-12** — merged to `main`, and
+`smv-defect-manager.vercel.app` verified serving `deffixer-shell-2026-08-12a`,
+`APP_VERSION 2026-08-12a` and the code table. A supervisor mid-edit gets the new
+shell on the next background/reopen (the SW waits on `isBusyEditing`).
+Full reasoning in DECISIONS.md. The parts that will bite a later change:
 
 - **The line is composed in ONE place** — `defectLineHtml()` in `index.html`,
   beside `DEFECT_LOCATIONS`. All seven defect-list screens call it. Its text
