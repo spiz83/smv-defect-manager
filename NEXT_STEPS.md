@@ -3,6 +3,19 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-12
 
+## 📋 Copy address on the search rows (2026-08-12) — build `2026-08-12b`
+An address row in the top search gained a 📋 beside 👁️ ✚. It copies
+`formatAddress()` — `Lot 1023, Coollegrean Road, Wollert - 306725` — the same
+string every heading and report already uses, so a pasted address matches what
+is on screen. Address rows only; a contractor or trade row has no address.
+
+- **The row is now text + THREE 40px icons at 390px.** `tests/addrcopy.mjs`
+  measures it: nothing off the right edge, no wrap, and >=150px left for the
+  address. Adding a fourth icon there without re-running that suite is how the
+  leftmost control goes off-screen again (see the `.toolbar` comment).
+- **Trade-off:** the street line ellipsises sooner than it did. The lot number,
+  suburb and job number all still show in full, which is what identifies a job.
+
 ## Location on the defect row (2026-08-12) — build `2026-08-12a`, branch `claude/defect-location-display-uqef29`
 Every defect row reads `BPI #18 (p.7) — GAR INT PA — Seal gap…`: reference,
 location code, item. **DEPLOYED 2026-08-12** — merged to `main`, and
