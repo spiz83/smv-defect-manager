@@ -368,6 +368,22 @@
         /* Leading whitespace collapses at the start of a flex item, so the gap
            before the job number has to be a margin, not a space. */
         .defects-header.hdr-inline .lot-job { margin-left: .3em; }
+        /* 📋 ON THE ADDRESS, not in the toolbar (Spiro 2026-08-12).
+           There is already a 📋 in the toolbar and it copies the DEFECT LIST.
+           Two clipboards on one screen only works if each one sits on the thing
+           it copies, so this rides at the end of the address line. The toolbar
+           is also full — eight icons pinned to a single row — and a ninth is
+           how that row wraps and eats the frozen header again.
+           flex:0 0 auto and its own font-size: the address gives up width to it
+           the same way it does to the job number, and fitLotTitle()'s font
+           stepping shrinks the TEXT, never the tap target. */
+        .defects-header.hdr-inline .lot-copy {
+            flex: 0 0 auto; align-self: center; margin-left: 10px;
+            border: none; background: transparent; cursor: pointer;
+            font-size: 15px; line-height: 1; padding: 3px 5px; border-radius: 6px;
+            opacity: .75;
+        }
+        .defects-header.hdr-inline .lot-copy:active { transform: scale(.9); opacity: 1; }
 
         .toolbar {
             display: flex;
@@ -3014,12 +3030,12 @@
                     </div>
                     
                     <div class="defects-header hdr-inline">
-                        <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="${formatAddress(address)} — tap to add defects for this job">${lotTitleHtml(address)}</div>
+                        <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="${formatAddress(address)} — tap to add defects for this job">${lotTitleHtml(address)}${lotCopyBtn(addressId)}</div>
                         <div class="toolbar">
                             ${statusFilterButton()}
                             ${previewToggle()}
                             ${shoppingToolbarBtn(addressId)}
-                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
+                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy the DEFECT LIST — the address itself is the 📋 beside it">📋</button>
                             <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">✚</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
@@ -6536,6 +6552,14 @@
             const a = db.getAddress(addressId);
             if (!a) { showToast('Address not found', true); return; }
             writeToClipboard(formatAddress(a), '📋 Address copied');
+        }
+        // The same 📋, on the job address in the frozen View Defects header —
+        // where a supervisor already IS when someone asks which job they're on.
+        // stopPropagation because the whole title is a tap target for Add
+        // Defects; without it, copying the address opens the entry screen.
+        function lotCopyBtn(addressId) {
+            return `<button class="lot-copy" onclick="event.stopPropagation(); copyAddressToClipboard(${addressId})"
+                        title="Copy this address" aria-label="Copy this address">📋</button>`;
         }
 
         // Copy ONE supplier's outstanding items for ONE job, formatted the same
@@ -11358,7 +11382,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-12b';
+        const APP_VERSION = '2026-08-12c';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11432,7 +11456,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-12b"></script>
+    <script src="cloud-sync.js?v=2026-08-12c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

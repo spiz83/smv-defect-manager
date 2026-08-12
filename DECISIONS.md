@@ -1,6 +1,24 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 (b) — 📋 copy the whole address off a search row
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 (c) — 📋 copy the address off the job header too
+
+- **Decision:** the frozen View Defects header carries the same 📋, at the end
+  of the address line. Same `copyAddressToClipboard()`, same string.
+- **Why NOT in the toolbar:** the toolbar already has a 📋 and it copies the
+  DEFECT LIST. Two clipboards on one screen only works if each sits on the
+  thing it copies — this one rides on the address, and the list one keeps its
+  place among the list controls (its tooltip now says which is which). The
+  toolbar is also full: eight icons pinned to one row by the 2026-08-02 rework,
+  and a ninth is how that row wraps and eats the frozen header again.
+- **Why it can't shrink:** `.lot-copy` is `flex: 0 0 auto` with its own
+  font-size, so `fitLotTitle()`'s font stepping shrinks the address TEXT and
+  never the tap target, and the address gives up width to it the same way it
+  already does to the job number. The job number still never yields.
+- **`stopPropagation` is load-bearing:** the whole `.lot-title` is a tap target
+  for Add Defects, so without it, copying the address opens the entry screen.
+  Pinned in `tests/addrcopy.mjs`.
+
+## 2026-08-12 (b) — 📋 copy the whole address off a search row
 
 - **Decision:** an address row in the top search gets a 📋 before 👁️ ✚. It
   copies `formatAddress()` — `Lot 1023, Coollegrean Road, Wollert - 306725`.

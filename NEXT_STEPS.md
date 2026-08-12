@@ -3,6 +3,18 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-12
 
+## 📋 Copy address on the job header (2026-08-12) — build `2026-08-12c`
+The frozen View Defects header carries the same 📋 at the end of the address
+line. **Not deployed.**
+
+- **Not in the toolbar, on purpose.** The toolbar's 📋 copies the DEFECT LIST;
+  this one copies the ADDRESS. Each sits on the thing it copies. The toolbar is
+  also full at eight icons on one pinned row.
+- **`.lot-copy` is `flex: 0 0 auto` with its own font-size** so `fitLotTitle()`
+  shrinks the address text, never the tap target.
+- **The click must `stopPropagation()`** — the whole title is a tap target for
+  Add Defects. `tests/addrcopy.mjs` fails if that is dropped.
+
 ## 📋 Copy address on the search rows (2026-08-12) — build `2026-08-12b`
 **DEPLOYED 2026-08-12** — merged to `main`; Vercel verified serving
 `deffixer-shell-2026-08-12b`, `APP_VERSION 2026-08-12b` and
