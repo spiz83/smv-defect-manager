@@ -1,6 +1,55 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 (b) — 📋 copy the whole address off a search row
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 (d) — the location label, second pass: quiet and lower case
+
+- **Decision:** `BPI #3 (p.3) - kit: Seal gaps to flooring at dishwasher
+  opening`. Lower-case code, normal weight, a plain hyphen after the reference
+  and a COLON after the location. Spiro on seeing (c) live: *"the way the
+  location is shown bothers me, needs to be less obtrusive, more natural — lower
+  case, not bold, the — not wide, maybe do one - instead, and look like this
+  kit:"*
+- **What was wrong with bold upper case:** it read as a warning label, not as a
+  note about which room, and on a screen of twenty defects every row shouted.
+  Colour alone already does the finding — weight and case on top of it were
+  three signals for one job.
+- **Why a colon and not a third dash:** an em dash is wide, and three of them
+  broke a defect into a list of fragments rather than a sentence. A colon makes
+  the code read as what it is, a label on the sentence that follows.
+- **Master Bedroom is `b1`, not its own code.** Asked for by name ("master bed
+  is to be B1"), and right: on an Australian project-home plan the master
+  bedroom IS bedroom 1. It had its own `MBR`, which put two names for one room
+  on one job's list. **This is the only deliberate collision in the table** and
+  it is declared in `LOCATION_ABBR_SHARED`, which `tests/loc.mjs` reads — so
+  widening it is an act with a reason attached, not a quiet test edit. Bedrooms
+  2–5 are unaffected, and Living/Lounge still keep separate codes.
+- **Lower case is in the DATA, not a CSS `text-transform`.** What is in the DOM
+  is what is on the glass, so a copy, a test and a screenshot all agree.
+- **Unchanged: every text output.** The email, clipboard, export and PDF still
+  write the location out in FULL and still use the em dash. Those go to trades,
+  who have not learnt these codes and have no width limit.
+- **Trade-off accepted:** lower case is fractionally less findable than upper.
+  That is the point — it was too findable, at the cost of every row looking
+  urgent.
+
+## 2026-08-12 (c) — 📋 copy the address off the job header too
+
+- **Decision:** the frozen View Defects header carries the same 📋, at the end
+  of the address line. Same `copyAddressToClipboard()`, same string.
+- **Why NOT in the toolbar:** the toolbar already has a 📋 and it copies the
+  DEFECT LIST. Two clipboards on one screen only works if each sits on the
+  thing it copies — this one rides on the address, and the list one keeps its
+  place among the list controls (its tooltip now says which is which). The
+  toolbar is also full: eight icons pinned to one row by the 2026-08-02 rework,
+  and a ninth is how that row wraps and eats the frozen header again.
+- **Why it can't shrink:** `.lot-copy` is `flex: 0 0 auto` with its own
+  font-size, so `fitLotTitle()`'s font stepping shrinks the address TEXT and
+  never the tap target, and the address gives up width to it the same way it
+  already does to the job number. The job number still never yields.
+- **`stopPropagation` is load-bearing:** the whole `.lot-title` is a tap target
+  for Add Defects, so without it, copying the address opens the entry screen.
+  Pinned in `tests/addrcopy.mjs`.
+
+## 2026-08-12 (b) — 📋 copy the whole address off a search row
 
 - **Decision:** an address row in the top search gets a 📋 before 👁️ ✚. It
   copies `formatAddress()` — `Lot 1023, Coollegrean Road, Wollert - 306725`.

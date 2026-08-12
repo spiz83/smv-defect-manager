@@ -77,8 +77,9 @@ const check = (label, cond, detail) => { console.log((cond ? 'PASS  ' : 'FAIL  '
 const shot = async n => page.screenshot({ path: join(ARTIFACTS, n + '.png') });
 
 // ── abbreviateLocation ───────────────────────────────────────────────────
-// The codes Spiro named on 2026-08-12, verbatim: bathroom BTH, bedroom four
-// B4, ensuite ENS, laundry LDRY, kitchen KIT, living LIV.
+// The codes Spiro named, verbatim — bathroom BTH, bedroom four B4, ensuite
+// ENS, laundry LDRY, kitchen KIT, living LIV — set LOWER CASE on the second
+// pass ("less obtrusive, more natural"), and master bedroom folded onto b1.
 const abbr = await page.evaluate(() => ({
   bath:      abbreviateLocation('Bathroom'),
   bed4:      abbreviateLocation('Bedroom 4'),
@@ -89,6 +90,7 @@ const abbr = await page.evaluate(() => ({
   lounge:    abbreviateLocation('Lounge'),
   long:      abbreviateLocation('Garage Internal PA Door'),
   master:    abbreviateLocation('Master Bedroom'),
+  bed1:      abbreviateLocation('Bedroom 1'),
   wir:       abbreviateLocation('Walk In Robe'),
   elevation: abbreviateLocation('Rear Elevation'),
   lower:     abbreviateLocation('walk in robe'),
@@ -99,40 +101,54 @@ const abbr = await page.evaluate(() => ({
   nullish:   abbreviateLocation(null),
 }));
 console.log('\nabbreviateLocation:', JSON.stringify(abbr));
-check('Bathroom → BTH', abbr.bath === 'BTH', abbr.bath);
-check('Bedroom 4 → B4', abbr.bed4 === 'B4', abbr.bed4);
-check('Ensuite → ENS', abbr.ensuite === 'ENS', abbr.ensuite);
-check('Laundry → LDRY', abbr.laundry === 'LDRY', abbr.laundry);
-check('Kitchen → KIT', abbr.kitchen === 'KIT', abbr.kitchen);
-check('Living → LIV', abbr.living === 'LIV', abbr.living);
-check('Lounge keeps its own code, not LIV', abbr.lounge === 'LNG', abbr.lounge);
-check('longest name is a code too', abbr.long === 'GAR INT PA', abbr.long);
-check('Master Bedroom → MBR', abbr.master === 'MBR', abbr.master);
-check('Walk In Robe → WIR', abbr.wir === 'WIR', abbr.wir);
-check('Rear Elevation → REAR ELEV', abbr.elevation === 'REAR ELEV', abbr.elevation);
-check('lookup is case-insensitive', abbr.lower === 'WIR', abbr.lower);
-check('lookup tolerates stray spaces', abbr.spaced === 'PDR', abbr.spaced);
-check('typed "Bedroom 6" → B6', abbr.unknown === 'B6', abbr.unknown);
-check('free-typed location becomes a code too', abbr.freeText === 'STORE CPD', abbr.freeText);
+check('Bathroom → bth', abbr.bath === 'bth', abbr.bath);
+check('Bedroom 4 → b4', abbr.bed4 === 'b4', abbr.bed4);
+check('Ensuite → ens', abbr.ensuite === 'ens', abbr.ensuite);
+check('Laundry → ldry', abbr.laundry === 'ldry', abbr.laundry);
+check('Kitchen → kit', abbr.kitchen === 'kit', abbr.kitchen);
+check('Living → liv', abbr.living === 'liv', abbr.living);
+check('Lounge keeps its own code, not liv', abbr.lounge === 'lng', abbr.lounge);
+check('longest name is a code too', abbr.long === 'gar int pa', abbr.long);
+check('Master Bedroom → b1 — it IS bedroom 1', abbr.master === 'b1', abbr.master);
+check('Bedroom 1 lands on the same code', abbr.bed1 === 'b1', abbr.bed1);
+check('Walk In Robe → wir', abbr.wir === 'wir', abbr.wir);
+check('Rear Elevation → rear elev', abbr.elevation === 'rear elev', abbr.elevation);
+check('lookup is case-insensitive', abbr.lower === 'wir', abbr.lower);
+check('lookup tolerates stray spaces', abbr.spaced === 'pdr', abbr.spaced);
+check('typed "Bedroom 6" → b6', abbr.unknown === 'b6', abbr.unknown);
+check('free-typed location becomes a lower-case code too', abbr.freeText === 'store cpd', abbr.freeText);
 check('no location → empty, never "undefined"', abbr.empty === '' && abbr.nullish === '', `${abbr.empty}|${abbr.nullish}`);
+check('every code is lower case',
+  Object.values(abbr).every(v => v === v.toLowerCase()), JSON.stringify(abbr));
 
 // The table has to cover the picker. A location with no code renders in a
 // different style from the row above it; two locations sharing a code send a
 // trade to the wrong room. Both are silent until someone is standing in a house.
 const table = await page.evaluate(() => {
   const missing = DEFECT_LOCATIONS.filter(l => !LOCATION_ABBR[l]);
+  // Sharing a code is allowed ONLY for a pair listed in LOCATION_ABBR_SHARED
+  // (today: Master Bedroom + Bedroom 1, the same room). Anything else is a bug.
+  const allowed = new Set(LOCATION_ABBR_SHARED.map(p => p.slice().sort().join('|')));
   const seen = {}, dupes = [];
   for (const l of DEFECT_LOCATIONS) {
     const c = LOCATION_ABBR[l];
     if (!c) continue;
-    if (seen[c]) dupes.push(`${seen[c]} + ${l} → ${c}`); else seen[c] = l;
+    if (seen[c]) {
+      if (!allowed.has([seen[c], l].sort().join('|'))) dupes.push(`${seen[c]} + ${l} → ${c}`);
+    } else seen[c] = l;
   }
   const longest = DEFECT_LOCATIONS.map(l => LOCATION_ABBR[l] || l).sort((a, b) => b.length - a.length)[0];
-  return { n: DEFECT_LOCATIONS.length, missing, dupes, longest };
+  return { n: DEFECT_LOCATIONS.length, missing, dupes, longest,
+           shared: LOCATION_ABBR_SHARED.length,
+           sharedIsMaster: LOCATION_ABBR_SHARED.length === 1
+             && LOCATION_ABBR[LOCATION_ABBR_SHARED[0][0]] === LOCATION_ABBR[LOCATION_ABBR_SHARED[0][1]] };
 });
 console.log('\ntable:', JSON.stringify(table));
 check('every picker location has a code', table.missing.length === 0, table.missing.join(', '));
-check('no two locations share a code', table.dupes.length === 0, table.dupes.join(', '));
+check('no two locations share a code, bar the documented pair',
+  table.dupes.length === 0, table.dupes.join(', '));
+check('exactly ONE sharing pair is allowed, and it resolves',
+  table.shared === 1 && table.sharedIsMaster, JSON.stringify({ shared: table.shared }));
 check('even the longest code is short', table.longest.length <= 10, `"${table.longest}"`);
 
 // ── the composed line ────────────────────────────────────────────────────
@@ -154,21 +170,23 @@ console.log('\nrows:');
 rows.forEach(r => console.log('  ' + JSON.stringify(r)));
 
 check('all five defects rendered', rows.length === 5, `${rows.length}`);
-check('ref then location then item',
-  rows[0].text === 'BPI #18 (p.7) — GAR INT PA — Seal gap between garage boundary wall flashing and brick',
+check('"ref - code: item", hyphen and colon, no em dashes',
+  rows[0].text === 'BPI #18 (p.7) - gar int pa: Seal gap between garage boundary wall flashing and brick',
   rows[0].text);
+check('no em dash survives anywhere on the line', !rows.some(r => r.text.includes('—')),
+  rows.map(r => r.text).filter(t => t.includes('—')).join(' | '));
 check('BPI number and page survive as the prefix', rows[0].ref === 'BPI #18 (p.7)', String(rows[0].ref));
-check('location is a code on the row', rows[0].loc === 'GAR INT PA', String(rows[0].loc));
-check('typed defect leads with the location, no stray dash',
-  rows[1].text === 'LDRY — Flyscreen missing both laundry and kitchen' && rows[1].ref === null,
+check('location is a lower-case code on the row', rows[0].loc === 'gar int pa', String(rows[0].loc));
+check('typed defect leads with the code and a colon, no stray dash',
+  rows[1].text === 'ldry: Flyscreen missing both laundry and kitchen' && rows[1].ref === null,
   rows[1].text);
-check('no location → ref then item, no stray dash',
-  rows[2].text === 'BPI #16 (p.6) — See above the bathroom window, roof sheet sitting up' && rows[2].loc === null,
+check('no location → ref, hyphen, item — no stray colon',
+  rows[2].text === 'BPI #16 (p.6) - See above the bathroom window, roof sheet sitting up' && rows[2].loc === null,
   rows[2].text);
 check('neither → the item alone',
   rows[3].text === 'Levels - issue with retaining soil' && rows[3].ref === null && rows[3].loc === null,
   rows[3].text);
-check('Master Bedroom → MBR on the row', rows[4].loc === 'MBR', String(rows[4].loc));
+check('Master Bedroom → b1 on the row', rows[4].loc === 'b1', String(rows[4].loc));
 
 // The location has to be FINDABLE, not just present — that is the whole ask.
 const colours = await page.evaluate(() => {
@@ -178,8 +196,9 @@ const colours = await page.evaluate(() => {
            locWeight: getComputedStyle(loc).fontWeight };
 });
 console.log('\ncolours:', JSON.stringify(colours));
-check('location is set apart from the item wording',
-  colours.loc !== colours.body && colours.locWeight >= '600', JSON.stringify(colours));
+// Colour alone does the finding now — bold on top of it made every row shout.
+check('location is set apart by COLOUR, and is not bold',
+  colours.loc !== colours.body && Number(colours.locWeight) <= 500, JSON.stringify(colours));
 check('reference is muted, not competing with the location',
   colours.ref !== colours.loc && colours.ref !== colours.body, JSON.stringify(colours));
 
@@ -219,7 +238,7 @@ await page.waitForTimeout(250);
 await shot('31-loc-supplier');
 const supLoc = await page.evaluate(() =>
   [...document.querySelectorAll('.defects-container .defect-item .defect-line-loc')].map(e => e.textContent));
-check('supplier view shows locations as well', supLoc.length === 3 && supLoc[0] === 'GAR INT PA', JSON.stringify(supLoc));
+check('supplier view shows locations as well', supLoc.length === 3 && supLoc[0] === 'gar int pa', JSON.stringify(supLoc));
 
 console.log('\nerrors:', errs.length ? errs : 'none');
 if (errs.length) fail.push('page errors');

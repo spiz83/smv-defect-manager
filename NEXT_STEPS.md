@@ -3,6 +3,18 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-12
 
+## 📋 Copy address on the job header (2026-08-12) — build `2026-08-12c`
+The frozen View Defects header carries the same 📋 at the end of the address
+line. **Not deployed.**
+
+- **Not in the toolbar, on purpose.** The toolbar's 📋 copies the DEFECT LIST;
+  this one copies the ADDRESS. Each sits on the thing it copies. The toolbar is
+  also full at eight icons on one pinned row.
+- **`.lot-copy` is `flex: 0 0 auto` with its own font-size** so `fitLotTitle()`
+  shrinks the address text, never the tap target.
+- **The click must `stopPropagation()`** — the whole title is a tap target for
+  Add Defects. `tests/addrcopy.mjs` fails if that is dropped.
+
 ## 📋 Copy address on the search rows (2026-08-12) — build `2026-08-12b`
 **DEPLOYED 2026-08-12** — merged to `main`; Vercel verified serving
 `deffixer-shell-2026-08-12b`, `APP_VERSION 2026-08-12b` and
@@ -42,13 +54,20 @@ Full reasoning in DECISIONS.md. The parts that will bite a later change:
   `matchCompleted`, and trade learning all match on that text — writing the
   location into it would double every item on the next import of the same
   report. `tests/loc.mjs` fails if anyone does.
-- **`LOCATION_ABBR` must cover every entry in `DEFECT_LOCATIONS`, with no two
-  sharing a code.** Add a location to the picker and you add a code, or gate 3
-  fails — `tests/loc.mjs` checks both. They are floor-plan codes (`BTH`, `B4`,
-  `ENS`, `LDRY`, `KIT`, `MBR`), not shortened words; shortened words were tried
-  first and still ate most of the width. `LOCATION_WORD_ABBR` only catches
-  locations someone TYPED rather than picked.
-- **Living is `LIV`, Lounge is `LNG`.** Spiro named `LIV` for both. They are
+- **The line is `ref - code: item`** — hyphen, then colon. Em dashes were tried
+  and are too wide; three of them read as fragments, not a sentence. Each
+  separator only appears when the piece before it does.
+- **`LOCATION_ABBR` must cover every entry in `DEFECT_LOCATIONS`.** Add a
+  location to the picker and you add a code, or gate 3 fails. They are
+  lower-case floor-plan codes (`bth`, `b4`, `ens`, `ldry`, `kit`) — set
+  lower-case in the DATA, not by CSS, so the DOM matches the glass. Bold upper
+  case was tried first and read as a warning label on every row.
+  `LOCATION_WORD_ABBR` only catches locations someone TYPED rather than picked.
+- **Master Bedroom and Bedroom 1 BOTH map to `b1`** — same room on an AU
+  project-home plan, asked for by name. It is the only allowed collision and it
+  is declared in `LOCATION_ABBR_SHARED`, which `tests/loc.mjs` reads. Adding a
+  second pair there needs a reason in DECISIONS.md, not just a green test.
+- **Living is `liv`, Lounge is `lng`.** Spiro named `LIV` for both. They are
   separate rooms in the picker, so they keep separate codes — collapsing them
   sends a trade to whichever of the two the plan has. Change it only if he says
   so knowing that.

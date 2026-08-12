@@ -34,10 +34,15 @@ const SEED = {
     { id: 1, street: 'Lot 1023, Coollegrean Road', suburb: 'Wollert', propertyNumber: '306725', active: true },
     { id: 2, street: 'Lot 1118, 60 Rainbow Street', suburb: 'Wollert', propertyNumber: '306548', active: true },
     { id: 3, street: 'Lot 1143, (27) Fuchsia St', suburb: 'Wollert', propertyNumber: '306645', active: true },
+    // The job from the header screenshot — used for the frozen-header check.
+    { id: 4, street: 'Lot 245, (4) Spinosa Road', suburb: 'Wollert', propertyNumber: '306640', active: true },
   ],
   contractors: [{ id: 1, name: 'HTEE KLEEH', trades: ['Plumber'] }],
   trades: [{ id: 1, name: 'Plumber' }],
-  defects: [{ id: 1, addressId: 1, contractorId: 1, description: 'Adjust door rattle', completed: false, status: 'open', location: 'Entry' }],
+  defects: [
+    { id: 1, addressId: 1, contractorId: 1, description: 'Adjust door rattle', completed: false, status: 'open', location: 'Entry' },
+    { id: 2, addressId: 4, contractorId: 1, description: 'BPI #10 (p.5) — Seal junction between the ceiling and wall', completed: false, status: 'open', location: 'Kitchen' },
+  ],
 };
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
@@ -102,7 +107,7 @@ const rows = await page.evaluate(() => {
 console.log('\nrows:');
 rows.forEach(r => console.log('  ' + JSON.stringify(r)));
 
-check('address rows rendered', rows.length === 3, `${rows.length}`);
+check('address rows rendered', rows.length === 4, `${rows.length}`);
 check('📋 sits before 👁️ and ✚',
   JSON.stringify(rows[0].icons) === JSON.stringify(['📋', '👁️', '✚']),
   JSON.stringify(rows[0].icons));
@@ -145,6 +150,48 @@ for (const [type, want] of [['contractor', ['👁️', '✚']], ['trade', ['👁
   });
   check(`${type} rows get no 📋`, JSON.stringify(icons) === JSON.stringify(want), JSON.stringify(icons));
 }
+
+// ── the same 📋 on the job header ────────────────────────────────────────
+// The header is FROZEN and pinned to one line; a control added here is one
+// that can never be scrolled away from, so it has to earn its width.
+await page.evaluate(() => { window.__copied = null; viewDefectsForAddress(4); });
+await page.waitForTimeout(300);
+await page.screenshot({ path: join(ARTIFACTS, '41-addr-copy-header.png') });
+
+const hdr = await page.evaluate(() => {
+  const t = document.querySelector('.defects-header.hdr-inline .lot-title');
+  const btn = t && t.querySelector('.lot-copy');
+  const addr = t && t.querySelector('.lot-addr');
+  if (!t || !btn) return null;
+  const tb = t.getBoundingClientRect(), bb = btn.getBoundingClientRect();
+  return {
+    onTitleLine: Math.abs((bb.top + bb.height / 2) - (tb.top + tb.height / 2)) < 14,
+    insideHeader: Math.round(bb.right) <= Math.round(tb.right) + 1,
+    tap: Math.round(bb.width) + 'x' + Math.round(bb.height),
+    titleH: Math.round(tb.height),
+    // the address must still be readable, not squeezed to nothing
+    addrW: Math.round(addr.getBoundingClientRect().width),
+    clipped: addr.scrollWidth > addr.clientWidth + 1,
+    jobNo: (t.querySelector('.lot-job') || {}).textContent || '',
+  };
+});
+console.log('\njob header:', JSON.stringify(hdr));
+check('📋 is on the job header', !!hdr);
+check('it sits on the address line, not a new row', hdr && hdr.onTitleLine && hdr.titleH < 46, JSON.stringify(hdr && { onTitleLine: hdr.onTitleLine, titleH: hdr.titleH }));
+check('it stays inside the header', hdr && hdr.insideHeader);
+check('the job number is never given up for it', hdr && hdr.jobNo.includes('306640'), hdr && hdr.jobNo);
+check('the address is not clipped to make room', hdr && !hdr.clipped && hdr.addrW > 120, hdr && `${hdr.addrW}px clipped=${hdr.clipped}`);
+
+await page.click('.defects-header.hdr-inline .lot-copy');
+await page.waitForTimeout(200);
+const hdrCopied = await page.evaluate(() => window.__copied);
+console.log('copied from header: ' + JSON.stringify(hdrCopied));
+check('header 📋 copies the same format',
+  hdrCopied === 'Lot 245, (4) Spinosa Road, Wollert - 306640', String(hdrCopied));
+// The whole title is a tap target for Add Defects — copying must not fire it.
+check('copying does not open Add Defects',
+  await page.evaluate(() => state.currentView === 'view-defects-address'),
+  await page.evaluate(() => state.currentView));
 
 console.log('\nerrors:', errs.length ? errs : 'none');
 if (errs.length) fail.push('page errors');

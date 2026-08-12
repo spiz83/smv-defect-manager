@@ -368,6 +368,22 @@
         /* Leading whitespace collapses at the start of a flex item, so the gap
            before the job number has to be a margin, not a space. */
         .defects-header.hdr-inline .lot-job { margin-left: .3em; }
+        /* 📋 ON THE ADDRESS, not in the toolbar (Spiro 2026-08-12).
+           There is already a 📋 in the toolbar and it copies the DEFECT LIST.
+           Two clipboards on one screen only works if each one sits on the thing
+           it copies, so this rides at the end of the address line. The toolbar
+           is also full — eight icons pinned to a single row — and a ninth is
+           how that row wraps and eats the frozen header again.
+           flex:0 0 auto and its own font-size: the address gives up width to it
+           the same way it does to the job number, and fitLotTitle()'s font
+           stepping shrinks the TEXT, never the tap target. */
+        .defects-header.hdr-inline .lot-copy {
+            flex: 0 0 auto; align-self: center; margin-left: 10px;
+            border: none; background: transparent; cursor: pointer;
+            font-size: 15px; line-height: 1; padding: 3px 5px; border-radius: 6px;
+            opacity: .75;
+        }
+        .defects-header.hdr-inline .lot-copy:active { transform: scale(.9); opacity: 1; }
 
         .toolbar {
             display: flex;
@@ -508,8 +524,12 @@
            NOT `.defect-loc` — that name is already taken further down by a
            location-dropdown pill (max-width, ellipsis, its own background),
            which silently swallowed these spans the first time round. */
+        /* QUIET, not shouty (Spiro 2026-08-12). These were bold upper-case and
+           read as a warning label rather than a note about which room. Colour
+           alone is enough to find them down a list — weight and case on top of
+           it made every row look urgent. */
         .defect-line-ref { color: var(--text-secondary); font-weight: 500; }
-        .defect-line-loc { color: var(--blue); font-weight: 700; }
+        .defect-line-loc { color: var(--blue); font-weight: 400; }
 
         .defect-checkbox {
             width: 24px;
@@ -3014,12 +3034,12 @@
                     </div>
                     
                     <div class="defects-header hdr-inline">
-                        <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="${formatAddress(address)} — tap to add defects for this job">${lotTitleHtml(address)}</div>
+                        <div class="lot-title" onclick="openAddDefectsForAddress(${addressId})" style="cursor: pointer;" title="${formatAddress(address)} — tap to add defects for this job">${lotTitleHtml(address)}${lotCopyBtn(addressId)}</div>
                         <div class="toolbar">
                             ${statusFilterButton()}
                             ${previewToggle()}
                             ${shoppingToolbarBtn(addressId)}
-                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
+                            <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy the DEFECT LIST — the address itself is the 📋 beside it">📋</button>
                             <button class="icon-btn" onclick="generateContextReport({addressId: ${addressId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForAddress(${addressId})" title="Add Defects">✚</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
@@ -5433,48 +5453,60 @@
         //  the supplier email (formatDefectEmailLine), so what a supervisor
         //  reads on the phone is what the trade receives.
         //
-        //  A SHORT CODE, not a shortened word. Spiro, 2026-08-12: *"bathroom
-        //  would read BTH, bedroom four would read B4, ensuite would read ENS,
-        //  laundry LDRY, kitchen KIT, living room or lounge LIV, and so on."*
-        //  These are the abbreviations already on a floor plan, which is what a
-        //  supervisor has been reading all day — three or four upper-case
-        //  characters cost a word of the row instead of a line of the screen.
+        //  A SHORT CODE, not a shortened word — the abbreviations already on a
+        //  floor plan, which is what a supervisor has been reading all day.
+        //  Three or four characters cost a word of the row instead of a line of
+        //  the screen.
+        //
+        //  LOWER CASE, on purpose (Spiro 2026-08-12, second pass). These
+        //  shipped upper-case and bold and read as a warning label — "the way
+        //  the location is shown bothers me, needs to be less obtrusive, more
+        //  natural". They are set lower-case HERE rather than with a CSS
+        //  text-transform so the text in the DOM is the text on the glass.
         //
         //  EVERY entry in DEFECT_LOCATIONS has a code here, deliberately: one
         //  that fell through to the fallback would render in a different style
         //  from the row above it. tests/loc.mjs fails if a location is added to
-        //  the picker without a code, and fails again if two locations end up
-        //  sharing one — a list that calls two rooms the same thing is worse
-        //  than one that names neither.
+        //  the picker without a code, and fails if two locations share one
+        //  outside the documented pair below.
         // ---------------------------------------------------------------------
         const LOCATION_ABBR = {
-            'Throughout': 'ALL',
-            'Entry': 'ENTRY', 'Hallway': 'HALL', 'Stairs': 'STAIRS',
-            'Kitchen': 'KIT', 'Pantry': 'PTY', 'Meals': 'MEALS', 'Dining': 'DIN',
+            'Throughout': 'all',
+            'Entry': 'entry', 'Hallway': 'hall', 'Stairs': 'stairs',
+            'Kitchen': 'kit', 'Pantry': 'pty', 'Meals': 'meals', 'Dining': 'din',
             // Living and Lounge are separate rooms in the picker, so they get
             // separate codes even though Spiro named LIV for both — a plan with
             // both would otherwise send a trade to whichever one it found first.
-            'Living': 'LIV', 'Lounge': 'LNG', 'Family': 'FAM',
-            'Rumpus': 'RUM', 'Theatre': 'THTR', 'Sitting': 'SIT',
-            'Retreat': 'RTRT', 'Study': 'STUDY',
-            'Master Bedroom': 'MBR',
-            'Bedroom 1': 'B1', 'Bedroom 2': 'B2', 'Bedroom 3': 'B3',
-            'Bedroom 4': 'B4', 'Bedroom 5': 'B5',
-            'Walk In Robe': 'WIR', 'Linen Cupboard': 'LIN',
-            'Ensuite': 'ENS', 'Bathroom': 'BTH', 'Powder Room': 'PDR', 'Toilet': 'WC',
-            'Laundry': 'LDRY',
-            'Garage': 'GAR',
-            'Garage Internal PA Door': 'GAR INT PA',
-            'Garage External PA Door': 'GAR EXT PA',
-            'Front Door': 'FRT DOOR', 'Alfresco': 'ALF', 'Porch': 'PORCH',
-            'Balcony': 'BALC', 'Driveway': 'D/WAY', 'Backyard': 'B/YARD',
-            'Front Elevation': 'FRT ELEV', 'Left Elevation': 'LH ELEV',
-            'Right Elevation': 'RH ELEV', 'Rear Elevation': 'REAR ELEV',
-            'Facade / External': 'FACADE',
-            'Roof': 'ROOF', 'Roof Space': 'ROOF SP',
-            'General Internal': 'GEN INT', 'General External': 'GEN EXT',
-            'Other': 'OTHER',
+            'Living': 'liv', 'Lounge': 'lng', 'Family': 'fam',
+            'Rumpus': 'rum', 'Theatre': 'thtr', 'Sitting': 'sit',
+            'Retreat': 'rtrt', 'Study': 'study',
+            // THE ONE DELIBERATE COLLISION. The master bedroom IS bedroom 1 on
+            // an Australian project-home plan, and Spiro asked for it by name
+            // ("master bed is to be B1") — it had been its own code, which put
+            // two names for one room on one job's list. A BPI report can say
+            // either, so both land on b1. Bedrooms 2-5 are unaffected.
+            'Master Bedroom': 'b1',
+            'Bedroom 1': 'b1', 'Bedroom 2': 'b2', 'Bedroom 3': 'b3',
+            'Bedroom 4': 'b4', 'Bedroom 5': 'b5',
+            'Walk In Robe': 'wir', 'Linen Cupboard': 'lin',
+            'Ensuite': 'ens', 'Bathroom': 'bth', 'Powder Room': 'pdr', 'Toilet': 'wc',
+            'Laundry': 'ldry',
+            'Garage': 'gar',
+            'Garage Internal PA Door': 'gar int pa',
+            'Garage External PA Door': 'gar ext pa',
+            'Front Door': 'frt door', 'Alfresco': 'alf', 'Porch': 'porch',
+            'Balcony': 'balc', 'Driveway': 'd/way', 'Backyard': 'b/yard',
+            'Front Elevation': 'frt elev', 'Left Elevation': 'lh elev',
+            'Right Elevation': 'rh elev', 'Rear Elevation': 'rear elev',
+            'Facade / External': 'facade',
+            'Roof': 'roof', 'Roof Space': 'roof sp',
+            'General Internal': 'gen int', 'General External': 'gen ext',
+            'Other': 'other',
         };
+        // Master Bedroom and Bedroom 1 are the same room; every OTHER pair
+        // sharing a code is a bug. tests/loc.mjs reads this, so widening it is
+        // a deliberate act with a reason attached, not a quiet test edit.
+        const LOCATION_ABBR_SHARED = [['Master Bedroom', 'Bedroom 1']];
         // Lookup is case- and space-insensitive: locations also arrive typed by
         // hand (the review screen takes a custom one) and 'walk in robe' has to
         // land on the same entry as 'Walk In Robe'.
@@ -5488,18 +5520,18 @@
         // out as a code in the same style as the table instead of being the one
         // sentence-case row in a screen full of codes.
         const LOCATION_WORD_ABBR = [
-            [/\bwalk[- ]?in robes?\b/gi, 'WIR'],
-            [/\bbedroom\s*(\d+)\b/gi, 'B$1'],
-            [/\bbedrooms?\b/gi, 'BED'],
-            [/\bbathrooms?\b/gi, 'BTH'],
-            [/\bensuites?\b/gi, 'ENS'],
-            [/\bkitchens?\b/gi, 'KIT'],
-            [/\blaundry\b/gi, 'LDRY'],
-            [/\bcupboards?\b/gi, 'CPD'],
-            [/\belevations?\b/gi, 'ELEV'],
-            [/\bgeneral\b/gi, 'GEN'],
-            [/\binternal\b/gi, 'INT'],
-            [/\bexternal\b/gi, 'EXT'],
+            [/\bwalk[- ]?in robes?\b/gi, 'wir'],
+            [/\bbedroom\s*(\d+)\b/gi, 'b$1'],
+            [/\bbedrooms?\b/gi, 'bed'],
+            [/\bbathrooms?\b/gi, 'bth'],
+            [/\bensuites?\b/gi, 'ens'],
+            [/\bkitchens?\b/gi, 'kit'],
+            [/\blaundry\b/gi, 'ldry'],
+            [/\bcupboards?\b/gi, 'cpd'],
+            [/\belevations?\b/gi, 'elev'],
+            [/\bgeneral\b/gi, 'gen'],
+            [/\binternal\b/gi, 'int'],
+            [/\bexternal\b/gi, 'ext'],
         ];
         // The fallback does NOT truncate. A code nobody recognises is worth
         // less than a long one they do, and a typed location is rare — the
@@ -5512,7 +5544,7 @@
             if (hit) return hit;
             let out = s;
             for (const [re, to] of LOCATION_WORD_ABBR) out = out.replace(re, to);
-            return out.toUpperCase().replace(/\s+/g, ' ');
+            return out.toLowerCase().replace(/\s+/g, ' ');
         }
 
         // One defect → the parts of the line a supervisor reads:
@@ -5526,16 +5558,25 @@
             const full = String((d && d.location) || '').trim();
             return { ref: ref.label, loc: abbreviateLocation(full), full, body: ref.body.trim() };
         }
+        // "BPI #3 (p.3) - kit: Seal gaps to flooring at dishwasher opening"
+        //
+        // A plain hyphen after the reference and a COLON after the location,
+        // not em dashes between all three (Spiro 2026-08-12, second pass): the
+        // em dash is wide enough that three of them turned a defect into a list
+        // of fragments. A colon makes the code read as what it is — a label on
+        // the sentence that follows — and the sentence reads as a sentence.
+        // Each separator only appears when the piece before it does, so a typed
+        // defect is "ldry: …" and one with no location is "BPI #16 (p.6) - …".
         function defectLineHtml(d) {
             const p = defectLineParts(d);
-            return [
-                p.ref ? `<span class="defect-line-ref">${_pvEsc(p.ref)}</span>` : '',
-                // title= is the escape hatch for a code that hasn't been learnt
-                // yet: press and hold the row, or hover on a desktop, and the
-                // full room name is there without opening the location picker.
-                p.loc ? `<span class="defect-line-loc" title="${_pvEsc(p.full)}">${_pvEsc(p.loc)}</span>` : '',
-                p.body ? _pvEsc(p.body) : '',
-            ].filter(Boolean).join(' — ');
+            // title= is the escape hatch for a code that hasn't been learnt
+            // yet: press and hold the row, or hover on a desktop, and the full
+            // room name is there without opening the location picker.
+            let out = p.ref ? `<span class="defect-line-ref">${_pvEsc(p.ref)}</span>` : '';
+            if (p.loc) out += (out ? ' - ' : '')
+                + `<span class="defect-line-loc" title="${_pvEsc(p.full)}">${_pvEsc(p.loc)}</span>`;
+            if (p.body) out += (p.loc ? ': ' : (out ? ' - ' : '')) + _pvEsc(p.body);
+            return out;
         }
 
         function locationControl(defect) {
@@ -6536,6 +6577,14 @@
             const a = db.getAddress(addressId);
             if (!a) { showToast('Address not found', true); return; }
             writeToClipboard(formatAddress(a), '📋 Address copied');
+        }
+        // The same 📋, on the job address in the frozen View Defects header —
+        // where a supervisor already IS when someone asks which job they're on.
+        // stopPropagation because the whole title is a tap target for Add
+        // Defects; without it, copying the address opens the entry screen.
+        function lotCopyBtn(addressId) {
+            return `<button class="lot-copy" onclick="event.stopPropagation(); copyAddressToClipboard(${addressId})"
+                        title="Copy this address" aria-label="Copy this address">📋</button>`;
         }
 
         // Copy ONE supplier's outstanding items for ONE job, formatted the same
@@ -11358,7 +11407,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-12b';
+        const APP_VERSION = '2026-08-12c';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11432,7 +11481,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-12b"></script>
+    <script src="cloud-sync.js?v=2026-08-12c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

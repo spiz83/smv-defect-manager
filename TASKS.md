@@ -11,6 +11,7 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-12 — 📋 Copy address on the View Defects job header too. Build `2026-08-12c`.
 - 2026-08-12 — 📋 Copy address on the top-search rows. `tests/addrcopy.mjs`.
   Shipped as build `2026-08-12b`.
 - 2026-08-12 — Location leads the defect row (`BPI #18 (p.7) — GAR INT PA —
