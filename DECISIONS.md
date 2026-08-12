@@ -1,10 +1,10 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-10 — the location leads the defect line
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 — the location leads the defect line
 
-- **Decision:** every defect row now reads **`BPI #18 (p.7) — Garage Int PA —
+- **Decision:** every defect row now reads **`BPI #18 (p.7) — GAR INT PA —
   Seal gap between garage boundary wall flashing and brick`**: report
-  reference, then location, then the item. Spiro's words, 2026-08-10: *"when
+  reference, then location, then the item. Spiro's words, 2026-08-12: *"when
   I'm viewing items it doesn't actually tell me where that location of it is,
   so I have to go back into the BPI reports to find out."*
 - **The location was never missing — it was one tap deep.** The BPI import has
@@ -21,7 +21,7 @@ Newest at top. Format: date — decision — why — trade-off accepted.## 2026-
   them tap. `LOCATION_ABBR` (in `index.html`, beside `DEFECT_LOCATIONS`) is the
   floor-plan shorthand a supervisor has been reading all day: `BTH`, `B4`,
   `ENS`, `LDRY`, `KIT`, `LIV`, `WIR`, `MBR`, `GAR INT PA`. Spiro's words,
-  2026-08-10: *"bathroom would read BTH, bedroom four would read B4, ensuite
+  2026-08-12: *"bathroom would read BTH, bedroom four would read B4, ensuite
   would read ENS, laundry LDRY, kitchen KIT, living room or lounge LIV, and so
   on."* Emails, the clipboard and the PDF have no width limit and keep the full
   wording.

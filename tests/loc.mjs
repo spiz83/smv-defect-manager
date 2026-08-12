@@ -77,7 +77,7 @@ const check = (label, cond, detail) => { console.log((cond ? 'PASS  ' : 'FAIL  '
 const shot = async n => page.screenshot({ path: join(ARTIFACTS, n + '.png') });
 
 // ── abbreviateLocation ───────────────────────────────────────────────────
-// The codes Spiro named on 2026-08-10, verbatim: bathroom BTH, bedroom four
+// The codes Spiro named on 2026-08-12, verbatim: bathroom BTH, bedroom four
 // B4, ensuite ENS, laundry LDRY, kitchen KIT, living LIV.
 const abbr = await page.evaluate(() => ({
   bath:      abbreviateLocation('Bathroom'),

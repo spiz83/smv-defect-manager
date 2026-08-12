@@ -1,9 +1,9 @@
 # Next Steps / Handover
 
 STATUS: Active — mid-incident
-LAST UPDATED: 2026-08-10
+LAST UPDATED: 2026-08-12
 
-## Location on the defect row (2026-08-10) — build `2026-08-10a`, branch `claude/defect-location-display-uqef29`
+## Location on the defect row (2026-08-12) — build `2026-08-12a`, branch `claude/defect-location-display-uqef29`
 Every defect row reads `BPI #18 (p.7) — GAR INT PA — Seal gap…`: reference,
 location code, item. **Not deployed** — the branch is pushed and the stamp is
 bumped in all four places, but nothing has reached `main`, so no phone has it

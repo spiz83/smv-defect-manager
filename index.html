@@ -5420,7 +5420,7 @@
             'Other'];
 
         // ---------------------------------------------------------------------
-        //  THE LOCATION BELONGS ON THE ROW (Spiro 2026-08-10)
+        //  THE LOCATION BELONGS ON THE ROW (Spiro 2026-08-12)
         //
         //  A defect list read "BPI #18 (p.7) — Seal gap between garage boundary
         //  wall flashing and brick" and said nothing about WHERE. The location
@@ -5432,7 +5432,7 @@
         //  the supplier email (formatDefectEmailLine), so what a supervisor
         //  reads on the phone is what the trade receives.
         //
-        //  A SHORT CODE, not a shortened word. Spiro, 2026-08-10: *"bathroom
+        //  A SHORT CODE, not a shortened word. Spiro, 2026-08-12: *"bathroom
         //  would read BTH, bedroom four would read B4, ensuite would read ENS,
         //  laundry LDRY, kitchen KIT, living room or lounge LIV, and so on."*
         //  These are the abbreviations already on a floor plan, which is what a
@@ -6568,7 +6568,7 @@
         // location abbreviated to fit a phone row; here there is no width limit,
         // so the location is written out in full. Keeping one order across all
         // of them is the point: what the supervisor reads is what the trade
-        // receives. (Spiro 2026-08-10)
+        // receives. (Spiro 2026-08-12)
         function formatDefectEmailLine(d) {
             const desc = (d.description || '').trim();
             const loc = (d.location || '').trim();
@@ -11340,7 +11340,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-10a';
+        const APP_VERSION = '2026-08-12a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11414,7 +11414,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-10a"></script>
+    <script src="cloud-sync.js?v=2026-08-12a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

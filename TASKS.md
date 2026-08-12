@@ -1,7 +1,7 @@
 # Tasks
 
 ## Current sprint
-- [ ] Deploy build `2026-08-10a` (location on the defect row) — merge
+- [ ] Deploy build `2026-08-12a` (location on the defect row) — merge
       `claude/defect-location-display-uqef29` to `main`; pushing `main` ships it.
 
 ## Backlog (prioritised, top = next)
@@ -12,7 +12,7 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
-- 2026-08-10 — Location leads the defect row (`BPI #18 (p.7) — GAR INT PA —
+- 2026-08-12 — Location leads the defect row (`BPI #18 (p.7) — GAR INT PA —
   item`), a floor-plan code on screen and the full room name in every text
   output. `tests/loc.mjs`.
 - 2026-08-07 — Every generated PDF is named after what is in it.
