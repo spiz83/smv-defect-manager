@@ -34,6 +34,38 @@
     auth: { persistSession: true, autoRefreshToken: true }
   });
 
+  // ---- Password-recovery landing --------------------------------------------
+  // Read the URL NOW, synchronously, before supabase-js's detectSessionInUrl
+  // consumes the fragment and rewrites the address bar. Miss this window and a
+  // recovery link is indistinguishable from a normal signed-in boot — which
+  // would drop the user straight into the app with the password they came here
+  // to change still unchanged.
+  //   implicit flow: #access_token=…&type=recovery
+  //   PKCE flow:     ?code=…  (Supabase still appends type=recovery)
+  // An expired or already-used link arrives as ?error=…&error_code=otp_expired
+  // with no session, so track that separately and say so rather than showing an
+  // empty form that fails on submit.
+  const recoveryUrl = (function () {
+    try {
+      const u = String(location.hash || '') + '&' + String(location.search || '');
+      return {
+        isRecovery: /(^|[#?&])type=recovery(&|$)/.test(u),
+        expired: /error_code=otp_expired|error=access_denied/.test(u),
+      };
+    } catch (e) { return { isRecovery: false, expired: false }; }
+  })();
+
+  // The manager's quick-access alias, in ONE place. The sign-in shortcut below
+  // and the change-password warning both read it, so a changed password can't
+  // leave the two disagreeing about which account the shortcut points at.
+  const ALIAS_USER = 'qwqw';
+  const ALIAS_EMAIL = 'svladimiroski@hotmail.com';
+  const ALIAS_PASS = 'admin!983';
+
+  // Client-side floor. Supabase's own default minimum is 6; we ask for more
+  // because these logins reach every job on the site.
+  const MIN_PASSWORD = 8;
+
   // "Keep me signed in": when the user opted out, drop the session when the
   // page is closed. Default (flag absent or '1') keeps you signed in.
   if (localStorage.getItem('cs_keep') === '0') {
@@ -115,15 +147,18 @@
     s.textContent = `
       /* Login — pinned to the Blueprint theme so it always matches CH Tracker,
          regardless of whatever in-app theme the user has chosen. */
-      #cs-overlay{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;
+      #cs-overlay,#cs-pw-overlay{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px;
         --acc:#1E4DA8;--acc2:#3D6FCC;--bg:#EFEBE2;--sur:#FFFFFF;--ele:#F5F1E8;--inp:#FFFFFF;
         --brd:#A8A8A8;--brd2:#D6D6D6;--t1:#1A1A1A;--t2:#4A4A4A;--t3:#7A7A7A;
         --green:#2D8030;--amber:#D87E2E;--red:#B81E2E;--accFg:#FFFFFF;--glow:rgba(30,77,168,.25);
         background:var(--bg);font-family:'Titillium Web',-apple-system,'Segoe UI',sans-serif;}
-      #cs-card{position:relative;width:min(92vw,360px);background:var(--sur,#10171A);
+      /* The change-password screen sits ABOVE the app, so it needs a higher
+         z-index than the app's own modals (which top out around 100000). */
+      #cs-pw-overlay{z-index:100001;}
+      #cs-card,#cs-pw-card{position:relative;width:min(92vw,360px);background:var(--sur,#10171A);
         border:1px solid var(--brd,#243137);border-radius:6px;padding:24px;overflow:hidden;
         box-shadow:0 16px 48px rgba(0,0,0,.55);}
-      #cs-card:before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+      #cs-card:before,#cs-pw-card:before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
         background:linear-gradient(90deg, var(--acc,#2f6df6) 0%, var(--acc,#2f6df6) 20%, transparent 55%);opacity:.55;}
       #cs-brand{display:flex;align-items:center;gap:10px;margin-bottom:20px;}
       #cs-mark{width:30px;height:30px;border-radius:6px;flex:0 0 auto;
@@ -135,24 +170,38 @@
       #cs-pglbl{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--acc,#2f6df6);text-transform:uppercase;letter-spacing:.2em;margin-bottom:4px;}
       #cs-welcome{font-family:'Titillium Web',sans-serif;font-weight:900;font-style:italic;font-size:24px;
         letter-spacing:-.015em;line-height:1;text-transform:uppercase;color:var(--t1,#F0F5F6);margin-bottom:20px;}
-      #cs-card .cs-field-lbl{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;
+      #cs-card .cs-field-lbl,#cs-pw-card .cs-field-lbl{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;
         letter-spacing:.15em;color:var(--t3,#5C7177);margin:0 0 5px;display:block;}
-      #cs-card input{width:100%;box-sizing:border-box;background:var(--inp,#0A1316);
+      #cs-card input,#cs-pw-card input{width:100%;box-sizing:border-box;background:var(--inp,#0A1316);
         border:1px solid var(--brd,#243137);border-radius:4px;padding:11px 12px;margin-bottom:13px;font-size:15px;
         color:var(--t1,#F0F5F6);font-family:'Titillium Web',sans-serif;outline:none;transition:border-color .12s, box-shadow .12s;}
-      #cs-card input::placeholder{color:var(--t3,#5C7177);}
-      #cs-card input:focus{border-color:var(--acc,#2f6df6);box-shadow:0 0 0 2px var(--glow,rgba(47,109,246,.3));}
+      #cs-card input::placeholder,#cs-pw-card input::placeholder{color:var(--t3,#5C7177);}
+      #cs-card input:focus,#cs-pw-card input:focus{border-color:var(--acc,#2f6df6);box-shadow:0 0 0 2px var(--glow,rgba(47,109,246,.3));}
       #cs-keep-wrap{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;
         text-transform:uppercase;letter-spacing:.08em;color:var(--t2,#9BB0B4);margin:2px 1px;text-align:left;}
-      #cs-card button.cs-primary{width:100%;margin-top:16px;border:1px solid var(--acc,#2f6df6);border-radius:5px;
+      #cs-card button.cs-primary,#cs-pw-card button.cs-primary{width:100%;margin-top:16px;border:1px solid var(--acc,#2f6df6);border-radius:5px;
         background:var(--acc,#2f6df6);color:var(--accFg,#fff);padding:13px;font-size:14px;font-weight:700;
         font-family:'Titillium Web',sans-serif;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:background .12s;}
-      #cs-card button.cs-primary:hover{background:var(--acc2,#4f8bff);border-color:var(--acc2,#4f8bff);}
-      #cs-card button.cs-primary:disabled{opacity:.45;cursor:default;}
+      #cs-card button.cs-primary:hover,#cs-pw-card button.cs-primary:hover{background:var(--acc2,#4f8bff);border-color:var(--acc2,#4f8bff);}
+      #cs-card button.cs-primary:disabled,#cs-pw-card button.cs-primary:disabled{opacity:.45;cursor:default;}
+      /* Cancel — a full-width secondary so it's as tappable as the primary. */
+      #cs-pw-card button.cs-ghost{width:100%;margin-top:9px;border:1px solid var(--brd,#243137);border-radius:5px;
+        background:transparent;color:var(--t2,#9BB0B4);padding:12px;font-size:13px;font-weight:600;
+        font-family:'Titillium Web',sans-serif;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;}
       #cs-toggle{margin-top:18px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;color:var(--t3,#5C7177);}
       #cs-toggle a{color:var(--acc,#2f6df6);cursor:pointer;font-weight:700;}
-      #cs-msg{font-size:12px;margin-top:11px;min-height:16px;text-align:center;font-family:'JetBrains Mono',monospace;}
-      #cs-msg.err{color:var(--red,#f87171);} #cs-msg.ok{color:var(--green,#34d399);}
+      /* Forgot password — its own line under Sign in, not tucked next to the toggle. */
+      #cs-forgot{margin-top:13px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.05em;}
+      #cs-forgot a{color:var(--t3,#5C7177);cursor:pointer;text-decoration:underline;}
+      #cs-msg,#cs-pw-msg{font-size:12px;margin-top:11px;min-height:16px;text-align:center;font-family:'JetBrains Mono',monospace;line-height:1.5;}
+      #cs-msg.err,#cs-pw-msg.err{color:var(--red,#f87171);} #cs-msg.ok,#cs-pw-msg.ok{color:var(--green,#34d399);}
+      /* "Show passwords" — one checkbox for all three fields. Typing an unseen
+         password on a phone in the sun, in gloves, is how lockouts start. */
+      #cs-pw-show{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10px;
+        text-transform:uppercase;letter-spacing:.08em;color:var(--t2,#9BB0B4);margin:2px 1px 0;cursor:pointer;}
+      #cs-pw-show input{width:auto;margin:0;}
+      #cs-pw-hint{font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.6;color:var(--t3,#5C7177);
+        margin:-4px 0 14px;letter-spacing:.03em;}
       /* The page declares viewport-fit=cover + black-translucent, so content
          runs UNDER the iPhone's own status bar. Without the safe-area inset the
          clock and battery sit on top of this row and Sign out is barely
@@ -168,7 +217,11 @@
       /* Sign out is the only way off the app — give it a real tap target
          rather than an 11px chip wedged under the notch. */
       #cs-statusbar button{background:transparent;border:1px solid #475569;color:#e2e8f0;
-        border-radius:6px;padding:5px 11px;cursor:pointer;font-size:12px;font-weight:600;}
+        border-radius:6px;padding:5px 11px;cursor:pointer;font-size:12px;font-weight:600;
+        flex:0 0 auto;white-space:nowrap;}
+      /* Two buttons now share this row. On a narrow phone the email is the part
+         that gives — truncate it rather than let it push Sign out off-screen. */
+      #cs-statusbar .cs-who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
       body.cs-authed{padding-top:calc(30px + env(safe-area-inset-top, 0px));}
 
       /* Offline / sync banner — slides up from the bottom, very visible on a phone */
@@ -204,6 +257,15 @@
     document.head.appendChild(s);
   }
 
+  // A supervisor types "ischroeder", not "ischroeder@creationhomes.com.au".
+  // Sign-in, sign-up AND the password-reset email all have to expand that the
+  // same way — a reset sent to a bare username silently goes nowhere.
+  function normaliseEmail(raw) {
+    let email = String(raw || '').trim();
+    if (email && !email.includes('@')) email += '@creationhomes.com.au';
+    return email;
+  }
+
   function showLogin() {
     injectStyles();
     let mode = 'signin';
@@ -230,6 +292,7 @@
         </label>
         <button class="cs-primary" id="cs-go">Sign in</button>
         <div id="cs-msg"></div>
+        <div id="cs-forgot"><a id="cs-change-link">Change password</a> · <a id="cs-forgot-link">Forgot it?</a></div>
         <div id="cs-toggle">No account? <a id="cs-switch">Create one</a></div>
       </div>`;
     document.body.appendChild(ov);
@@ -244,25 +307,66 @@
         mode = mode === 'signin' ? 'signup' : 'signin';
         $('cs-go').textContent = mode === 'signup' ? 'Create account' : 'Sign in';
         $('cs-name').style.display = mode === 'signup' ? 'block' : 'none';
+        // Nothing to reset when you're creating the account in front of you.
+        $('cs-forgot').style.display = mode === 'signup' ? 'none' : 'block';
         $('cs-toggle').innerHTML = mode === 'signup'
           ? `Already have an account? <a id="cs-switch">Sign in</a>`
           : `No account? <a id="cs-switch">Create one</a>`;
         msg('');
       }
+      if (e.target && e.target.id === 'cs-forgot-link') sendReset();
+      // Change it here and now, without signing in first. The card takes the
+      // email + current password, which IS the sign-in, then sets the new one.
+      if (e.target && e.target.id === 'cs-change-link') { msg(''); showPasswordCard('signin'); }
     });
+
+    // ---- Forgot password -----------------------------------------------------
+    // Sends the Supabase recovery email; the link lands back on this app and
+    // boot() routes it to the "set a new password" screen.
+    let resetting = false;
+    async function sendReset() {
+      if (resetting) return;
+      const email = normaliseEmail($('cs-email').value);
+      if (!email) { msg('Type your email or username first, then tap "Forgot your password?".'); return; }
+      if (!navigator.onLine) { msg('You are offline — a reset email needs a connection.'); return; }
+      resetting = true;
+      msg('Sending…', true);
+      try {
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: recoveryRedirectUrl() });
+        if (error) throw error;
+      } catch (err) {
+        // Rate limits and misconfigured SMTP are the two that actually happen,
+        // and both need saying out loud — a silent "check your email" for an
+        // email that never arrives is worse than the error.
+        const m = String((err && err.message) || err);
+        if (/rate|too many|limit/i.test(m)) {
+          msg('Too many reset attempts — wait a few minutes and try again.');
+          resetting = false;
+          return;
+        }
+        console.warn('[CloudSync] reset email failed', m);
+        msg('Could not send the reset email: ' + m + '. Ask your manager to reset it for you.');
+        resetting = false;
+        return;
+      }
+      // Deliberately the same message whether or not the account exists — an
+      // "unknown email" reply tells a stranger which logins are real.
+      msg('If ' + email + ' has an account, a reset link is on its way. Open it on this phone.', true);
+      resetting = false;
+    }
 
     $('cs-go').onclick = async () => {
       let email = $('cs-email').value.trim();
       let pass = $('cs-pass').value;
       // Secret quick-access alias: qwqw/qwqw signs in as the manager svladimiroski.
-      if (email.toLowerCase() === 'qwqw' && pass === 'qwqw') {
-        email = 'svladimiroski@hotmail.com';
-        pass = 'admin!983';
+      if (email.toLowerCase() === ALIAS_USER && pass === ALIAS_USER) {
+        email = ALIAS_EMAIL;
+        pass = ALIAS_PASS;
       }
       // Allow a username shorthand (no @) — default to the company domain so a
       // supervisor can type just "ischroeder" and sign in with their CH Tracker
       // login. (Spiro's hotmail manager account uses the qwqw alias / full email.)
-      if (email && !email.includes('@')) email += '@creationhomes.com.au';
+      email = normaliseEmail(email);
       const keep = $('cs-keep') ? $('cs-keep').checked : true;
       if (!email || !pass) { msg('Enter your email/username and password.'); return; }
       $('cs-go').disabled = true;
@@ -289,6 +393,254 @@
     };
   }
 
+  // ===========================================================================
+  //  1b. Changing your password
+  // ---------------------------------------------------------------------------
+  //  Two entrances, one screen:
+  //    'change'  — signed in, knows the old password. Proves it first.
+  //    'recover' — arrived on a reset link. The recovery session IS the proof,
+  //                so there is no current-password field to fill in.
+  // ===========================================================================
+
+  // Where a reset link comes back to. No hash, no query — Supabase matches this
+  // against the project's redirect allow-list, and a URL carrying the app's own
+  // state will not match.
+  function recoveryRedirectUrl() {
+    return location.origin + location.pathname;
+  }
+
+  // Every rejection the user can fix themselves, checked before we touch the
+  // network. Order matters: say "too short" before "they don't match", or
+  // someone retypes a 4-character password three times.
+  function newPasswordProblem(next, confirm, current) {
+    if (!next) return 'Enter a new password.';
+    if (next.length < MIN_PASSWORD) return 'Your new password must be at least ' + MIN_PASSWORD + ' characters.';
+    if (current && next === current) return 'That is the password you already have — choose a different one.';
+    if (!confirm) return 'Type the new password a second time to confirm it.';
+    if (next !== confirm) return 'The two new passwords do not match.';
+    return null;
+  }
+
+  // Supabase's own wording is fine for some failures and hopeless for others.
+  // Translate the ones a supervisor on a roof will actually hit.
+  function passwordErrorText(err) {
+    const m = String((err && err.message) || err || '');
+    if (/different from the old password/i.test(m)) return 'That is the password you already have — choose a different one.';
+    if (/at least|too short|weak/i.test(m)) return 'That password is too weak — use at least ' + MIN_PASSWORD + ' characters.';
+    if (/session|jwt|token|expired|missing/i.test(m)) return 'Your sign-in has expired. Sign in again, then change your password.';
+    if (/rate|too many/i.test(m)) return 'Too many attempts — wait a few minutes and try again.';
+    if (/fetch|network|load failed|connection/i.test(m)) return 'No connection — your password was NOT changed. Try again on better signal.';
+    return m || 'Could not change your password.';
+  }
+
+  let pwOpen = false;
+  function showPasswordCard(mode) {
+    if (pwOpen) return;                 // never stack two of these
+    pwOpen = true;
+    injectStyles();
+    const recover = mode === 'recover';   // from a reset link: the session is the proof
+    const atLogin = mode === 'signin';    // from the sign-in screen: no session at all yet
+    const needsCurrent = !recover;
+    // Signed in, we read the email off the session. At the sign-in screen there
+    // is no session to read, so it has to be typed — and it is the field most
+    // likely to be the thing that's wrong, which the error wording allows for.
+    const needsEmail = atLogin;
+
+    const ov = document.createElement('div');
+    ov.id = 'cs-pw-overlay';
+    ov.innerHTML = `
+      <div id="cs-pw-card">
+        <div id="cs-brand">
+          <div id="cs-mark">CH</div>
+          <div>
+            <div class="lt">Creation Homes</div>
+            <div class="lb">DEFECT MANAGER</div>
+          </div>
+        </div>
+        <div id="cs-pglbl">${recover ? 'reset password' : 'change password'}</div>
+        <div id="cs-welcome">${recover ? 'Set a new password' : 'Change password'}</div>
+        ${needsEmail ? `
+        <span class="cs-field-lbl">Email</span>
+        <input id="cs-pw-email" type="text" autocapitalize="none" autocorrect="off" autocomplete="username"/>` : ''}
+        ${needsCurrent ? `
+        <span class="cs-field-lbl">Current password</span>
+        <input id="cs-pw-cur" type="password" autocomplete="current-password"/>` : ''}
+        <span class="cs-field-lbl">New password</span>
+        <input id="cs-pw-new" type="password" autocomplete="new-password"/>
+        <span class="cs-field-lbl">Confirm new password</span>
+        <input id="cs-pw-new2" type="password" autocomplete="new-password"/>
+        <div id="cs-pw-hint">At least ${MIN_PASSWORD} characters.</div>
+        <div id="cs-pw-warn" style="display:none"></div>
+        <label id="cs-pw-show"><input type="checkbox" id="cs-pw-eye"/> Show passwords</label>
+        <button class="cs-primary" id="cs-pw-go">${recover ? 'Set password' : 'Change password'}</button>
+        <button class="cs-ghost" id="cs-pw-cancel">${recover ? 'Back to sign in' : 'Cancel'}</button>
+        <div id="cs-pw-msg"></div>
+      </div>`;
+    document.body.appendChild(ov);
+
+    const $ = (id) => document.getElementById(id);
+    const msg = (t, ok) => { const m = $('cs-pw-msg'); m.textContent = t; m.className = ok ? 'ok' : 'err'; };
+    const close = () => { pwOpen = false; ov.remove(); };
+
+    // Carry over whatever they already typed on the sign-in screen rather than
+    // making them type it twice.
+    if (needsEmail) {
+      const typed = $('cs-email');
+      if (typed && typed.value.trim()) $('cs-pw-email').value = typed.value.trim();
+    }
+
+    // One checkbox, every password field on the card.
+    $('cs-pw-eye').onchange = (e) => {
+      const t = e.target.checked ? 'text' : 'password';
+      ['cs-pw-cur', 'cs-pw-new', 'cs-pw-new2'].forEach(id => { const el = $(id); if (el) el.type = t; });
+    };
+
+    // Changing this account's password kills the qwqw shortcut, which is a
+    // literal in this file. Better to say so than to have it stop working on
+    // site with no explanation. Signed in we know the account up front; at the
+    // sign-in screen it depends on what they type, so watch the field.
+    function warnIfAlias(email) {
+      const w = $('cs-pw-warn');
+      if (!w) return;
+      const hit = String(email || '').toLowerCase() === ALIAS_EMAIL;
+      w.style.display = hit ? 'block' : 'none';
+      w.style.color = 'var(--amber,#D87E2E)';
+      w.textContent = hit
+        ? 'Note: this is the account behind the ' + ALIAS_USER + ' shortcut. Change this password and that shortcut stops working until the app is updated.'
+        : '';
+    }
+    if (!recover && !atLogin) warnIfAlias(userEmail);
+    if (needsEmail) {
+      $('cs-pw-email').addEventListener('input', () => warnIfAlias(resolveLoginFields().email));
+      $('cs-pw-cur').addEventListener('input', () => warnIfAlias(resolveLoginFields().email));
+    }
+
+    // The sign-in screen's qwqw shortcut has to work here too, or the one
+    // account reachable ONLY by the shortcut is the one account whose password
+    // can never be changed. Expanding it here also means the "same as current"
+    // check compares against the real password, not the alias.
+    function resolveLoginFields() {
+      let email = $('cs-pw-email') ? $('cs-pw-email').value.trim() : '';
+      let cur = $('cs-pw-cur') ? $('cs-pw-cur').value : '';
+      if (email.toLowerCase() === ALIAS_USER && cur === ALIAS_USER) { email = ALIAS_EMAIL; cur = ALIAS_PASS; }
+      return { email: normaliseEmail(email), cur };
+    }
+
+    $('cs-pw-cancel').onclick = () => {
+      close();
+      // From the reset link there is no app or login screen underneath.
+      if (recover) { cleanRecoveryUrl(); showLogin(); }
+    };
+
+    // An expired or already-used reset link: there is no session behind it, so
+    // there is nothing to submit. Say that here rather than after they've typed.
+    if (recover && recoveryUrl.expired) {
+      msg('That reset link has expired or was already used. Request a new one from the sign-in screen.');
+      $('cs-pw-go').disabled = true;
+    }
+
+    $('cs-pw-go').onclick = async () => {
+      const typed = atLogin ? resolveLoginFields() : { email: null, cur: recover ? '' : $('cs-pw-cur').value };
+      const cur = typed.cur;
+      const next = $('cs-pw-new').value;
+      const next2 = $('cs-pw-new2').value;
+
+      if (atLogin && !typed.email) { msg('Enter the email or username you sign in with.'); return; }
+      if (needsCurrent && !cur) { msg('Enter your current password.'); return; }
+      const problem = newPasswordProblem(next, next2, cur);
+      if (problem) { msg(problem); return; }
+      // A password change is a server round-trip and nothing else. Failing it
+      // offline with a raw fetch error reads like the password DID change.
+      if (!navigator.onLine) { msg('You are offline — changing your password needs a connection. Nothing was changed.'); return; }
+
+      $('cs-pw-go').disabled = true;
+      $('cs-pw-cancel').disabled = true;
+      msg('Working…', true);
+      try {
+        if (needsCurrent) {
+          // Authenticate before updating. Supabase's updateUser does NOT ask for
+          // the old password, so without this anyone holding an unlocked phone
+          // could change the password and lock the real supervisor out of their
+          // jobs. From the sign-in screen this doubles as the sign-in itself.
+          let email = typed.email || userEmail;
+          if (!atLogin) {
+            try {
+              const { data } = await sb.auth.getUser();
+              if (data && data.user && data.user.email) email = data.user.email;
+            } catch (e) { /* fall back to the email we resolved at sign-in */ }
+          }
+          if (!email) throw new Error('SESSION_EXPIRED');
+          const { error: badPass } = await sb.auth.signInWithPassword({ email, password: cur });
+          if (badPass) {
+            const m = String(badPass.message || '');
+            const wrong = /invalid|credential|password/i.test(m);
+            // At the sign-in screen the EMAIL is just as likely to be the wrong
+            // half, and Supabase gives one error for both. Don't assert which.
+            msg(wrong
+              ? (atLogin ? 'That email and current password do not match an account.'
+                         : 'That is not your current password.')
+              : passwordErrorText(badPass));
+            $('cs-pw-go').disabled = false;
+            $('cs-pw-cancel').disabled = false;
+            return;
+          }
+        }
+
+        const { error } = await sb.auth.updateUser({ password: next });
+        if (error) throw error;
+
+        // Supabase keeps THIS session alive and revokes the others, so the user
+        // stays in the app here and gets asked to sign in again on their other
+        // devices. Say so — an unexplained login prompt on the iPad reads as a
+        // broken app.
+        msg('Password changed. Use it next time you sign in — your other devices will ask for it.', true);
+        $('cs-pw-cancel').disabled = false;
+        $('cs-pw-cancel').textContent = 'Done';
+        $('cs-pw-cancel').onclick = () => {
+          close();
+          if (recover || atLogin) { cleanRecoveryUrl(); enterApp(); }
+        };
+        if (recover || atLogin) {
+          // Both arrived with no app running: the reset link had none, and the
+          // sign-in screen had not got that far. The re-auth above signed them
+          // in, so open the app rather than sending them back to type the
+          // password they just set.
+          cleanRecoveryUrl();
+          setTimeout(() => { if (pwOpen) { close(); enterApp(); } }, 1800);
+        }
+      } catch (err) {
+        console.warn('[CloudSync] password change failed', err);
+        msg(passwordErrorText(err));
+        $('cs-pw-go').disabled = false;
+        $('cs-pw-cancel').disabled = false;
+      }
+    };
+  }
+
+  // Open the app after an auth path that did NOT go through the Sign in button:
+  // a finished reset, or a password changed from the sign-in screen. Both left a
+  // real session behind, so all that is missing is the login screen's own
+  // housekeeping — clearing it away and honouring "Keep me signed in".
+  function enterApp() {
+    const login = document.getElementById('cs-overlay');
+    if (login) {
+      const keep = document.getElementById('cs-keep');
+      try { localStorage.setItem('cs_keep', (keep ? keep.checked : true) ? '1' : '0'); } catch (e) {}
+      login.remove();
+    }
+    onAuthed();
+  }
+
+  // Drop the recovery tokens out of the address bar once we're done with them —
+  // they stay in history and in a shared screenshot otherwise.
+  function cleanRecoveryUrl() {
+    try {
+      if (location.hash || location.search) {
+        history.replaceState(null, '', location.pathname);
+      }
+    } catch (e) { /* replaceState blocked — harmless */ }
+  }
+
   function showStatusBar() {
     injectStyles();
     document.body.classList.add('cs-authed');
@@ -298,9 +650,11 @@
       bar.id = 'cs-statusbar';
       bar.innerHTML = `<span class="dot" id="cs-dot"></span>
         <span id="cs-status">Synced</span>
-        <span style="opacity:.7">· ${userEmail || ''}</span>
+        <span class="cs-who" style="opacity:.7">· ${userEmail || ''}</span>
+        <button id="cs-password" title="Change password" aria-label="Change password">🔑</button>
         <button id="cs-signout">Sign out</button>`;
       document.body.appendChild(bar);
+      document.getElementById('cs-password').onclick = () => showPasswordCard('change');
       document.getElementById('cs-signout').onclick = async () => {
         clearCachedIdentity();
         await sb.auth.signOut();
@@ -1029,7 +1383,13 @@
   // ===========================================================================
   //  6. Hook db.save()  — debounced, queued push
   // ===========================================================================
+  let saveHookInstalled = false;
   function installSaveHook() {
+    // onAuthed() can now run twice in one page life (sign in, or finish a
+    // password reset and open the app). Wrapping db.save a second time would
+    // double every push — same guard the direct-write hooks already carry.
+    if (saveHookInstalled) return;
+    saveHookInstalled = true;
     const origSave = db.save.bind(db);
     db.save = function () {
       origSave();                       // keep the local cache up to date
@@ -2746,6 +3106,15 @@
     commitContractor: (legacyId) => commitContractor(legacyId),
   };
 
+  // The app (index.html) only needs one thing from auth: a way to open the
+  // change-password screen from Settings. Its presence is also the signal that
+  // this build has cloud logins at all — in local-only mode the whole module
+  // returns early and this is undefined, so Settings hides the card.
+  window.CloudAuth = {
+    openChangePassword: () => showPasswordCard('change'),
+    currentEmail: () => userEmail,
+  };
+
   // ===========================================================================
   //  Lifecycle + connection listeners (attached once)
   // ===========================================================================
@@ -2877,6 +3246,14 @@
   }
 
   async function boot() {
+    // A reset link takes priority over everything. supabase-js has already
+    // exchanged its token for a session by now, so without this branch the user
+    // lands straight in the app and the password they came to reset stays as it
+    // was — the single way this whole flow silently does nothing.
+    if (recoveryUrl.isRecovery || recoveryUrl.expired) {
+      showPasswordCard('recover');
+      return;
+    }
     const { data: { session } } = await sb.auth.getSession();
     if (!session) { showLogin(); return; }
     // Validate the saved session still works (a password change elsewhere
@@ -2893,6 +3270,19 @@
       showLogin();
     }
   }
+
+  // Belt and braces for the reset link. The synchronous URL read above is the
+  // primary signal; this catches the case where supabase-js consumed the
+  // fragment before we looked. showPasswordCard() refuses to stack, so whichever
+  // path arrives second is a no-op.
+  try {
+    sb.auth.onAuthStateChange((event) => {
+      if (event !== 'PASSWORD_RECOVERY') return;
+      const login = document.getElementById('cs-overlay');
+      if (login) login.remove();
+      showPasswordCard('recover');
+    });
+  } catch (e) { /* older supabase-js without the listener — the URL read covers it */ }
 
   // Wait until the app's globals exist (db/render are defined in index.html).
   function whenReady() {

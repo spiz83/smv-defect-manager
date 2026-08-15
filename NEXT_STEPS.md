@@ -1,7 +1,85 @@
 # Next Steps / Handover
 
 STATUS: Active — mid-incident
-LAST UPDATED: 2026-08-12
+LAST UPDATED: 2026-08-15
+
+## Change your password (2026-08-15) — build `2026-08-15a`, branch `claude/password-change-review-4egsv5`
+**NOT DEPLOYED.** Built, all four gates green (18 suites), pushed to the branch.
+Deploying is a stop-and-ask per AGENT_INSTRUCTIONS, and this one has two
+dashboard settings to make first (below).
+
+**The feature did not exist.** Not broken — absent. `cloud-sync.js` could sign
+in, sign up and sign out, and that was all. A supervisor who forgot or leaked a
+password had to have Spiro reset it with `scripts/setup-manager.mjs`.
+
+Now there are **three entrances to one card**, plus the reset email:
+
+| From | Mode | Fields | Session needed |
+|---|---|---|---|
+| 🔑 status bar, Settings → Your login | `change` | current, new, confirm | yes |
+| Sign-in screen → "Change password" | `signin` | **email**, current, new, confirm | no |
+| The link in a reset email | `recover` | new, confirm | the link is the session |
+
+Reasoning in DECISIONS.md. What will bite a later change:
+
+- **The sign-in-screen entrance is the one to be careful with.** It sits in
+  front of the app with no session behind it. Take away its current-password
+  step and it stops being a way to change a password and becomes a way IN —
+  a complete authentication bypass reachable from the login screen. It signs in
+  with the old password *first*; that sign-in is the proof. `tests/pass.mjs`
+  fires a valid email with a wrong password at it and asserts nothing changed
+  and the app did not open. Never weaken that check.
+- **One message for a wrong email and a wrong password**, deliberately —
+  otherwise the screen is an account checker for anyone with the URL.
+- **`enterApp()` is shared by the `signin` and `recover` paths.** Both finish
+  holding a real session with no app running. It does the login screen's
+  housekeeping and calls `onAuthed()` — which is why `installSaveHook()` needs
+  its guard (below).
+
+- **The recovery fragment is read SYNCHRONOUSLY, right after `createClient`,
+  and nothing may move it later.** supabase-js's `detectSessionInUrl` exchanges
+  the token and rewrites the address bar on its own schedule. Read it after
+  that and a reset link is indistinguishable from a normal signed-in boot — the
+  user lands in the app and the password they came to change is untouched, with
+  no error anywhere. `boot()` checks `recoveryUrl` **before** it checks the
+  session, in that order, deliberately. `tests/pass.mjs` fails if that flips.
+- **`updateUser` is never called without re-authenticating first.** Supabase
+  does not ask for the old password. Drop the `signInWithPassword` step and an
+  unlocked phone is enough to lock a supervisor out of their own jobs.
+- **All five refusals resolve before the network** and the suite asserts zero
+  `updateUser` calls across them. Auth endpoints rate-limit; spending the
+  allowance on requests that cannot succeed is how someone gets locked out for
+  an hour.
+- **`installSaveHook()` now has an idempotency guard and needs it.** Finishing
+  a reset re-enters `onAuthed()`, so it can run twice in one page life. Without
+  the guard `db.save` gets wrapped twice and every later edit pushes twice.
+  The check that catches this counts `cs_dirty` writes, NOT `defectTrackerDB`
+  ones — the second wrapper calls the first, so the underlying save still runs
+  once and a count of those stays at 1 either way.
+- **`ALIAS_USER` / `ALIAS_EMAIL` / `ALIAS_PASS` are the `qwqw` shortcut, in one
+  place now.** Change that account's password and the shortcut stops working;
+  the card warns when that account is signed in.
+
+### TWO DASHBOARD STEPS BEFORE THE RESET EMAIL WORKS
+The in-app change (🔑 / Settings) needs **neither** and works as soon as this
+ships. Only "Forgot your password?" depends on these:
+
+1. **Redirect allow-list** — Supabase → Authentication → URL Configuration →
+   Redirect URLs. Add `https://smv-defect-manager.vercel.app/index.html` and the
+   GitHub Pages URL. The app sends `location.origin + location.pathname` as
+   `redirectTo`; anything not on that list is refused and the link bounces to
+   the site root with an error.
+2. **SMTP** — the built-in free-tier sender is rate-limited to a handful of
+   messages an hour and lands in spam. Until a real SMTP provider is configured
+   under Authentication → Emails, treat the reset email as best-effort. The
+   card's failure message already tells the user to ask their manager instead.
+
+### ONE THING FOR SPIRO TO DECIDE
+A working manager password (`ALIAS_PASS`) ships in `cloud-sync.js`, which is
+public static JavaScript — anyone who opens the file has the manager login. It
+predates this change and was left exactly as it was, because removing the
+`qwqw` shortcut uninvited would take away a login Spiro uses daily. Worth a
+decision, not a quiet fix.
 
 ## 📋 Copy address on the job header (2026-08-12) — build `2026-08-12c`
 **DEPLOYED 2026-08-12** — Vercel verified serving `deffixer-shell-2026-08-12c`,

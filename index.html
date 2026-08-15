@@ -3502,6 +3502,16 @@
                             <button onclick="clearAllDefects()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--red, #b3261e); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">Clear all defects</button>
                         </div>` : ''}
 
+                        <!-- Your login. Only shown when this build has cloud logins:
+                             in local-only mode cloud-sync.js returns early and never
+                             defines CloudAuth, so there is no password to change. -->
+                        ${window.CloudAuth ? `
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                            <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">🔑 Your login</div>
+                            <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Signed in as <strong>${window.CloudAuth.currentEmail() || 'this device'}</strong>. Changing your password signs you out on your other devices.</div>
+                            <button onclick="window.CloudAuth.openChangePassword()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--blue, #2563eb); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">Change password</button>
+                        </div>` : ''}
+
                         <!-- Themes -->
                         <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
                             <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">🎨 Themes</div>
@@ -11407,7 +11417,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-12c';
+        const APP_VERSION = '2026-08-15a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11481,7 +11491,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-12c"></script>
+    <script src="cloud-sync.js?v=2026-08-15a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

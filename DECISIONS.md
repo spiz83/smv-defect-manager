@@ -1,6 +1,127 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-12 (d) — the location label, second pass: quiet and lower case
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (b) — change it from the sign-in screen too
+
+- **Decision:** "Change password · Forgot it?" under Sign in. The first opens the
+  same card in a third mode: email + current + new + confirm, with no session
+  needed. Asked for directly ("ability to change password inside the log in").
+- **Why it is worth a third entrance:** the other two both assume you got in.
+  A supervisor who thinks their password has been seen — shoulder-surfed on
+  site, typed into a shared phone — wants it changed *before* it is used again,
+  not after signing in with it. And with SMTP unconfigured (see NEXT_STEPS) the
+  reset email is best-effort, so this is the only self-service route that works
+  today for someone who knows their password and simply wants a different one.
+- **The current password is still mandatory here, and that is the whole
+  security argument.** This screen sits in front of the app with no session
+  behind it, so if it took only an email and a new password it would be a
+  complete authentication bypass — a way in, not a way to change something.
+  It signs in with the old password first and only then updates; that sign-in
+  IS the proof. `tests/pass.mjs` fires a real email with a wrong password at it
+  and asserts nothing changed and the app did not open.
+- **One error message for a wrong email and a wrong password.** Supabase returns
+  the same error for both, and so do we: "That email and current password do not
+  match an account." Splitting them would turn this screen into an account
+  checker for anyone with the URL — the same reasoning as the reset reply.
+- **It opens the app afterwards instead of bouncing back to Sign in.** They
+  authenticated on the way through; sending them back to type the password they
+  set ten seconds ago is a step with no purpose. `enterApp()` does the login
+  screen's own housekeeping (honour "Keep me signed in", clear the overlay) and
+  hands off to `onAuthed()` — the same helper the reset link now uses.
+- **The `qwqw` shortcut works on this card too.** Not supporting it would make
+  the one account reachable *only* by the shortcut the one account whose
+  password can never be changed. It is not a new exposure — anyone who knows
+  `qwqw/qwqw` can already sign in and use Settings. Expanding the alias here
+  also means "same as your current password" compares against the real one.
+  The amber warning now watches the email field and appears as you type it.
+- **Trade-off accepted:** three entrances to one screen is more surface than a
+  settings page alone. They collapse to one function with three modes and one
+  test suite, and each covers a state the others cannot reach — signed in, at
+  the door, and locked out.
+
+## 2026-08-15 — you can change your password
+
+- **The finding first: there was no way to change a password.** Not a broken
+  one — none. `cloud-sync.js` had `signInWithPassword`, `signUp` and `signOut`,
+  and nothing else. Three places in the file already carried comments reasoning
+  about what happens "e.g. password changed", so the consequences of a change
+  had been thought about; the change itself was never built. A supervisor whose
+  password leaked, or who forgot it, had exactly one option: ask Spiro to run
+  `scripts/setup-manager.mjs` against the Management API.
+- **Decision:** two entrances, one screen. 🔑 in the status bar next to Sign
+  out, and a "Your login" card in Settings. Both open the same card.
+  Current / new / confirm, one "Show passwords" checkbox for all three.
+
+- **It asks for the current password, and Supabase does not.**
+  `auth.updateUser({ password })` needs only a live session. Left at that, an
+  unlocked phone on a site table is enough for anyone to change a supervisor's
+  password and lock them out of their own jobs. So the card re-authenticates
+  with `signInWithPassword` first and only then calls `updateUser`. A failed
+  re-auth leaves the existing session alone — `tests/pass.mjs` checks you are
+  still in the app after getting it wrong, because a "verify" step that signs
+  you out on a typo is worse than none.
+- **Eight characters, checked here, not six from the server.** Supabase's
+  default floor is 6. These logins reach every job on every site; 8 is the
+  floor this app enforces and says out loud under the field.
+- **Nothing that will be rejected is sent.** All five refusals — no current
+  password, wrong current password, under 8, mismatched confirmation, same as
+  the one you have — resolve before the network. Auth endpoints rate-limit, and
+  the way to get locked out for an hour is to spend the allowance on requests
+  that were never going to succeed. The suite asserts `updateUser` was called
+  zero times across all five.
+- **Offline is refused with a sentence, not a fetch error.** A password change
+  is a server round-trip and nothing else — there is no outbox for it and there
+  should not be. "You are offline… Nothing was changed" is the whole story.
+- **The success message says the other devices will ask again.** Supabase keeps
+  the session that made the change and revokes the rest. The iPad in the ute
+  asking for a login an hour later is correct behaviour, and unexplained it
+  reads as a broken app. `boot()` already handled the receiving end of this
+  (`SESSION_EXPIRED` → clear → login) — that path was written for exactly this
+  event and had never had an event to receive.
+
+- **Forgot password reads the URL before supabase-js eats it.** This is the one
+  that would have silently done nothing. `detectSessionInUrl` is on by default:
+  by the time our code looks, the recovery token in the fragment has been
+  exchanged for a real session and the address bar rewritten. A `boot()` that
+  only asks "is there a session?" therefore drops the user straight into the
+  app with the password they came to reset unchanged — no error, no clue. So
+  the fragment is read **synchronously, immediately after `createClient`**, and
+  `boot()` branches on that before it looks at the session at all. The
+  `PASSWORD_RECOVERY` listener is a second belt, not the mechanism.
+- **The reset reply is the same whether the account exists or not.** "If
+  <address> has an account, a reset link is on its way." An "unknown email"
+  reply tells a stranger which company logins are real. A *send failure* is
+  still reported, though — "check your email" for an email that was never sent
+  is the worst of both.
+- **The username shorthand had to be shared, not re-typed.** Sign-in expands
+  `ischroeder` to `ischroeder@creationhomes.com.au`. That rule now lives in
+  `normaliseEmail()` and the reset path calls it, because a reset addressed to
+  a bare username goes nowhere and reports success.
+- **Tokens are wiped from the address bar** with `history.replaceState` once
+  used — they otherwise sit in history and in any screenshot of the phone.
+
+- **`installSaveHook()` gained an idempotency guard.** Finishing a reset opens
+  the app through `onAuthed()`, which is now reachable twice in one page life.
+  It wraps `db.save`, and a second wrapper repeats the push half of every later
+  edit. `installDirectWriteHooks` already had this guard; `installSaveHook`
+  did not.
+- **Changing the manager's password kills the `qwqw` shortcut, and the card
+  says so.** `qwqw/qwqw` is a literal pair in `cloud-sync.js` pointing at
+  `svladimiroski@hotmail.com`. Change that account's password and the shortcut
+  breaks with no explanation. The three copies of those literals were collapsed
+  into `ALIAS_USER` / `ALIAS_EMAIL` / `ALIAS_PASS` so they cannot drift, and the
+  card warns when that account is the one signed in. **The alias itself is left
+  alone**: it is a deliberate feature, Spiro uses it, and removing it uninvited
+  would take away a login. It does mean a working manager password ships in
+  client-side source — flagged in NEXT_STEPS as a decision for Spiro, not one
+  to make on his behalf.
+- **Trade-off accepted:** the re-authentication doubles the round trips of a
+  password change, and a supervisor on bad signal feels it. Worth it — the
+  alternative is a change that needs no proof of who is holding the phone.
+- **Trade-off accepted:** the reset-email half depends on two Supabase dashboard
+  settings this repo cannot set (redirect allow-list, SMTP). The in-app change,
+  which is what was asked for, depends on neither and works today.
+
+## 2026-08-12 (d) — the location label, second pass: quiet and lower case
 
 - **Decision:** `BPI #3 (p.3) - kit: Seal gaps to flooring at dishwasher
   opening`. Lower-case code, normal weight, a plain hyphen after the reference
