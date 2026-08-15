@@ -20,6 +20,8 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-15 — Re-stamped to `2026-08-15b` to force every phone to refetch the
+  shell. No code change — four stamp lines only.
 - 2026-08-15 — Shipped build `2026-08-15a`. Vercel verified; live files hashed
   byte-identical to the tested tree.
 - 2026-08-15 — Users can change their own password. Three entrances to one card:

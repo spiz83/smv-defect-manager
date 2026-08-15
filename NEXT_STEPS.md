@@ -3,8 +3,15 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
-## Change your password (2026-08-15) — build `2026-08-15a`
-**DEPLOYED 2026-08-15** — merged to `main`; Vercel verified serving
+## Change your password (2026-08-15) — build `2026-08-15b`
+**RE-STAMPED to `2026-08-15b` 2026-08-15** — no code change whatsoever, only the
+four version stamps. Asked for deliberately, to force every phone still holding
+the previous shell to refetch tonight rather than whenever it next reopens.
+`git diff 2026-08-15a..b` on the app files is four lines, all of them the stamp.
+Do this sparingly: a bumped CACHE re-downloads the shell for every supervisor,
+which is the cost the version scheme exists to control.
+
+**Originally deployed as `2026-08-15a` 2026-08-15** — merged to `main`; Vercel verified serving
 `deffixer-shell-2026-08-15a`, `APP_VERSION 2026-08-15a`, `cs-change-link` and
 `showPasswordCard`. All three of `index.html`, `cloud-sync.js` and `sw.js` were
 hashed against the working tree the gates ran on and are byte-identical, so the
