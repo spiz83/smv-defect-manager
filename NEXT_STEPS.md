@@ -3,10 +3,23 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
-## Change your password (2026-08-15) — build `2026-08-15a`, branch `claude/password-change-review-4egsv5`
-**NOT DEPLOYED.** Built, all four gates green (18 suites), pushed to the branch.
-Deploying is a stop-and-ask per AGENT_INSTRUCTIONS, and this one has two
-dashboard settings to make first (below).
+## Change your password (2026-08-15) — build `2026-08-15a`
+**DEPLOYED 2026-08-15** — merged to `main`; Vercel verified serving
+`deffixer-shell-2026-08-15a`, `APP_VERSION 2026-08-15a`, `cs-change-link` and
+`showPasswordCard`. All three of `index.html`, `cloud-sync.js` and `sw.js` were
+hashed against the working tree the gates ran on and are byte-identical, so the
+live app is the tested app. Supervisors get the new shell on their next
+background/reopen (the SW waits on `isBusyEditing`).
+
+GitHub Pages is **unverified** — the agent sandbox's proxy blocks `*.github.io`
+and the Pages API. There is no workflow file, so it is branch-deploy mode and
+the push is all it needs; worth an eyeball from a normal browser if anyone uses
+that copy.
+
+The Vercel CLI is **not** how this shipped: `VERCEL_TOKEN` is stale and the CLI
+died with `Not able to load user … (404)`, but the project is git-linked and had
+already built from the push. Renew the token or delete it — a dead token that
+looks like a deploy failure is worse than no token. The deploy skill now says so.
 
 **The feature did not exist.** Not broken — absent. `cloud-sync.js` could sign
 in, sign up and sign out, and that was all. A supervisor who forgot or leaked a

@@ -1,10 +1,13 @@
 # Tasks
 
 ## Current sprint
-- [ ] Deploy build `2026-08-15a` (change password). Built and green on
-      `claude/password-change-review-4egsv5`, waiting on the go-ahead.
+- [ ] Watch the first supervisor who changes their password: the other-devices
+      warning is the part most likely to be misread on site.
 
 ## Backlog (prioritised, top = next)
+- [ ] Renew or delete `VERCEL_TOKEN` — it is stale, and a CLI that dies with
+      "User not found" during a deploy reads as a failed deploy when the
+      git-linked build has already shipped.
 - [ ] Add the app URLs to the Supabase redirect allow-list and configure SMTP,
       or "Forgot your password?" cannot deliver — see "TWO DASHBOARD STEPS" in
       NEXT_STEPS.md. The in-app change works without either.
@@ -17,6 +20,8 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-15 — Shipped build `2026-08-15a`. Vercel verified; live files hashed
+  byte-identical to the tested tree.
 - 2026-08-15 — Users can change their own password. Three entrances to one card:
   🔑 in the status bar, Settings → Your login, and "Change password" on the
   sign-in screen itself (no session needed — the current password is the proof).

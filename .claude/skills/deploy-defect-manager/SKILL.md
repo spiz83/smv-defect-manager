@@ -22,33 +22,67 @@ The `cloud-sync.js?v=` query string uses the **same date+letter** (without the
 ## Steps (do these in order)
 
 1. **Find the current version:** `grep -n "deffixer-shell" sw.js`.
-2. **Bump it in THREE places — they must all match:**
+2. **Bump it in FOUR places — they must all match.** This said THREE until
+   2026-08-15 and was wrong: `tests/run.sh` gate 4 checks four, and following
+   the old list left `APP_VERSION` behind on the previous build.
    - `sw.js`: the `const CACHE = 'deffixer-shell-…'` line.
    - `sw.js`: the `./cloud-sync.js?v=…` entry in the `CORE` precache array
      (THIS ONE IS EASY TO FORGET — twice it lagged and the fix looked unshipped).
+   - `index.html`: the `const APP_VERSION = '…'` line.
    - `index.html`: the `<script src="cloud-sync.js?v=…">` tag.
    Use sed for all at once, e.g.:
    ```bash
    sed -i "s/deffixer-shell-OLD/deffixer-shell-NEW/" sw.js
+   sed -i "s/APP_VERSION = 'OLD'/APP_VERSION = 'NEW'/" index.html
    sed -i "s|cloud-sync.js?v=OLD|cloud-sync.js?v=NEW|g" sw.js index.html
    ```
-3. **Sanity-check JS** (if cloud-sync.js or the inline app script changed):
-   `node --check cloud-sync.js`. For inline index.html script, extract it and
-   `new Function(body)` to confirm it parses.
-4. **Commit + push** (push auto-deploys GitHub Pages):
-   `git add -A && git commit -m "…" && git push`
-   End commit messages with `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
-5. **Deploy to Vercel** (what supervisors actually use):
-   `npx vercel deploy --prod --yes --scope spiro-vladimiroskis-projects`
-6. **Verify live** (always — don't trust the deploy log alone):
+3. **Run the gates — all four, not `quick`:** `./tests/run.sh` (~4 min). This
+   supersedes a bare `node --check`: gate 1 parses every inline block AND
+   cloud-sync.js, gate 2 catches identifiers that resolve to nothing, gate 3 is
+   18 behaviour suites, and gate 4 confirms step 2 hit all four stamps. Do not
+   push `main` on red — a supervisor is on site with the result in ten minutes.
+4. **Merge to `main` and push.** Pushing `main` is what deploys — **Vercel is
+   git-linked and builds on the push**, and GitHub Pages publishes from the
+   branch. Work done on a feature branch has to land on `main` to ship.
+   `git checkout main && git merge --no-ff <branch> && git push -u origin main`
+5. **The Vercel CLI is usually unnecessary — check before reaching for it.**
+   Poll the live URL first (step 6); the git-linked build normally lands within
+   a minute. Only if it has not:
+   `npx vercel deploy --prod --yes --token "$VERCEL_TOKEN" --scope spiro-vladimiroskis-projects`
+   On 2026-08-15 the CLI failed with `Not able to load user … (404)` — a stale
+   `VERCEL_TOKEN` — while the git-linked deploy had already shipped. A CLI
+   failure is NOT evidence the deploy failed. Verify before believing it.
+6. **Verify live** (always — don't trust the deploy log alone). Check all four
+   stamps plus something unique to THIS change:
    ```bash
-   curl -s "https://smv-defect-manager.vercel.app/sw.js?nc=$(date +%s)" | grep -o "deffixer-shell-NEW"
-   curl -s "https://smv-defect-manager.vercel.app/cloud-sync.js?nc=$(date +%s)" | grep -o "<a unique string from your change>"
+   B=https://smv-defect-manager.vercel.app; N=$(date +%s%N)
+   curl -s "$B/sw.js?nc=$N"    | grep -o "deffixer-shell-NEW"
+   curl -s "$B/sw.js?nc=$N"    | grep -o "cloud-sync.js?v=NEW"
+   curl -s "$B/index.html?nc=$N" | grep -o "APP_VERSION = 'NEW'"
+   curl -s "$B/index.html?nc=$N" | grep -o "cloud-sync.js?v=NEW"
+   curl -s "$B/cloud-sync.js?v=NEW&nc=$N" | grep -o "<a unique string from your change>"
    ```
-   Both must return a hit. The `?nc=timestamp` busts any CDN/browser cache.
+   All must return a hit. `?nc=timestamp` busts any CDN/browser cache.
+7. **Prove the live bytes are the tested bytes.** Strongest check available, and
+   it takes seconds — download what is being served and hash it against the
+   working tree the gates just ran on:
+   ```bash
+   D=$(mktemp -d); N=$(date +%s%N)
+   for f in index.html cloud-sync.js sw.js; do curl -s "$B/$f?nc=$N" -o $D/$f; done
+   for f in index.html cloud-sync.js sw.js; do
+     [ "$(sha256sum $D/$f|cut -c1-16)" = "$(sha256sum $f|cut -c1-16)" ] \
+       && echo "$f IDENTICAL" || echo "$f DIFFERS"; done
+   ```
+   Driving the live site with Playwright does NOT work from the agent sandbox —
+   the proxy resets Chromium's connection. This hash check is the substitute,
+   and it is a better one.
 
 ## Notes
 - Vercel scope: `spiro-vladimiroskis-projects`. Project: `smv-defect-manager`.
 - If `npx vercel` prompts to link, run with the `--scope` flag (already above).
 - The SW auto-applies updates but waits while the user is mid-edit (isBusyEditing),
   so a supervisor may need to background/reopen the app once to get the new shell.
+- **GitHub Pages cannot be verified from the agent sandbox** — the proxy blocks
+  `*.github.io` and the Pages API path. There is no `.github/workflows`, so
+  Pages is branch-deploy mode and needs nothing beyond the push. Report it as
+  unverified rather than assuming either way; Vercel is the copy supervisors use.
