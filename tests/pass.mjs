@@ -442,6 +442,120 @@ console.log('\n=== on a phone ===');
 }
 
 // ===========================================================================
+//  E2. Changing it from the SIGN-IN screen, without signing in first. The email
+//      has to be typed here (there is no session to read it from), which makes
+//      this the one entrance that could become a way IN rather than a way to
+//      change something. It must still refuse without the current password.
+// ===========================================================================
+console.log('\n=== change it from the sign-in screen ===');
+{
+  const { ctx, page, errs } = await open();
+  await page.waitForSelector('#cs-overlay');
+
+  check('the sign-in screen offers it', await page.isVisible('#cs-change-link'));
+  // Two links on one line inside a 360px card. This repo has form: the toolbar
+  // and the search row both ate their own layout by gaining one more control.
+  const row = await page.evaluate(() => {
+    const d = document.getElementById('cs-forgot');
+    const a = document.getElementById('cs-change-link').getBoundingClientRect();
+    const b = document.getElementById('cs-forgot-link').getBoundingClientRect();
+    const card = document.getElementById('cs-card').getBoundingClientRect();
+    return { h: d.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(d).lineHeight) || 16,
+             sameLine: Math.abs(a.top - b.top) < 2, left: a.left - card.left, right: card.right - b.right };
+  });
+  console.log('  link row:', JSON.stringify(row));
+  check('both links sit on ONE line, inside the card',
+    row.sameLine && row.h < row.lh * 1.6 && row.left > 0 && row.right > 0, JSON.stringify(row));
+  await page.fill('#cs-email', 'ischroeder');       // typed before opening the card
+  await page.click('#cs-change-link');
+  await page.waitForSelector('#cs-pw-overlay', { timeout: 5000 });
+
+  check('it asks for the email as well as the passwords',
+    await page.isVisible('#cs-pw-email') && await page.isVisible('#cs-pw-cur'));
+  check('…and carries over what was already typed',
+    await page.inputValue('#cs-pw-email') === 'ischroeder');
+  check('…and sits above the sign-in screen', await page.evaluate(() => {
+    const el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+    return !!(el && el.closest('#cs-pw-overlay'));
+  }));
+
+  // THE ONE THAT MATTERS: this must not be a back door. A real email with a
+  // wrong current password gets in nowhere.
+  await page.fill('#cs-pw-cur', 'notmypassword');
+  await page.fill('#cs-pw-new', NEW_PASS);
+  await page.fill('#cs-pw-new2', NEW_PASS);
+  await page.click('#cs-pw-go');
+  await page.waitForTimeout(400);
+  const refused = await page.textContent('#cs-pw-msg');
+  console.log('  message:', JSON.stringify(refused));
+  check('a wrong current password changes nothing', await stored(page) === OLD_PASS, await stored(page));
+  check('…and does not let them into the app', !(await page.isVisible('#cs-statusbar')));
+  check('…and does not guess which half was wrong',
+    /do not match an account/i.test(refused || ''), JSON.stringify(refused));
+
+  // An unknown email is the same message — this screen must not confirm which
+  // company logins exist any more than the reset email does.
+  await page.fill('#cs-pw-email', 'nosuchperson');
+  await page.fill('#cs-pw-cur', OLD_PASS);
+  await page.click('#cs-pw-go');
+  await page.waitForTimeout(400);
+  check('an unknown email gets the SAME message, not "no such user"',
+    (await page.textContent('#cs-pw-msg') || '') === refused,
+    JSON.stringify(await page.textContent('#cs-pw-msg')));
+
+  // Now the real thing. The username shorthand has to expand here too.
+  await page.fill('#cs-pw-email', 'ischroeder');
+  await page.fill('#cs-pw-cur', OLD_PASS);
+  await page.fill('#cs-pw-new', NEW_PASS);
+  await page.fill('#cs-pw-new2', NEW_PASS);
+  await page.click('#cs-pw-go');
+  await page.waitForTimeout(400);
+  const done = await page.textContent('#cs-pw-msg');
+  console.log('  message:', JSON.stringify(done));
+  check('the right current password changes it', /changed/i.test(done || ''), JSON.stringify(done));
+  check('…and "ischroeder" was expanded to the full address',
+    await page.evaluate(() => window.__auth.signInCalls.slice(-1)[0].email) === EMAIL);
+  check('…and the stored password is the new one', await stored(page) === NEW_PASS);
+
+  // They authenticated on the way through, so they should land in the app
+  // rather than be sent back to type the password they just set.
+  await page.waitForSelector('#cs-statusbar', { timeout: 20000 });
+  check('…and it opens the app, already signed in',
+    await page.isVisible('#cs-statusbar') && !(await page.isVisible('#cs-overlay')));
+
+  // And the new password genuinely works on a cold sign-in afterwards.
+  await page.click('#cs-signout');
+  await page.waitForSelector('#cs-overlay', { timeout: 20000 });
+  await signIn(page, NEW_PASS);
+  await page.waitForSelector('#cs-statusbar', { timeout: 20000 });
+  check('the password set from the sign-in screen works on a fresh sign-in',
+    await page.isVisible('#cs-statusbar'));
+
+  const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));
+  console.log('errors:', bad.length ? bad : 'none');
+  if (bad.length) fail.push('errors (change at sign-in)');
+  await ctx.close();
+}
+
+// Cancelling out of it must leave the sign-in screen exactly as it was.
+{
+  const { ctx, page } = await open();
+  await page.waitForSelector('#cs-overlay');
+  await page.click('#cs-change-link');
+  await page.waitForSelector('#cs-pw-overlay');
+  await page.fill('#cs-pw-cur', OLD_PASS);
+  await page.fill('#cs-pw-new', 'abandoned1234');
+  await page.click('#cs-pw-cancel');
+  await page.waitForTimeout(250);
+  check('Cancel returns to the sign-in screen',
+    !(await page.isVisible('#cs-pw-overlay')) && await page.isVisible('#cs-overlay'));
+  check('…having changed nothing', await stored(page) === OLD_PASS && await updates(page) === 0);
+  await signInAndBoot(page, OLD_PASS);
+  check('…and you can still sign in normally', await page.isVisible('#cs-statusbar'));
+  await ctx.close();
+}
+
+// ===========================================================================
 //  F. Forgotten it entirely — the reset email.
 // ===========================================================================
 console.log('\n=== forgot password ===');
@@ -487,10 +601,12 @@ console.log('\n=== forgot password ===');
   await page.evaluate(() => { window.__auth.resetError = null; });
   await page.click('#cs-switch');
   await page.waitForTimeout(150);
-  check('the link is hidden on the Create account screen', !(await page.isVisible('#cs-forgot-link')));
+  check('both links are hidden on the Create account screen',
+    !(await page.isVisible('#cs-forgot-link')) && !(await page.isVisible('#cs-change-link')));
   await page.click('#cs-switch');
   await page.waitForTimeout(150);
-  check('…and comes back on Sign in', await page.isVisible('#cs-forgot-link'));
+  check('…and both come back on Sign in',
+    await page.isVisible('#cs-forgot-link') && await page.isVisible('#cs-change-link'));
 
   await ctx.close();
 }

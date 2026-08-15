@@ -12,11 +12,29 @@ dashboard settings to make first (below).
 in, sign up and sign out, and that was all. A supervisor who forgot or leaked a
 password had to have Spiro reset it with `scripts/setup-manager.mjs`.
 
-Now: 🔑 in the status bar and a "Your login" card in Settings both open a
-current / new / confirm screen; "Forgot your password?" on the sign-in screen
-sends a Supabase reset email; the link in that email lands back on the app and
-opens "Set a new password". Reasoning in DECISIONS.md. What will bite a later
-change:
+Now there are **three entrances to one card**, plus the reset email:
+
+| From | Mode | Fields | Session needed |
+|---|---|---|---|
+| 🔑 status bar, Settings → Your login | `change` | current, new, confirm | yes |
+| Sign-in screen → "Change password" | `signin` | **email**, current, new, confirm | no |
+| The link in a reset email | `recover` | new, confirm | the link is the session |
+
+Reasoning in DECISIONS.md. What will bite a later change:
+
+- **The sign-in-screen entrance is the one to be careful with.** It sits in
+  front of the app with no session behind it. Take away its current-password
+  step and it stops being a way to change a password and becomes a way IN —
+  a complete authentication bypass reachable from the login screen. It signs in
+  with the old password *first*; that sign-in is the proof. `tests/pass.mjs`
+  fires a valid email with a wrong password at it and asserts nothing changed
+  and the app did not open. Never weaken that check.
+- **One message for a wrong email and a wrong password**, deliberately —
+  otherwise the screen is an account checker for anyone with the URL.
+- **`enterApp()` is shared by the `signin` and `recover` paths.** Both finish
+  holding a real session with no app running. It does the login screen's
+  housekeeping and calls `onAuthed()` — which is why `installSaveHook()` needs
+  its guard (below).
 
 - **The recovery fragment is read SYNCHRONOUSLY, right after `createClient`,
   and nothing may move it later.** supabase-js's `detectSessionInUrl` exchanges

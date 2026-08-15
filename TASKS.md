@@ -17,9 +17,11 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
-- 2026-08-15 — Users can change their own password: 🔑 in the status bar, a card
-  in Settings, "Forgot your password?" on sign-in, and the reset link lands back
-  in the app. It did not exist before. `tests/pass.mjs`. Build `2026-08-15a`.
+- 2026-08-15 — Users can change their own password. Three entrances to one card:
+  🔑 in the status bar, Settings → Your login, and "Change password" on the
+  sign-in screen itself (no session needed — the current password is the proof).
+  Plus "Forgot it?" and the reset link landing back in the app. None of it
+  existed before. `tests/pass.mjs`. Build `2026-08-15a`.
 - 2026-08-12 — 📋 Copy address on the View Defects job header too. Build `2026-08-12c`.
 - 2026-08-12 — 📋 Copy address on the top-search rows. `tests/addrcopy.mjs`.
   Shipped as build `2026-08-12b`.

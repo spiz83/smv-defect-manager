@@ -292,7 +292,7 @@
         </label>
         <button class="cs-primary" id="cs-go">Sign in</button>
         <div id="cs-msg"></div>
-        <div id="cs-forgot"><a id="cs-forgot-link">Forgot your password?</a></div>
+        <div id="cs-forgot"><a id="cs-change-link">Change password</a> · <a id="cs-forgot-link">Forgot it?</a></div>
         <div id="cs-toggle">No account? <a id="cs-switch">Create one</a></div>
       </div>`;
     document.body.appendChild(ov);
@@ -315,6 +315,9 @@
         msg('');
       }
       if (e.target && e.target.id === 'cs-forgot-link') sendReset();
+      // Change it here and now, without signing in first. The card takes the
+      // email + current password, which IS the sign-in, then sets the new one.
+      if (e.target && e.target.id === 'cs-change-link') { msg(''); showPasswordCard('signin'); }
     });
 
     // ---- Forgot password -----------------------------------------------------
@@ -435,7 +438,13 @@
     if (pwOpen) return;                 // never stack two of these
     pwOpen = true;
     injectStyles();
-    const recover = mode === 'recover';
+    const recover = mode === 'recover';   // from a reset link: the session is the proof
+    const atLogin = mode === 'signin';    // from the sign-in screen: no session at all yet
+    const needsCurrent = !recover;
+    // Signed in, we read the email off the session. At the sign-in screen there
+    // is no session to read, so it has to be typed — and it is the field most
+    // likely to be the thing that's wrong, which the error wording allows for.
+    const needsEmail = atLogin;
 
     const ov = document.createElement('div');
     ov.id = 'cs-pw-overlay';
@@ -450,14 +459,18 @@
         </div>
         <div id="cs-pglbl">${recover ? 'reset password' : 'change password'}</div>
         <div id="cs-welcome">${recover ? 'Set a new password' : 'Change password'}</div>
-        ${recover ? '' : `
+        ${needsEmail ? `
+        <span class="cs-field-lbl">Email</span>
+        <input id="cs-pw-email" type="text" autocapitalize="none" autocorrect="off" autocomplete="username"/>` : ''}
+        ${needsCurrent ? `
         <span class="cs-field-lbl">Current password</span>
-        <input id="cs-pw-cur" type="password" autocomplete="current-password"/>`}
+        <input id="cs-pw-cur" type="password" autocomplete="current-password"/>` : ''}
         <span class="cs-field-lbl">New password</span>
         <input id="cs-pw-new" type="password" autocomplete="new-password"/>
         <span class="cs-field-lbl">Confirm new password</span>
         <input id="cs-pw-new2" type="password" autocomplete="new-password"/>
         <div id="cs-pw-hint">At least ${MIN_PASSWORD} characters.</div>
+        <div id="cs-pw-warn" style="display:none"></div>
         <label id="cs-pw-show"><input type="checkbox" id="cs-pw-eye"/> Show passwords</label>
         <button class="cs-primary" id="cs-pw-go">${recover ? 'Set password' : 'Change password'}</button>
         <button class="cs-ghost" id="cs-pw-cancel">${recover ? 'Back to sign in' : 'Cancel'}</button>
@@ -469,7 +482,14 @@
     const msg = (t, ok) => { const m = $('cs-pw-msg'); m.textContent = t; m.className = ok ? 'ok' : 'err'; };
     const close = () => { pwOpen = false; ov.remove(); };
 
-    // One checkbox, all three fields.
+    // Carry over whatever they already typed on the sign-in screen rather than
+    // making them type it twice.
+    if (needsEmail) {
+      const typed = $('cs-email');
+      if (typed && typed.value.trim()) $('cs-pw-email').value = typed.value.trim();
+    }
+
+    // One checkbox, every password field on the card.
     $('cs-pw-eye').onchange = (e) => {
       const t = e.target.checked ? 'text' : 'password';
       ['cs-pw-cur', 'cs-pw-new', 'cs-pw-new2'].forEach(id => { const el = $(id); if (el) el.type = t; });
@@ -477,18 +497,38 @@
 
     // Changing this account's password kills the qwqw shortcut, which is a
     // literal in this file. Better to say so than to have it stop working on
-    // site with no explanation.
-    if (!recover && String(userEmail || '').toLowerCase() === ALIAS_EMAIL) {
-      const warn = document.createElement('div');
-      warn.id = 'cs-pw-hint';
-      warn.style.color = 'var(--amber,#D87E2E)';
-      warn.textContent = 'Note: this is the account behind the ' + ALIAS_USER + ' shortcut. Change this password and that shortcut stops working until the app is updated.';
-      $('cs-pw-hint').after(warn);
+    // site with no explanation. Signed in we know the account up front; at the
+    // sign-in screen it depends on what they type, so watch the field.
+    function warnIfAlias(email) {
+      const w = $('cs-pw-warn');
+      if (!w) return;
+      const hit = String(email || '').toLowerCase() === ALIAS_EMAIL;
+      w.style.display = hit ? 'block' : 'none';
+      w.style.color = 'var(--amber,#D87E2E)';
+      w.textContent = hit
+        ? 'Note: this is the account behind the ' + ALIAS_USER + ' shortcut. Change this password and that shortcut stops working until the app is updated.'
+        : '';
+    }
+    if (!recover && !atLogin) warnIfAlias(userEmail);
+    if (needsEmail) {
+      $('cs-pw-email').addEventListener('input', () => warnIfAlias(resolveLoginFields().email));
+      $('cs-pw-cur').addEventListener('input', () => warnIfAlias(resolveLoginFields().email));
+    }
+
+    // The sign-in screen's qwqw shortcut has to work here too, or the one
+    // account reachable ONLY by the shortcut is the one account whose password
+    // can never be changed. Expanding it here also means the "same as current"
+    // check compares against the real password, not the alias.
+    function resolveLoginFields() {
+      let email = $('cs-pw-email') ? $('cs-pw-email').value.trim() : '';
+      let cur = $('cs-pw-cur') ? $('cs-pw-cur').value : '';
+      if (email.toLowerCase() === ALIAS_USER && cur === ALIAS_USER) { email = ALIAS_EMAIL; cur = ALIAS_PASS; }
+      return { email: normaliseEmail(email), cur };
     }
 
     $('cs-pw-cancel').onclick = () => {
       close();
-      // From the reset link there is no app underneath to go back to.
+      // From the reset link there is no app or login screen underneath.
       if (recover) { cleanRecoveryUrl(); showLogin(); }
     };
 
@@ -500,11 +540,13 @@
     }
 
     $('cs-pw-go').onclick = async () => {
-      const cur = recover ? '' : $('cs-pw-cur').value;
+      const typed = atLogin ? resolveLoginFields() : { email: null, cur: recover ? '' : $('cs-pw-cur').value };
+      const cur = typed.cur;
       const next = $('cs-pw-new').value;
       const next2 = $('cs-pw-new2').value;
 
-      if (!recover && !cur) { msg('Enter your current password.'); return; }
+      if (atLogin && !typed.email) { msg('Enter the email or username you sign in with.'); return; }
+      if (needsCurrent && !cur) { msg('Enter your current password.'); return; }
       const problem = newPasswordProblem(next, next2, cur);
       if (problem) { msg(problem); return; }
       // A password change is a server round-trip and nothing else. Failing it
@@ -515,21 +557,28 @@
       $('cs-pw-cancel').disabled = true;
       msg('Working…', true);
       try {
-        if (!recover) {
-          // Re-authenticate. Supabase's updateUser does NOT ask for the old
-          // password, so without this anyone holding an unlocked phone could
-          // change the password and lock the real supervisor out of their jobs.
-          let email = userEmail;
-          try {
-            const { data } = await sb.auth.getUser();
-            if (data && data.user && data.user.email) email = data.user.email;
-          } catch (e) { /* fall back to the email we resolved at sign-in */ }
+        if (needsCurrent) {
+          // Authenticate before updating. Supabase's updateUser does NOT ask for
+          // the old password, so without this anyone holding an unlocked phone
+          // could change the password and lock the real supervisor out of their
+          // jobs. From the sign-in screen this doubles as the sign-in itself.
+          let email = typed.email || userEmail;
+          if (!atLogin) {
+            try {
+              const { data } = await sb.auth.getUser();
+              if (data && data.user && data.user.email) email = data.user.email;
+            } catch (e) { /* fall back to the email we resolved at sign-in */ }
+          }
           if (!email) throw new Error('SESSION_EXPIRED');
           const { error: badPass } = await sb.auth.signInWithPassword({ email, password: cur });
           if (badPass) {
             const m = String(badPass.message || '');
-            msg(/invalid|credential|password/i.test(m)
-              ? 'That is not your current password.'
+            const wrong = /invalid|credential|password/i.test(m);
+            // At the sign-in screen the EMAIL is just as likely to be the wrong
+            // half, and Supabase gives one error for both. Don't assert which.
+            msg(wrong
+              ? (atLogin ? 'That email and current password do not match an account.'
+                         : 'That is not your current password.')
               : passwordErrorText(badPass));
             $('cs-pw-go').disabled = false;
             $('cs-pw-cancel').disabled = false;
@@ -549,12 +598,15 @@
         $('cs-pw-cancel').textContent = 'Done';
         $('cs-pw-cancel').onclick = () => {
           close();
-          if (recover) { cleanRecoveryUrl(); onAuthed(); }
+          if (recover || atLogin) { cleanRecoveryUrl(); enterApp(); }
         };
-        if (recover) {
-          // Came in from a link with no app behind it — open it for them.
+        if (recover || atLogin) {
+          // Both arrived with no app running: the reset link had none, and the
+          // sign-in screen had not got that far. The re-auth above signed them
+          // in, so open the app rather than sending them back to type the
+          // password they just set.
           cleanRecoveryUrl();
-          setTimeout(() => { if (pwOpen) { close(); onAuthed(); } }, 1800);
+          setTimeout(() => { if (pwOpen) { close(); enterApp(); } }, 1800);
         }
       } catch (err) {
         console.warn('[CloudSync] password change failed', err);
@@ -563,6 +615,20 @@
         $('cs-pw-cancel').disabled = false;
       }
     };
+  }
+
+  // Open the app after an auth path that did NOT go through the Sign in button:
+  // a finished reset, or a password changed from the sign-in screen. Both left a
+  // real session behind, so all that is missing is the login screen's own
+  // housekeeping — clearing it away and honouring "Keep me signed in".
+  function enterApp() {
+    const login = document.getElementById('cs-overlay');
+    if (login) {
+      const keep = document.getElementById('cs-keep');
+      try { localStorage.setItem('cs_keep', (keep ? keep.checked : true) ? '1' : '0'); } catch (e) {}
+      login.remove();
+    }
+    onAuthed();
   }
 
   // Drop the recovery tokens out of the address bar once we're done with them —

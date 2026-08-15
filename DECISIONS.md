@@ -1,6 +1,44 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 — you can change your password
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (b) — change it from the sign-in screen too
+
+- **Decision:** "Change password · Forgot it?" under Sign in. The first opens the
+  same card in a third mode: email + current + new + confirm, with no session
+  needed. Asked for directly ("ability to change password inside the log in").
+- **Why it is worth a third entrance:** the other two both assume you got in.
+  A supervisor who thinks their password has been seen — shoulder-surfed on
+  site, typed into a shared phone — wants it changed *before* it is used again,
+  not after signing in with it. And with SMTP unconfigured (see NEXT_STEPS) the
+  reset email is best-effort, so this is the only self-service route that works
+  today for someone who knows their password and simply wants a different one.
+- **The current password is still mandatory here, and that is the whole
+  security argument.** This screen sits in front of the app with no session
+  behind it, so if it took only an email and a new password it would be a
+  complete authentication bypass — a way in, not a way to change something.
+  It signs in with the old password first and only then updates; that sign-in
+  IS the proof. `tests/pass.mjs` fires a real email with a wrong password at it
+  and asserts nothing changed and the app did not open.
+- **One error message for a wrong email and a wrong password.** Supabase returns
+  the same error for both, and so do we: "That email and current password do not
+  match an account." Splitting them would turn this screen into an account
+  checker for anyone with the URL — the same reasoning as the reset reply.
+- **It opens the app afterwards instead of bouncing back to Sign in.** They
+  authenticated on the way through; sending them back to type the password they
+  set ten seconds ago is a step with no purpose. `enterApp()` does the login
+  screen's own housekeeping (honour "Keep me signed in", clear the overlay) and
+  hands off to `onAuthed()` — the same helper the reset link now uses.
+- **The `qwqw` shortcut works on this card too.** Not supporting it would make
+  the one account reachable *only* by the shortcut the one account whose
+  password can never be changed. It is not a new exposure — anyone who knows
+  `qwqw/qwqw` can already sign in and use Settings. Expanding the alias here
+  also means "same as your current password" compares against the real one.
+  The amber warning now watches the email field and appears as you type it.
+- **Trade-off accepted:** three entrances to one screen is more surface than a
+  settings page alone. They collapse to one function with three modes and one
+  test suite, and each covers a state the others cannot reach — signed in, at
+  the door, and locked out.
+
+## 2026-08-15 — you can change your password
 
 - **The finding first: there was no way to change a password.** Not a broken
   one — none. `cloud-sync.js` had `signInWithPassword`, `signUp` and `signOut`,
