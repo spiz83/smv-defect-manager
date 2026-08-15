@@ -49,6 +49,7 @@ changes. That has happened twice.
 | `fixes` | Search matching; the unsaved-changes guard; report re-import and re-opening |
 | `hdr` | Supplier heading on one line; booking button; send-group expansion |
 | `loc` | Location leads the defect row: abbreviation table, the four line shapes, text exports |
+| `pass` | Changing your password: the round trip, the refusals, offline, reset email, recovery link |
 | `pdfname` | Report filenames from every screen; the name survives the upload; `go.html` |
 | `pvgallery` | Preview photo carousel: counter, arrows, paging, adding a photo |
 | `pvphoto` | Preview photos are never cropped |
@@ -68,6 +69,16 @@ Run one on its own with `node tests/shop.mjs`. Each prints `PASS`/`FAIL` per che
   first version drew the `<img>` into a canvas and sampled that — and it passed against
   the *broken* build, because `drawImage` redraws the source and ignores the CSS crop. It
   now screenshots the element and samples that. A test that cannot fail is worse than none.
+- **Break the code and watch the check go red before you keep it.** `pass.mjs` first
+  proved "db.save wasn't wrapped twice" by counting `defectTrackerDB` writes — which
+  stays at 1 either way, because the second wrapper calls the first, which calls the
+  real save. Deleting the guard it was protecting changed nothing; only counting
+  `cs_dirty`, written by the wrapper's own body, actually fails.
+- **`addInitScript` re-runs on every navigation, and Sign out reloads the page.** Any
+  state the app is supposed to change — `pass.mjs`'s stored account password is the
+  example — must live in `localStorage` and be seeded only when absent. Hold it in the
+  stub's closure and it silently reverts on reload, so "the new password works" passes
+  against a build that never changed it.
 - **`_review`, `db`, `state` are top-level `let`/`const`, not on `window`.** Use the bare
   identifier inside `page.evaluate`; `window._review` is `undefined`.
 - **Stub `window.CloudJobs`.** supabase-js can't load in the harness, so it never mounts,
