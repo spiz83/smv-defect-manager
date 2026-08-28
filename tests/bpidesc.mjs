@@ -79,6 +79,10 @@ await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
 await page.waitForFunction(() => typeof window.render === 'function');
 await page.evaluate((cat) => {
   window.CloudJobs = { isManager: () => true, currentUserId: () => 'me' };
+  // Keep the REAL shipped list before swapping in the fixture — section G
+  // checks the curated data itself, and every section before it overwrites
+  // this variable, so without stashing it there is nothing left to check.
+  window.__shippedWordings = CURATED_DEFECT_WORDINGS.slice();
   // Seed the curated list the engine actually reads.
   CURATED_DEFECT_WORDINGS = cat;
   render();
@@ -310,18 +314,65 @@ console.log('\n--- F · degrades silently with an empty list ---');
 }
 
 // ===========================================================================
-//  G. THE SHIPPED STATE. The list is empty in the repo on purpose; if someone
-//     later fills it, this fails and makes them confirm that was intended.
+//  G. THE SHIPPED LIST. Guards the curated wordings themselves, not the
+//     engine: the list is data a human edits, so the checks here are the
+//     rules that data has to obey to actually work.
 // ===========================================================================
-console.log('\n--- G · ships with the list empty (withdrawn pending a curated one) ---');
+console.log('\n--- G · the shipped curated list ---');
 {
-  const shipped = await page.evaluate(async () => {
-    const res = await fetch('/index.html', { cache: 'no-store' });
-    const src = await res.text();
-    const m = src.match(/let CURATED_DEFECT_WORDINGS = \[([\s\S]{0,80}?)\];/);
-    return m ? m[1].trim() : 'NOT FOUND';
+  const shipped = await page.evaluate(() => window.__shippedWordings.map(w => ({ text: w.text, trade: w.trade })));
+  check('the curated list ships populated', shipped.length === 62, shipped.length + ' items');
+
+  const byTrade = {};
+  shipped.forEach(w => { byTrade[w.trade || '(none)'] = (byTrade[w.trade || '(none)'] || 0) + 1; });
+  console.log('  by trade:', JSON.stringify(byTrade));
+  check('every item has wording text', shipped.every(w => w.text && w.text.trim().length > 5),
+    JSON.stringify(shipped.filter(w => !w.text || w.text.trim().length <= 5)));
+
+  // THE RULE THAT KILLED v1: no location baked into the wording, because the
+  // app has a separate Location field and repeating the room duplicates it.
+  // Catches a room name used as a LEADING word, which is the shape the BPI
+  // observations had ("Laundry Adjust door rattle"). Mid-sentence mentions
+  // ("Remove paint from garage floor") are describing the defect, not
+  // labelling where it is, and are fine.
+  const ROOMS = ['laundry', 'bedroom', 'bed', 'kitchen', 'bathroom', 'ensuite', 'garage',
+                 'hallway', 'entry', 'lounge', 'living', 'wc', 'toilet', 'robe', 'pantry',
+                 'alfresco', 'porch', 'stairs', 'elevation'];
+  const leadingRoom = shipped.filter(w => ROOMS.includes(String(w.text).trim().split(/[\s,]+/)[0].toLowerCase()));
+  check('no wording starts with a room name (the mistake that withdrew v1)',
+    leadingRoom.length === 0, JSON.stringify(leadingRoom.map(w => w.text)));
+
+  // A trade that does not match a contractor/trade-placeholder name EXACTLY
+  // narrows to nothing, so the item would be unreachable by picking a
+  // supplier. Blank is allowed and meaningful: findable by typing only.
+  const KNOWN = ['Painter', 'Carpenter', 'Caulker', 'Cleaner', 'Brick Cleaner', 'Bricklayer',
+                 'Plumber', 'Electrician', 'Tiler', 'Renderer', 'Landscaper', ''];
+  const oddTrades = [...new Set(shipped.map(w => w.trade).filter(t => !KNOWN.includes(t)))];
+  check('every trade is one of the agreed names (or deliberately blank)',
+    oddTrades.length === 0, JSON.stringify(oddTrades));
+
+  check('the four unassigned items are still blank-traded, not guessed at',
+    (byTrade['(none)'] || 0) === 4, String(byTrade['(none)'] || 0));
+
+  // Duplicates would show twice in one dropdown.
+  const seen = new Set(), dupes = [];
+  shipped.forEach(w => { const k = (w.trade + '|' + w.text).toLowerCase(); if (seen.has(k)) dupes.push(w.text); seen.add(k); });
+  check('no duplicate wording within a trade', dupes.length === 0, JSON.stringify(dupes));
+
+  // End to end against the REAL shipped list, not the seeded fixture.
+  const real = await page.evaluate(() => {
+    const seeded = CURATED_DEFECT_WORDINGS;
+    CURATED_DEFECT_WORDINGS = window.__shippedWordings;      // run against the REAL list
+    const out = { carpenter: bpiDefectSuggestions('Carpenter', 'door', 20).map(x => x.text),
+                  blankTraded: bpiDefectSuggestions('', 'vermin', 20).map(x => x.text) };
+    CURATED_DEFECT_WORDINGS = seeded;
+    return out;
   });
-  check('CURATED_DEFECT_WORDINGS ships empty', shipped === '', JSON.stringify(shipped));
+  console.log('  real list, Carpenter + "door":', JSON.stringify(real.carpenter));
+  check('the real shipped list suggests sensibly for a picked trade',
+    real.carpenter.length >= 3 && real.carpenter.every(t => /door/i.test(t)), JSON.stringify(real.carpenter));
+  check('…and a blank-traded item is still reachable by typing',
+    real.blankTraded.some(t => /vermin proof/i.test(t)), JSON.stringify(real.blankTraded));
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

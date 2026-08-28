@@ -9892,7 +9892,82 @@
         //   n     — how common; higher sorts first. Use 1 if unranked.
         // With the list empty the whole feature is invisible: no popup, no
         // dropdown, typing behaves exactly as it did before it existed.
-        let CURATED_DEFECT_WORDINGS = [];
+        let CURATED_DEFECT_WORDINGS = [
+            // --- Painter ---
+            { text: 'Seal external window architraves to comply with NCC energy efficiency requirements.', trade: 'Painter', n: 1 },
+            { text: 'Complete outstanding internal paint items.', trade: 'Painter', n: 1 },
+            { text: 'Complete outstanding external paint items.', trade: 'Painter', n: 1 },
+            { text: 'Paint raw timber inside striker plate.', trade: 'Painter', n: 1 },
+            { text: 'Seal tops and bottoms of doors, including wet areas.', trade: 'Painter', n: 1 },
+            { text: 'Apply gloss to robe threshold.', trade: 'Painter', n: 1 },
+            { text: 'Apply gloss where missed.', trade: 'Painter', n: 1 },
+            { text: 'Clean overpaint from hinges and striker plates.', trade: 'Painter', n: 1 },
+            { text: 'Clean overpaint from splashback tiles.', trade: 'Painter', n: 1 },
+            { text: 'Clean overpaint from window frames.', trade: 'Painter', n: 1 },
+            { text: 'Clean overpaint from entry door glass.', trade: 'Painter', n: 1 },
+            { text: 'Remove paint from garage floor.', trade: 'Painter', n: 1 },
+            { text: 'Refit weather strips and seals to doors.', trade: 'Painter', n: 1 },
+            // --- Carpenter ---
+            { text: 'Adjust striker plate to remove latch binding.', trade: 'Carpenter', n: 1 },
+            { text: 'Adjust door margins to 3mm-4mm.', trade: 'Carpenter', n: 1 },
+            { text: 'Align door with jamb.', trade: 'Carpenter', n: 1 },
+            { text: 'Fit door handle and check for operation.', trade: 'Carpenter', n: 1 },
+            { text: 'Fit weather seal to door.', trade: 'Carpenter', n: 1 },
+            { text: 'Install cushion stop to door.', trade: 'Carpenter', n: 1 },
+            { text: 'Adjust and align cabinet doors.', trade: 'Carpenter', n: 1 },
+            { text: 'Replace tarnished hinges.', trade: 'Carpenter', n: 1 },
+            { text: 'Replace incorrect screws - sizes to be consistent throughout.', trade: 'Carpenter', n: 1 },
+            { text: 'Refit manhole cover.', trade: 'Carpenter', n: 1 },
+            { text: 'Knock down hinge pins.', trade: 'Carpenter', n: 1 },
+            // --- Caulker ---
+            { text: 'Caulk junction between brickwork and plaster to sides of garage door.', trade: 'Caulker', n: 1 },
+            { text: 'Caulk gaps between cladding and flashing.', trade: 'Caulker', n: 1 },
+            { text: 'Seal service penetrations.', trade: 'Caulker', n: 1 },
+            { text: 'Caulk inside of sink.', trade: 'Caulker', n: 1 },
+            { text: 'Caulk gaps to window, top and bottom.', trade: 'Caulker', n: 1 },
+            { text: 'Caulk top of tile to wall where tiling does not reach ceiling.', trade: 'Caulker', n: 1 },
+            { text: 'Complete outstanding caulking.', trade: 'Caulker', n: 1 },
+            // --- Cleaner ---
+            { text: 'Clean carpet.', trade: 'Cleaner', n: 1 },
+            { text: 'Clean flooring.', trade: 'Cleaner', n: 1 },
+            { text: 'Sweep out garage and remove building materials.', trade: 'Cleaner', n: 1 },
+            { text: 'Remove paint, plaster and mortar residue from garage.', trade: 'Cleaner', n: 1 },
+            // --- Brick Cleaner ---
+            { text: 'Clean brick smears.', trade: 'Brick Cleaner', n: 1 },
+            { text: 'Clean out weepholes.', trade: 'Brick Cleaner', n: 1 },
+            // --- Bricklayer ---
+            { text: 'Repair brickwork blow outs.', trade: 'Bricklayer', n: 1 },
+            // --- Plumber ---
+            { text: 'Install downpipe level and seat in saddle.', trade: 'Plumber', n: 1 },
+            { text: 'Install downpipe brackets correctly.', trade: 'Plumber', n: 1 },
+            { text: 'Punch in downpipe pins.', trade: 'Plumber', n: 1 },
+            { text: 'Connect downpipe hookup.', trade: 'Plumber', n: 1 },
+            { text: 'Install plumbing fixture correctly.', trade: 'Plumber', n: 1 },
+            { text: 'Tighten shower rail - no gaps to wall.', trade: 'Plumber', n: 1 },
+            { text: 'Install mixer and cover plate level.', trade: 'Plumber', n: 1 },
+            { text: 'Rectify water hammer.', trade: 'Plumber', n: 1 },
+            { text: 'Clear tile and debris from shower waste.', trade: 'Plumber', n: 1 },
+            { text: 'Install toilet level with wall.', trade: 'Plumber', n: 1 },
+            { text: 'Seal plumbing penetrations in cabinetry.', trade: 'Plumber', n: 1 },
+            // --- Electrician ---
+            { text: 'Seal electrical penetrations in cabinetry.', trade: 'Electrician', n: 1 },
+            { text: 'Check run time switch is functional.', trade: 'Electrician', n: 1 },
+            // --- Tiler ---
+            { text: 'Grout tiles to wall above shower.', trade: 'Tiler', n: 1 },
+            // --- Renderer ---
+            { text: 'Rule a horizontal line through render where it breaches the DPC.', trade: 'Renderer', n: 1 },
+            { text: 'Clear bottom weep holes to comply with VBA Standards and Tolerances.', trade: 'Renderer', n: 1 },
+            // --- Landscaper ---
+            { text: 'Regrade landscaping to fall away from the property.', trade: 'Landscaper', n: 1 },
+            { text: 'Compact landscaping correctly.', trade: 'Landscaper', n: 1 },
+            { text: 'Repair damaged stormwater riser.', trade: 'Landscaper', n: 1 },
+            { text: 'Clear debris and excess materials from nature strip.', trade: 'Landscaper', n: 1 },
+            // --- No trade yet: only ever found by typing, never by picking a supplier ---
+            { text: 'Seal hole in oven space to make vermin proof.', trade: '', n: 1 },
+            { text: 'Repair dented window frame.', trade: '', n: 1 },
+            { text: 'Repair scratched window frame.', trade: '', n: 1 },
+            { text: 'Touch up window frame with correct paint colour.', trade: '', n: 1 },
+        ];
 
         // Rank wordings for `query`, optionally narrowed to `trade`.
         // Every typed word must word-prefix match (matchesSearch), so each
@@ -11782,7 +11857,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15j';
+        const APP_VERSION = '2026-08-15k';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11856,7 +11931,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15j"></script>
+    <script src="cloud-sync.js?v=2026-08-15k"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
