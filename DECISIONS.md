@@ -1,6 +1,48 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (b) — change it from the sign-in screen too
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (c) — Bulk Import stops jumping around while typing
+
+- **The report, from four screenshots of the real screen:** tagging photos
+  in Bulk Import (Location / Supplier / Trade / Defect description, one photo
+  at a time) was "jumpy every time I press a field" — the header vanished,
+  the photo cropped to a sliver, described as wanting "everything stays in
+  the same spot and I'm just punching text."
+- **Three separate mechanisms, not one bug.** An unsolicited auto-focus on
+  every photo (removed), content too tall to fit above an open keyboard so
+  the browser had to scroll different amounts for different fields (fixed by
+  shrinking the photo to a thumbnail while typing), and `position:fixed`
+  clipping under iOS's keyboard-open viewport mismatch (fixed by tracking
+  `visualViewport`). Full mechanism-by-mechanism writeup in NEXT_STEPS.md.
+- **The auto-focus is gone, not delayed or made smarter.** It bought nothing:
+  the supervisor still has to tap Location and Supplier regardless (both
+  need picking from a list), so auto-focusing Description only guaranteed one
+  unwanted jump per photo before anyone had looked at the image. Removing it
+  outright was the whole fix for that mechanism — no replacement heuristic.
+- **The photo shrinks to a thumbnail on focus, not full removal.** Confirms
+  which photo you're tagging without needing full size while a keyboard is up
+  — an outright hide-on-focus would have meant re-checking the photo requires
+  closing the keyboard first, worse than a small persistent thumbnail.
+- **72px, not 0.** Small enough that photo + all three fields fit above a
+  keyboard on the phones in the screenshots; large enough to still read as
+  "here's the photo," not just a coloured strip.
+- **The 120ms blur grace period exists because tapping between two of the
+  three fields fires blur-then-focus in the same tick.** Without it, moving
+  from Location straight to Supplier would flash the photo back to full size
+  for one frame between the two — trading one kind of jump for another.
+- **This cannot be confirmed fixed from this environment.** Headless Chromium
+  never opens a real software keyboard or shrinks the visual viewport, so
+  nothing here can observe the actual on-device jumpiness the report
+  describes — only the mechanisms installed to prevent it. Say so plainly
+  rather than claiming victory on the strength of automated checks alone;
+  `tests/bulkphoto.mjs` proves the mechanisms, not the feel. Needs a supervisor
+  on an actual phone before this is genuinely closed.
+- **Trade-off accepted:** on a screen tall enough that everything already fit
+  above the keyboard without scrolling, this changes nothing visible except
+  the photo now shrinking briefly while a field is focused — a cosmetic
+  change for those users in exchange for fixing it on the phones that were
+  actually jumping.
+
+## 2026-08-15 (b) — change it from the sign-in screen too
 
 - **Decision:** "Change password · Forgot it?" under Sign in. The first opens the
   same card in a third mode: email + current + new + confirm, with no session

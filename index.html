@@ -4824,27 +4824,32 @@
                     <button onclick="closeBulkPhoto(true)" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary,#777);">✕</button>
                 </div>
                 <div style="flex:1;overflow:auto;padding:12px 14px;">
-                    <div style="text-align:center;margin-bottom:12px;"><img src="${url}" style="max-width:100%;max-height:38vh;border-radius:10px;object-fit:contain;"></div>
+                    <div class="bulk-photo-wrap" style="text-align:center;margin-bottom:12px;"><img src="${url}" style="max-width:100%;max-height:38vh;border-radius:10px;object-fit:contain;"></div>
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:8px 0 3px;">Location</label>
                     <div style="position:relative;">
-                        <input id="bulk-loc" type="text" autocomplete="off" placeholder="Type to search location…" oninput="bulkComboFilter('loc')" onfocus="bulkComboFilter('loc')" onblur="bulkComboBlur('loc')" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                        <input id="bulk-loc" type="text" autocomplete="off" placeholder="Type to search location…" oninput="bulkComboFilter('loc')" onfocus="bulkComboFilter('loc'); _bulkFieldFocus()" onblur="bulkComboBlur('loc'); _bulkFieldBlur()" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
                         <div id="bulk-loc-list" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:6;max-height:190px;overflow:auto;background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:9px;box-shadow:0 8px 20px rgba(0,0,0,.25);margin-top:2px;"></div>
                     </div>
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:10px 0 3px;">Supplier / Trade</label>
                     <div style="position:relative;">
-                        <input id="bulk-sup" type="text" autocomplete="off" placeholder="Type to search supplier / trade…" oninput="bulkComboFilter('sup')" onfocus="bulkComboFilter('sup')" onblur="bulkComboBlur('sup')" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                        <input id="bulk-sup" type="text" autocomplete="off" placeholder="Type to search supplier / trade…" oninput="bulkComboFilter('sup')" onfocus="bulkComboFilter('sup'); _bulkFieldFocus()" onblur="bulkComboBlur('sup'); _bulkFieldBlur()" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
                         <div id="bulk-sup-list" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:6;max-height:190px;overflow:auto;background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:9px;box-shadow:0 8px 20px rgba(0,0,0,.25);margin-top:2px;"></div>
                     </div>
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:10px 0 3px;">Defect description</label>
-                    <input id="bulk-desc" type="text" placeholder="Describe the defect" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                    <input id="bulk-desc" type="text" placeholder="Describe the defect" onfocus="_bulkFieldFocus()" onblur="_bulkFieldBlur()" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
                 </div>
                 <div style="display:flex;gap:10px;padding:12px 14px;border-top:1px solid var(--border-color,#eee);">
                     <button onclick="skipBulkPhoto()" style="flex:1;padding:13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary,#f2f2f2);color:var(--text-secondary,#777);font-size:15px;cursor:pointer;">Skip</button>
                     <button onclick="saveBulkPhoto()" style="flex:2;padding:13px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-weight:700;font-size:15px;cursor:pointer;">${st.idx === st.files.length - 1 ? 'Save &amp; Finish' : 'Save &amp; Next'}</button>
                 </div>`;
+            _ensureBulkPhotoStyles();
             document.body.appendChild(ov);
             ov._url = url;
-            setTimeout(() => { const d = document.getElementById('bulk-desc'); if (d) d.focus(); }, 60);
+            // No auto-focus here on purpose: it used to pop the keyboard the
+            // instant a photo loaded, before the supervisor had even looked at
+            // it — one unwanted jump per photo, on top of the ones from tapping
+            // fields. Let them choose where to start.
+            _bindBulkViewport();
         }
 
         function closeBulkPhoto(ask) {
@@ -4903,6 +4908,62 @@
         function bulkComboBlur(field) {
             // Delay so a tap on an option registers before the list hides.
             setTimeout(() => { const l = document.getElementById('bulk-' + field + '-list'); if (l) l.style.display = 'none'; }, 180);
+        }
+
+        // Keyboard-jump mitigation for Bulk Import (site feedback 2026-08-15):
+        // the photo + all three fields don't fit above the keyboard on a phone,
+        // so iOS scrolls the whole fixed overlay to bring the focused field into
+        // view — which also drags the header off-screen. Shrinking the photo to
+        // a thumbnail while any field is focused frees enough height that the
+        // fields fit without the overlay needing to move.
+        function _bulkFieldFocus() {
+            const ov = document.getElementById('bulk-photo-ov');
+            if (ov) ov.classList.add('bulk-typing');
+        }
+        function _bulkFieldBlur() {
+            // Tapping straight from one field to another fires blur-then-focus in
+            // the same tick; wait a beat so that doesn't flash the photo back to
+            // full size for one frame between fields.
+            setTimeout(() => {
+                const ov = document.getElementById('bulk-photo-ov');
+                if (!ov) return;
+                const a = document.activeElement;
+                const stillTyping = a && ['bulk-loc', 'bulk-sup', 'bulk-desc'].indexOf(a.id) !== -1;
+                if (!stillTyping) ov.classList.remove('bulk-typing');
+            }, 120);
+        }
+        let _bulkStylesInjected = false;
+        function _ensureBulkPhotoStyles() {
+            if (_bulkStylesInjected) return;
+            _bulkStylesInjected = true;
+            const s = document.createElement('style');
+            s.id = 'bulk-photo-styles';
+            s.textContent = `
+                #bulk-photo-ov .bulk-photo-wrap img { transition: max-height .18s ease; }
+                #bulk-photo-ov.bulk-typing .bulk-photo-wrap img { max-height: 72px !important; }
+            `;
+            document.head.appendChild(s);
+        }
+        // iOS anchors position:fixed to the LAYOUT viewport, which doesn't
+        // shrink when the keyboard opens — only the VISUAL viewport does. That
+        // mismatch is what was clipping the header off-screen: the overlay
+        // itself hadn't moved, but the visible area had scrolled down inside it.
+        // Tracking visualViewport keeps the overlay sized to what's actually on
+        // screen instead of leaving it to iOS's own scroll heuristic.
+        let _bulkVvBound = false;
+        function _bulkVvSync() {
+            const ov = document.getElementById('bulk-photo-ov');
+            const vv = window.visualViewport;
+            if (!ov || !vv) return;
+            ov.style.height = vv.height + 'px';
+            ov.style.top = vv.offsetTop + 'px';
+        }
+        function _bindBulkViewport() {
+            _bulkVvSync();
+            if (_bulkVvBound || !window.visualViewport) return;
+            _bulkVvBound = true;
+            window.visualViewport.addEventListener('resize', _bulkVvSync);
+            window.visualViewport.addEventListener('scroll', _bulkVvSync);
         }
 
         // Pin beside an Enter-defect row → pick the location for that defect
@@ -11417,7 +11478,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15b';
+        const APP_VERSION = '2026-08-15c';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11491,7 +11552,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15b"></script>
+    <script src="cloud-sync.js?v=2026-08-15c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

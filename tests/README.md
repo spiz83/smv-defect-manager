@@ -44,6 +44,7 @@ changes. That has happened twice.
 | Suite | Covers |
 |---|---|
 | `addrcopy` | 📋 Copy address on a top-search row: the string, and three icons fitting a phone row |
+| `bulkphoto` | Bulk Import photo tagging: no unsolicited auto-focus, the photo collapses/restores with field focus, visualViewport tracking, autocomplete still works |
 | `combo` | Supplier picker ranking (Reassign all / Edit defect / review); Edit defect → Save |
 | `deep` | Deep-read private-report import: admin gate, photo anchoring, fallbacks |
 | `fixes` | Search matching; the unsaved-changes guard; report re-import and re-opening |
@@ -79,6 +80,29 @@ Run one on its own with `node tests/shop.mjs`. Each prints `PASS`/`FAIL` per che
   example — must live in `localStorage` and be seeded only when absent. Hold it in the
   stub's closure and it silently reverts on reload, so "the new password works" passes
   against a build that never changed it.
+- **`getComputedStyle` resolves units to px — it never hands back the `vh`/`%`/etc.
+  you wrote in CSS.** `bulkphoto.mjs` first compared a read-back `maxHeight` against
+  the literal string `'38vh'`; at this suite's 820px viewport that's always `'311.6px'`,
+  so the check failed even though the CSS was correct. Compute the expected px value
+  from the viewport instead of guessing a format.
+- **A value read mid-`transition` is neither its start nor its end state.** The same
+  suite read a shrinking `max-height` 80ms into a 180ms transition and got a number
+  between the two — correct behaviour, wrong assertion. Wait past the transition
+  duration before asserting a *settled* value.
+- **A top-level `let`/`const` in a classic (non-module) `<script>` is NOT a `window`
+  property** — only `var` and `function` declarations are. `window._bulkVvBound = false`
+  compiled, ran, and did nothing: it created an unrelated property on `window`, while
+  the real `let _bulkVvBound` the code actually reads stayed at whatever it already
+  was. There is no way to reset that kind of state from outside; test the guarantee at
+  the one point in the page's life where the flag is genuinely at its starting value
+  (before anything else has triggered it), and test the *other* half — "no MORE
+  listeners stack once it's already bound" — separately, on purpose, in the already-
+  bound state.
+- **A registered event listener holds the function it was given by reference, not by
+  name.** Reassigning `window.someFunction = spy` does not redirect a listener that was
+  already registered with the original function object before the reassignment — it
+  keeps calling the original. To count how many times something gets registered, spy on
+  `addEventListener` itself, not on the handler it will eventually call.
 - **`_review`, `db`, `state` are top-level `let`/`const`, not on `window`.** Use the bare
   identifier inside `page.evaluate`; `window._review` is `undefined`.
 - **Stub `window.CloudJobs`.** supabase-js can't load in the harness, so it never mounts,

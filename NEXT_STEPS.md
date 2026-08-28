@@ -3,6 +3,65 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
+## Bulk Import: stop the layout jumping around while typing (2026-08-15) — build `2026-08-15c`
+**NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed live —
+`deploy` wasn't asked for this round.
+
+**The report:** tagging photos in Bulk Import (Location / Supplier / Trade /
+Defect description per photo) was "jumpy every time I press a field" — the
+header would vanish, the photo would crop to a sliver, described from four
+screenshots of the real screen on an iPhone.
+
+**Three separate mechanisms were doing this, all in `renderBulkPhotoStep()`
+and friends (search `_bulkFieldFocus` in index.html):**
+
+1. `setTimeout(() => bulk-desc.focus(), 60)` fired on EVERY photo — the
+   keyboard popped up unsolicited before the photo was even looked at.
+   **Removed outright.** No auto-focus now; the supervisor taps where they
+   want to start.
+2. The photo (`max-height:38vh`) plus three labelled fields don't fit above
+   an open keyboard on a phone screen, so the browser had to scroll the
+   fixed overlay to bring whichever field was focused into view — a
+   different amount for each field, which is what read as "jumpy" moving
+   between fields.
+   **Fixed by shrinking the photo to a 72px thumbnail the moment any of the
+   three fields holds focus**, restoring it once none do. Frees enough
+   height that the fields fit without the overlay needing to move for most
+   phones. `.bulk-typing` class on `#bulk-photo-ov`, toggled by
+   `_bulkFieldFocus()` / `_bulkFieldBlur()` (120ms grace period on blur so
+   tapping straight from one field to another doesn't flash the photo back
+   to full size in between).
+3. `position:fixed;inset:0` anchors to the LAYOUT viewport, which does not
+   shrink when iOS opens the keyboard — only the VISUAL viewport does. That
+   mismatch is what was clipping the header off-screen: the overlay hadn't
+   actually moved, but the visible area had scrolled down inside it.
+   **Fixed by tracking `window.visualViewport`** (`_bulkVvSync` /
+   `_bindBulkViewport`) and setting the overlay's `height`/`top` from it
+   directly, so it always matches what's actually on screen instead of
+   trusting iOS's own scroll heuristic.
+
+- **Cannot be verified on-device from this environment.** Headless Chromium
+  does not render a real software keyboard or shrink the visual viewport the
+  way iOS Safari does, so `tests/bulkphoto.mjs` proves the THREE MECHANISMS
+  (no auto-focus; the photo collapses on focus and restores on blur, with the
+  restore-check proven to fail when the CSS rule doing it is removed; the
+  visualViewport listener registers exactly once across repeated renders, and
+  adds no more once already bound) rather than "does this feel smooth on a
+  phone." **Ask the site to confirm on an actual iPhone before calling this
+  fixed for real** — the mechanisms are sound but the on-device feel is the
+  part no amount of automated testing here can settle.
+- **`_bulkVvBound` is a `let`, not exposed on `window`, and cannot be reset
+  from outside.** The test suite that discovered this the hard way: a
+  top-level `let`/`const` in a classic script does NOT become a `window`
+  property (only `var`/`function` do), so there is exactly one point in a
+  page's life where that flag is at its true starting value — before
+  anything else has opened the bulk-import overlay. `bulkphoto.mjs`'s first
+  check runs there, deliberately, before any other section touches it.
+- **The autocomplete dropdowns (`bulk-loc-list`/`bulk-sup-list`) are
+  untouched** — `_bulkFieldFocus`/`_bulkFieldBlur` were added ALONGSIDE
+  `bulkComboFilter`/`bulkComboBlur` on each input's onfocus/onblur, not
+  instead of them. Both still fire on every focus/blur.
+
 ## Change your password (2026-08-15) — build `2026-08-15b`
 **RE-STAMPED to `2026-08-15b` 2026-08-15** — no code change whatsoever, only the
 four version stamps. Asked for deliberately, to force every phone still holding

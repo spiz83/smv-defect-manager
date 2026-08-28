@@ -1,6 +1,10 @@
 # Tasks
 
 ## Current sprint
+- [ ] Get a supervisor to confirm on a real iPhone that Bulk Import no longer
+      jumps around while tagging photos. Can't be verified from this
+      environment — headless Chromium doesn't open a real keyboard. Build
+      `2026-08-15c`, not yet deployed.
 - [ ] Watch the first supervisor who changes their password: the other-devices
       warning is the part most likely to be misread on site.
 
@@ -20,6 +24,10 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-15 — Bulk Import: removed the unsolicited auto-focus, shrank the
+  photo to a thumbnail while a field is focused, and tracked visualViewport so
+  the fixed overlay stops getting clipped by the iOS keyboard. `tests/bulkphoto.mjs`.
+  Build `2026-08-15c`, gates green, not deployed.
 - 2026-08-15 — Re-stamped to `2026-08-15b` to force every phone to refetch the
   shell. No code change — four stamp lines only.
 - 2026-08-15 — Shipped build `2026-08-15a`. Vercel verified; live files hashed
