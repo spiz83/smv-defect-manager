@@ -13,6 +13,26 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
+## Contractor ids no longer collide across phones (2026-08-15) — build `2026-08-15p`
+
+New contractor/trade ids come from `db.nextSyncSafeId()` — a high random band,
+NOT `max(id)+1`, which every phone computed identically and which made two
+supervisors' contractors overwrite each other in the cloud. What will bite a
+later change:
+
+- **`legacy_id` is an int4.** Any id scheme must stay under 2^31 — a timestamp
+  does not fit. Stay clear of `hashId()`'s 1e6–1.001e9 band too.
+- **`healContractorIdCollisions` in cloud-sync.js runs before the contractors
+  push.** It renumbers a local contractor whose id is held in the cloud by a
+  different-named one, and repoints this device's defects. Same id + same name
+  is deliberately left alone — that is a legitimate re-push, and the upsert
+  exists for it.
+- **`tests/contractorid.mjs` (suite 6) drives two real browser contexts as two
+  phones against one shared cloud.** It is the only suite that can catch this
+  class of bug; a single-device test cannot.
+- **Rows already overwritten in the live database are gone.** The fix stops it
+  recurring; it cannot bring back a contractor a colliding push destroyed.
+
 ## Settings → Contractors to review is collapsed (2026-08-15) — build `2026-08-15o`
 
 A header with a count; tap to open the full list. `state.pendingExpanded`,

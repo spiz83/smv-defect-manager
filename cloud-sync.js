@@ -1194,6 +1194,42 @@
   // ===========================================================================
   function byId(arr) { const m = {}; (arr || []).forEach(x => m[x.id] = x); return m; }
 
+  // See the call site in pushDiff. Renumbers any about-to-be-inserted contractor
+  // whose legacy_id is already taken in the cloud by a different contractor, and
+  // repoints this device's defects at the new id. Best-effort: a failed lookup
+  // leaves the push exactly as it was before, which is no worse than not trying.
+  async function healContractorIdCollisions(cur, snapContractors) {
+    const locals = (cur.contractors || []).filter(c => !(String(c.id) in (snapContractors || {})));
+    if (!locals.length) return;
+    let rows = null;
+    try {
+      const res = await sb.from('dm_contractors').select('legacy_id, name')
+        .in('legacy_id', locals.map(c => Number(c.id)).filter(n => Number.isFinite(n)));
+      if (res.error) return;
+      rows = res.data || [];
+    } catch (e) { return; }
+    if (!rows.length) return;
+    const cloudName = {};
+    rows.forEach(r => { if (r.legacy_id != null) cloudName[String(r.legacy_id)] = String(r.name || ''); });
+    // Same id AND same name = the same contractor re-pushed (an id-map loss, the
+    // case the upsert exists for). Same id, different name = a collision.
+    const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    let healed = 0;
+    for (const c of locals) {
+      const taken = cloudName[String(c.id)];
+      if (taken === undefined || same(taken, c.name)) continue;
+      const oldId = c.id;
+      const newId = db.nextSyncSafeId(cur.contractors);
+      c.id = newId;
+      (cur.defects || []).forEach(d => { if (d.contractorId === oldId) d.contractorId = newId; });
+      if (idMap.contractors[oldId] != null) { idMap.contractors[newId] = idMap.contractors[oldId]; delete idMap.contractors[oldId]; }
+      healed++;
+      console.warn('[CloudSync] contractor id ' + oldId + ' is "' + taken + '" in the cloud, not "' +
+        c.name + '" — renumbered locally to ' + newId + ' so neither is lost');
+    }
+    if (healed) { suppressPush = true; try { db.save(); } finally { suppressPush = false; } }
+  }
+
   async function pushDiff() {
     if (!userId) return;
     const cur = db.data || {};
@@ -1206,6 +1242,16 @@
     });
 
     // ---- Contractors ---- (trade links handled after)
+    // Pre-flight: heal id collisions left by the old `max(id)+1` allocator.
+    //
+    // A contractor this device is about to INSERT whose legacy_id is already
+    // held in the cloud by a DIFFERENT contractor is not a re-push — it is two
+    // phones that allocated the same id. The insert below upserts on legacy_id,
+    // so pushing it would overwrite the other contractor's row wholesale,
+    // including flipping is_shared back to false on one a manager had already
+    // shared (Spiro, 2026-08-15: "I've actually shared… but this still
+    // remains"). Renumber OURS instead, so both survive.
+    await healContractorIdCollisions(cur, snapshot.contractors);
     await diffEntity({
       cur: cur.contractors, snap: snapshot.contractors, table: 'dm_contractors', map: idMap.contractors,
       toRow: (c) => ({ legacy_id: c.id, name: c.name, email: c.email || null, phone: c.phone || null,

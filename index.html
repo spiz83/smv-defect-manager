@@ -2283,8 +2283,28 @@
                 return this.data.contractors.find(c => c.id === id);
             }
 
+            // Ids allocated on THIS phone become the cloud's `legacy_id`, which is
+            // the UPSERT conflict key. `Math.max(...) + 1` was not merely racy —
+            // it was DETERMINISTIC: every phone pulls the same list, so two
+            // supervisors adding a contractor between syncs got the same id with
+            // certainty, and the second push overwrote the first contractor's row
+            // wholesale. That is what flipped a contractor a manager had already
+            // shared back to private, so it reappeared in "Contractors to review"
+            // (Spiro, 2026-08-15).
+            //
+            // legacy_id is an int4, so a timestamp does not fit. Draw from a high
+            // random band instead — clear of the small seeded ids and of
+            // hashId()'s 1e6..1.001e9 range, and under 2^31.
+            nextSyncSafeId(existing) {
+                const taken = new Set((existing || []).map(x => Number(x.id)));
+                for (let i = 0; i < 40; i++) {
+                    const id = 1100000000 + Math.floor(Math.random() * 1000000000);
+                    if (!taken.has(id)) return id;
+                }
+                return 1100000000 + Math.floor(Math.random() * 1000000000);
+            }
             addContractor(contractor) {
-                const id = Math.max(0, ...this.data.contractors.map(c => c.id)) + 1;
+                const id = this.nextSyncSafeId(this.data.contractors);
                 
                 // Handle tradeIds as array
                 const tradeIds = Array.isArray(contractor.tradeIds) ? contractor.tradeIds : 
@@ -2325,7 +2345,7 @@
 
             // Trade operations
             addTrade(trade) {
-                const id = Math.max(0, ...this.data.trades.map(t => t.id)) + 1;
+                const id = this.nextSyncSafeId(this.data.trades);
                 const newTrade = { 
                     id, 
                     name: trade.name, 
@@ -12095,7 +12115,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15o';
+        const APP_VERSION = '2026-08-15p';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12169,7 +12189,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15o"></script>
+    <script src="cloud-sync.js?v=2026-08-15p"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

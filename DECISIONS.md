@@ -2,6 +2,41 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (p) — contractor ids collided across phones, destroying rows
+
+- **Spiro:** "when I've actually shared in the past they may have shared but
+  that this still remains for some reason." It was not the Share button.
+- **`db.addContractor` allocated `Math.max(...ids) + 1`.** Every phone pulls the
+  SAME contractor list, so max+1 is not racy — it is DETERMINISTIC. Two
+  supervisors adding a contractor between syncs get the same id with certainty.
+- **That id is the cloud's `legacy_id`, and the diff engine inserts with
+  `upsert(onConflict: 'legacy_id')`.** So the second phone's push OVERWROTE the
+  first contractor's row wholesale. Reproduced in `tests/contractorid.mjs`
+  section B before the fix: two contractors in, one row out, the other silently
+  destroyed. Where the overwritten row was one a manager had already shared,
+  `is_shared` went back to false and it reappeared in Contractors to review —
+  the reported symptom.
+- **The fix is NOT a timestamp: `legacy_id` is an int4.** `Date.now()` overflows
+  it. Ids are drawn from a high random band (1.1e9–2.1e9), clear of the small
+  seeded ids and of `hashId()`'s 1e6–1.001e9 range, and under 2^31. Trades got
+  the same treatment — same allocator, same conflict key, same latent bug.
+- **A new allocator does nothing for the collisions already in the data**, which
+  are the ones biting now: every pre-fix contractor carries a low id on every
+  phone. So `healContractorIdCollisions` runs before the contractors push — any
+  row about to be INSERTED whose legacy_id is held in the cloud by a
+  DIFFERENT-NAMED contractor is renumbered locally, with this device's defects
+  repointed, so neither contractor is lost.
+- **Same id AND same name is left alone.** That is a genuine re-push after an
+  id-map loss, which is exactly what the upsert exists for; renumbering it would
+  duplicate the contractor. Pinned by a check in section D.
+- **This is the same bug class defects were hardened against on 2026-08-02**
+  (`deletesOnly: true` + direct-write `commitDefect`, "so a stale local copy can
+  no longer push an insert/update that reverts a change made elsewhere").
+  Contractors never got that treatment, because they still need the diff engine
+  for inserts. This is the contractor-shaped version of that fix.
+- **Not fixed here: rows already destroyed in the live database.** An overwrite
+  that has already happened is not recoverable from the app — flagged in TASKS.
+
 ## 2026-08-15 (o) — Contractors to review collapses to a header
 
 - **Spiro, with six waiting:** "they don't need to be brought up as a list. It

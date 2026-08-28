@@ -1,6 +1,12 @@
 # Tasks
 
 ## Current sprint
+- [ ] **Check the live `dm_contractors` for damage from the id collision**
+      (fixed in `2026-08-15p`). Two phones could allocate the same `legacy_id`,
+      and the second push overwrote the first contractor's row. Look for
+      contractors supervisors say they added that are not there, and for ones
+      a manager shared that went back to private. The fix stops it recurring
+      but cannot bring back an overwritten row.
 - [ ] **Run `supabase/migrations/2026-08-15_defect_wordings.sql`.** Until it
       is run, Settings → 📝 Defect wordings is read-only over the 62 built-in
       wordings and says so on screen. This is the only step left on build
