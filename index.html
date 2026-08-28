@@ -9875,14 +9875,32 @@
             return (first && first !== 'No Trade Assigned') ? first : '';
         }
 
-        // Rank BPI wordings for `query`, optionally narrowed to `trade`.
+        // The wordings offered. EMPTY ON PURPOSE (2026-08-15): the first version
+        // sourced these from bpi_training_examples, and on real data every
+        // observation carried its location baked into the text — "Laundry
+        // Adjust door rattle", "Bedroom 4 Margin". This app has a SEPARATE
+        // Location field, so every suggestion would have duplicated it into the
+        // description. Pulled rather than patched around, at the site's call,
+        // pending a curated list.
+        //
+        // TO ENABLE: drop the wordings in below, no other change needed.
+        // Shape: { text: 'Adjust the door to close correctly.', trade: 'Carpenter', n: 1 }
+        //   text  — the defect wording ONLY. No location prefix; the Location
+        //           field carries that, and repeating it is what killed v1.
+        //   trade — must match a contractor/trade-placeholder name exactly
+        //           ("Carpenter", not "Carpentry"), or it narrows to nothing.
+        //   n     — how common; higher sorts first. Use 1 if unranked.
+        // With the list empty the whole feature is invisible: no popup, no
+        // dropdown, typing behaves exactly as it did before it existed.
+        let CURATED_DEFECT_WORDINGS = [];
+
+        // Rank wordings for `query`, optionally narrowed to `trade`.
         // Every typed word must word-prefix match (matchesSearch), so each
         // extra word can only ever shrink the list — which is the behaviour
         // that makes this quicker than typing the sentence out.
         function bpiDefectSuggestions(trade, query, limit) {
-            const cat = (window.CloudLearning && window.CloudLearning.defectCatalogue)
-                ? window.CloudLearning.defectCatalogue() : [];
-            if (!cat.length) return [];
+            const cat = CURATED_DEFECT_WORDINGS;
+            if (!cat || !cat.length) return [];
             const q = String(query || '').trim();
             const t = String(trade || '').trim().toLowerCase();
             // With no trade AND no query there is nothing to go on but "most
@@ -11764,7 +11782,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15i';
+        const APP_VERSION = '2026-08-15j';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11838,7 +11856,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15i"></script>
+    <script src="cloud-sync.js?v=2026-08-15j"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

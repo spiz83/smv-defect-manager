@@ -1,6 +1,39 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (i) — BPI defect-wording suggestions on both entry screens
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (j) — the BPI suggestion list is withdrawn (the source had locations baked in)
+
+- **What real data showed, within the hour of (i) shipping:** the suggestions
+  worked mechanically and were useless in practice. Every observation in
+  `bpi_training_examples` carries its location inside the text — "Laundry
+  Adjust door rattle", "Bedroom 4 Margin", "Laundry Fully knock down bottom
+  hinge pin." This app has a SEPARATE Location field, so accepting any
+  suggestion duplicated the room into the description. Site's verdict:
+  "no point having location in the description… remove the list for now."
+- **Removed the SOURCE, kept the ENGINE.** `CURATED_DEFECT_WORDINGS` in
+  index.html is now the corpus and ships EMPTY, so the feature is completely
+  invisible — no popup, no dropdown, typing exactly as before. The ranking,
+  trade-narrowing, both screens' UI and all their tests stay. A curated list
+  is a one-place data drop, not a rebuild.
+- **Did NOT try to strip the location prefix off the BPI text.** It was
+  tempting and would have been wrong: room names are not a fixed prefix
+  ("Left Elevation", "Garage External PA door"), stripping them heuristically
+  would mangle real wordings, and the site had already decided. Guessing at a
+  cleanup nobody asked for, on data I cannot see, to rescue a source that was
+  rejected on other grounds too, is how a fix becomes a second problem.
+- **The `bpi_training_examples` PULL is gone as well**, not just unused. It
+  was 4000 rows on every sync for a feature that now shows nothing — dead
+  download on a phone on site. The pre-existing WRITE path
+  (`CloudLearning.record`) is untouched; corrections still train CH Tracker.
+- **A test now pins the empty state** (`bpidesc.mjs` section G reads the
+  shipped source). If someone later fills the list, that check fails and
+  makes them confirm it was deliberate — the list going live is a decision,
+  not something to happen by accident.
+- **Trade-off accepted:** two builds' work now sits dormant behind an empty
+  array. Cheaper than the alternative — supervisors were being offered
+  suggestions that would have put "Laundry" in a description field sitting
+  directly under a Location box already reading "Laundry".
+
+## 2026-08-15 (i) — BPI defect-wording suggestions on both entry screens
 
 - **The ask:** as a supervisor types a defect, suggest real BPI wordings from
   CH Tracker's history, narrowed to the trade of whichever contractor is

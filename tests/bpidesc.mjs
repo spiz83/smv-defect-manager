@@ -4,11 +4,13 @@
 // supervisor types, narrowed to the trade of whichever contractor is selected,
 // on BOTH the regular Add Defects screen and Bulk Import photo tagging.
 //
-// The corpus is CloudLearning.defectCatalogue(), which cloud-sync builds from
-// bpi_training_examples. NOT dm_trade_learning: that stores only phrase_key,
-// which normalizePhrase() has already stripped of punctuation, room words and
-// stopwords, so it can never be shown to a human. That distinction is the
-// whole reason this feature needed a new table pull, and section A pins it.
+// The corpus is CURATED_DEFECT_WORDINGS in index.html, which ships EMPTY.
+// v1 sourced it from bpi_training_examples and had to be withdrawn: on real
+// data every observation carries its location baked into the text ("Laundry
+// Adjust door rattle"), which this app already has a separate Location field
+// for. Section G pins the shipped-empty state; every other section seeds the
+// list so the engine stays covered and a curated list can be dropped in with
+// confidence.
 import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -77,8 +79,8 @@ await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
 await page.waitForFunction(() => typeof window.render === 'function');
 await page.evaluate((cat) => {
   window.CloudJobs = { isManager: () => true, currentUserId: () => 'me' };
-  // Stand in for cloud-sync's catalogue exactly as it exposes it.
-  window.CloudLearning = { defectCatalogue: () => cat };
+  // Seed the curated list the engine actually reads.
+  CURATED_DEFECT_WORDINGS = cat;
   render();
 }, CATALOGUE);
 
@@ -279,39 +281,47 @@ console.log('\n--- E · Bulk Import photo tagging ---');
 }
 
 // ===========================================================================
-//  F. No catalogue (not synced yet, or the table isn't readable) must be a
-//     silent no-op, not a broken description field.
+//  F. An empty list must be a silent no-op, not a broken description field.
+//     This is the state the app SHIPS in, so it is the state that matters most.
 // ===========================================================================
-console.log('\n--- F · degrades silently with no catalogue ---');
+console.log('\n--- F · degrades silently with an empty list ---');
 {
   const r = await page.evaluate(() => {
-    const real = window.CloudLearning;
-    window.CloudLearning = { defectCatalogue: () => [] };
+    const real = CURATED_DEFECT_WORDINGS;
+    CURATED_DEFECT_WORDINGS = [];
     const a = bpiDefectSuggestions('Carpenter', 'door', 10).length;
-    window.CloudLearning = undefined;                 // not synced at all
-    const b = bpiDefectSuggestions('Carpenter', 'door', 10).length;
-    window.CloudLearning = real;
-    return { emptyCatalogue: a, noCloudLearning: b };
+    const b = bpiDefectSuggestions('', '', 10).length;
+    CURATED_DEFECT_WORDINGS = real;
+    return { withTrade: a, withNothing: b };
   });
-  check('an empty catalogue suggests nothing and does not throw', r.emptyCatalogue === 0, String(r.emptyCatalogue));
-  check('no CloudLearning at all (local-only mode) does not throw either', r.noCloudLearning === 0, String(r.noCloudLearning));
+  check('an empty list suggests nothing and does not throw', r.withTrade === 0 && r.withNothing === 0, JSON.stringify(r));
 
-  // The description field must still be perfectly usable with no suggestions.
   await page.evaluate(() => { startDefectsForJob(1); });
   await page.waitForTimeout(250);
-  await page.evaluate(() => {
-    const real = window.CloudLearning;
-    window.CloudLearning = { defectCatalogue: () => [] };
-    window.__restoreCL = () => { window.CloudLearning = real; };
-  });
+  await page.evaluate(() => { window.__realList = CURATED_DEFECT_WORDINGS; CURATED_DEFECT_WORDINGS = []; });
   await page.click('.add-defect-1');
   await page.fill('.add-defect-1', 'Typed with no suggestions available');
   await page.waitForTimeout(150);
-  check('typing works normally with no catalogue',
+  check('typing works normally with an empty list',
     (await page.inputValue('.add-defect-1')) === 'Typed with no suggestions available');
   check('…and no empty popup is left on screen',
     await page.evaluate(() => { const p = document.getElementById('bpi-desc-pop'); return !p || p.style.display === 'none'; }));
-  await page.evaluate(() => window.__restoreCL && window.__restoreCL());
+  await page.evaluate(() => { CURATED_DEFECT_WORDINGS = window.__realList; });
+}
+
+// ===========================================================================
+//  G. THE SHIPPED STATE. The list is empty in the repo on purpose; if someone
+//     later fills it, this fails and makes them confirm that was intended.
+// ===========================================================================
+console.log('\n--- G · ships with the list empty (withdrawn pending a curated one) ---');
+{
+  const shipped = await page.evaluate(async () => {
+    const res = await fetch('/index.html', { cache: 'no-store' });
+    const src = await res.text();
+    const m = src.match(/let CURATED_DEFECT_WORDINGS = \[([\s\S]{0,80}?)\];/);
+    return m ? m[1].trim() : 'NOT FOUND';
+  });
+  check('CURATED_DEFECT_WORDINGS ships empty', shipped === '', JSON.stringify(shipped));
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

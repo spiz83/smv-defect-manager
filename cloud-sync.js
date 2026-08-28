@@ -131,10 +131,6 @@
   // bpi_ai_settings), refreshed each pull so Admin edits reach the phone.
   // Defaults match the bpi_ai_settings row defaults for cold boots.
   let bpiDbRules = [];
-  // Deduped BPI defect wordings [{ text, trade, n }], newest-4000 examples
-  // collapsed by text. Feeds the defect-description autocomplete; empty until
-  // the first pull, and stays empty if that table isn't readable.
-  let bpiCatalogue = [];
   let bpiAiSettings = { weight_supervisor: 1, weight_senior: 3, weight_manager: 5, weight_admin: 10, min_examples: 2, auto_learning: true };
 
   function emptySnap() {
@@ -865,7 +861,7 @@
     // from idMap.defects, so reconcileLocalDefectsUp read ~1000 cloud rows as
     // un-synced local work and re-uploaded them on every boot ("Uploaded 1000
     // change(s) from this phone").
-    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, bpiExamples] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet] = await Promise.all([
       selectAllRows('dm_trades', '*', 'id'),
       selectAllRows('dm_contractors', '*', 'id'),
       selectAllRows('dm_contractor_trades', 'contractor_id, trade_id', 'contractor_id'),
@@ -881,25 +877,7 @@
       // Tracker). Pulled here so a rule edit reaches the phone on next sync —
       // without this the DB rule engine only ever applied to Tracker imports.
       selectAllRows('bpi_trade_rules', 'keyword, trade, priority', 'keyword', (q) => q.eq('enabled', true)),
-      sb.from('bpi_ai_settings').select('*').eq('id', 1),   // single row by pk — no paging needed
-      // BPI defect-wording catalogue for the description autocomplete.
-      //
-      // NOT dm_trade_learning: that table stores only `phrase_key`, which
-      // normalizePhrase() has already stripped of punctuation, room words and
-      // stopwords — "Left Elevation Caulk the gap to barge eave and fascia."
-      // survives as "caulk gap barge eave fascia" and can never be turned back
-      // into something to put in front of a supervisor. bpi_training_examples
-      // keeps the ORIGINAL observation text, which is what CH Tracker's
-      // Admin → BPI AI → Training tab lists. This app already writes to that
-      // table (CloudLearning.record) and has never read it back.
-      //
-      // Deliberately NOT selectAllRows: this table is append-only and grows
-      // with every correction anyone makes, forever. Paging all of it onto a
-      // phone on site would be an unbounded and steadily worsening download
-      // for a convenience feature. Newest 4000 is plenty to dedupe a few
-      // hundred distinct wordings out of, and the cap degrades safely — a
-      // supervisor gets slightly fewer suggestions, never a stalled sync.
-      sb.from('bpi_training_examples').select('observation, correct_trade').order('id', { ascending: false }).limit(4000)
+      sb.from('bpi_ai_settings').select('*').eq('id', 1)   // single row by pk — no paging needed
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -1020,39 +998,6 @@
       });
     }
 
-    // Deduped BPI wording catalogue → the description autocomplete's corpus.
-    // Keyed case-insensitively on the trimmed observation so the SAME wording
-    // logged fifty times becomes one suggestion with n=50 — that count is what
-    // makes "the regular BPI items" float to the top, which is the whole point
-    // of sourcing this from real history instead of a hand-written list.
-    // Best-effort throughout: a failed or absent pull just leaves the catalogue
-    // empty and the autocomplete silently doesn't offer anything.
-    bpiCatalogue = [];
-    if (bpiExamples && !bpiExamples.error && Array.isArray(bpiExamples.data)) {
-      const byText = new Map();
-      bpiExamples.data.forEach(row => {
-        const text = String(row.observation == null ? '' : row.observation).trim().replace(/\s+/g, ' ');
-        // Junk guard: one-word fragments are noise in a picker, and anything
-        // book-length is a paragraph someone pasted, not a defect wording.
-        if (text.length < 6 || text.length > 200) return;
-        const key = text.toLowerCase();
-        const hit = byText.get(key);
-        if (hit) {
-          hit.n++;
-          // Same wording logged under two trades: keep the majority verdict.
-          if (row.correct_trade) {
-            hit.trades[row.correct_trade] = (hit.trades[row.correct_trade] || 0) + 1;
-            if (hit.trades[row.correct_trade] > (hit.trades[hit.trade] || 0)) hit.trade = row.correct_trade;
-          }
-        } else {
-          byText.set(key, { text, trade: row.correct_trade || '', n: 1, trades: row.correct_trade ? { [row.correct_trade]: 1 } : {} });
-        }
-      });
-      bpiCatalogue = [...byText.values()]
-        .sort((a, b) => b.n - a.n || a.text.localeCompare(b.text))
-        .map(x => ({ text: x.text, trade: x.trade, n: x.n }));
-      console.info('[CloudSync] BPI wording catalogue:', bpiCatalogue.length, 'distinct from', bpiExamples.data.length, 'examples');
-    }
     // DB-managed keyword rules (priority order) + live AI settings. Best-effort:
     // a failed pull just keeps the previous values / defaults.
     if (dbRules && !dbRules.error && Array.isArray(dbRules.data)) {
@@ -2667,11 +2612,6 @@
         });
       } catch (e) { console.warn('[CloudLearning] example', e); }
     },
-    // Deduped BPI defect wordings for the description autocomplete, most-used
-    // first. Read-only view of the catalogue; the filtering/ranking against
-    // what a supervisor has typed lives in index.html beside the UI that uses
-    // it, so it can share the app's own search helpers.
-    defectCatalogue: () => bpiCatalogue,
     // Live DB rule set + min-examples gate (Admin-editable, pulled each sync).
     dbRules: () => bpiDbRules,
     minExamples: () => bpiAiSettings.min_examples,

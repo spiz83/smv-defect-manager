@@ -1,6 +1,13 @@
 # Tasks
 
 ## Current sprint
+- [ ] **Waiting on Spiro: the curated defect-wording list.** Drop it into
+      `CURATED_DEFECT_WORDINGS` in index.html — that is the only change
+      needed, the engine and both screens are built and tested. Wordings must
+      carry NO location prefix (that is why v1 was withdrawn), and `trade`
+      must match a contractor/trade-placeholder name exactly ("Carpenter",
+      not "Carpentry"). `tests/bpidesc.mjs` section G will fail once the list
+      is filled — that is intentional; update it in the same change.
 - [ ] Deploy build `2026-08-15h` — third attempt at the Bulk Import chips
       being cut off. Built and green, waiting on the go-ahead.
 - [ ] Get a supervisor to confirm on a real phone that the chips are now

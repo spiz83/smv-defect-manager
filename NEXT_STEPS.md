@@ -3,7 +3,28 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
-## BPI defect-wording suggestions (2026-08-15) — build `2026-08-15i`
+## BPI defect-wording suggestions — WITHDRAWN, engine intact (2026-08-15) — build `2026-08-15j`
+**The suggestion list is EMPTY on purpose and the feature is invisible.**
+v1 (build `i`) sourced wordings from `bpi_training_examples` and was pulled
+within the hour: on real data every observation has its location baked into
+the text ("Laundry Adjust door rattle"), and this app has a separate Location
+field, so every suggestion duplicated the room into the description.
+
+- **To turn it back on:** fill `CURATED_DEFECT_WORDINGS` in index.html. That
+  is the ONLY change needed — ranking, trade-narrowing and both screens' UI
+  are built, deployed and tested. Wordings must have NO location prefix, and
+  `trade` must exactly match a contractor/trade-placeholder name.
+- **`tests/bpidesc.mjs` section G asserts the list ships empty.** It will
+  fail the moment someone fills it — deliberately, so the list going live is
+  a decision rather than an accident. Update that check in the same change.
+- **The `bpi_training_examples` pull was removed too**, not just unused: 4000
+  rows per sync for a feature showing nothing. The WRITE path
+  (`CloudLearning.record`) is untouched — corrections still train CH Tracker.
+- **Do not "fix" v1 by stripping location prefixes.** Room names are not a
+  fixed prefix ("Left Elevation", "Garage External PA door"); heuristic
+  stripping would mangle real wordings, and the source was rejected anyway.
+
+### Original build `2026-08-15i` notes (engine design, still accurate)
 Typing a defect now suggests real BPI wordings from CH Tracker's history,
 narrowed to the trade of whichever contractor is selected, narrowing further
 with each word. On BOTH the regular Add Defects screen and Bulk Import photo
