@@ -1,14 +1,21 @@
 # Tasks
 
 ## Current sprint
+- [ ] Ask Spiro to confirm Painter / Carpenter / Cleaner / Caulker /
+      Supervisor / Plumber / Electrician / Brick Cleaner / Site Cleaner are
+      all live, active contractors/trade placeholders — the new Bulk Import
+      chips only assign for real if the name matches one. Build `2026-08-15d`.
 - [ ] Get a supervisor to confirm on a real iPhone that Bulk Import no longer
       jumps around while tagging photos. Can't be verified from this
-      environment — headless Chromium doesn't open a real keyboard. Build
-      `2026-08-15c`, not yet deployed.
+      environment — headless Chromium doesn't open a real keyboard.
 - [ ] Watch the first supervisor who changes their password: the other-devices
       warning is the part most likely to be misread on site.
 
 ## Backlog (prioritised, top = next)
+- [ ] Consider preserving the typed/tapped trade word on an unassigned Bulk
+      Import defect (currently discarded, same as typing one today) — needs
+      a new field through db.addDefect + cloud-sync + a Supabase migration,
+      not a quick edit. See NEXT_STEPS.md.
 - [ ] Renew or delete `VERCEL_TOKEN` — it is stale, and a CLI that dies with
       "User not found" during a deploy reads as a failed deploy when the
       git-linked build has already shipped.
@@ -24,10 +31,16 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-15 — Bulk Import: nine one-tap generic-trade chips (Painter,
+  Carpenter, Cleaner, Caulker, Supervisor, Plumber, Electrician, Brick
+  Cleaner, Site Cleaner) on the Supplier/Trade field — a shortcut for typing
+  the word, resolved through the existing exact-name match. Also fixed a
+  latent stacked-timer bug in bulkComboBlur found while testing it.
+  `tests/bulkphoto.mjs`. Build `2026-08-15d`, deployed.
 - 2026-08-15 — Bulk Import: removed the unsolicited auto-focus, shrank the
   photo to a thumbnail while a field is focused, and tracked visualViewport so
   the fixed overlay stops getting clipped by the iOS keyboard. `tests/bulkphoto.mjs`.
-  Build `2026-08-15c`, gates green, not deployed.
+  Build `2026-08-15c`, shipped as part of `2026-08-15d`.
 - 2026-08-15 — Re-stamped to `2026-08-15b` to force every phone to refetch the
   shell. No code change — four stamp lines only.
 - 2026-08-15 — Shipped build `2026-08-15a`. Vercel verified; live files hashed

@@ -4885,19 +4885,47 @@
         }
 
         // Type-to-search dropdowns for the bulk wizard (location + supplier/trade).
+        // Quick-pick generic trades on the Bulk Import Supplier/Trade field (site
+        // feedback 2026-08-15): most photos in a batch aren't for a specific named
+        // sub, they're "get the painter to look at this" — typing and matching a
+        // real company name for every one of 19 photos costs fingers for no real
+        // gain. One tap fills the field with the trade word instead. Exclusive to
+        // this list for now, in the order asked for; broaden later if needed.
+        const BULK_QUICK_TRADES = ['Painter', 'Carpenter', 'Cleaner', 'Caulker', 'Supervisor', 'Plumber', 'Electrician', 'Brick Cleaner', 'Site Cleaner'];
+        // Per-field pending hide timer for bulkComboBlur, keyed so a reopen can
+        // cancel a still-pending hide from an earlier blur (see bulkComboBlur).
+        const _bulkComboHideTimers = {};
         function bulkComboFilter(field) {
             const input = document.getElementById('bulk-' + field);
             const list = document.getElementById('bulk-' + field + '-list');
             if (!input || !list) return;
+            // A blur scheduled a hide 180ms out; if this field is being refocused
+            // or filtered again before that fires, the hide is stale — cancel it,
+            // or it can close the list out from under a tap that reopened it
+            // moments earlier (fast field-to-field taps land well inside 180ms).
+            clearTimeout(_bulkComboHideTimers[field]);
             const q = input.value.trim().toLowerCase();
             const items = field === 'loc'
                 ? DEFECT_LOCATIONS.map(l => ({ label: l }))
                 : db.getContractors().map(c => ({ label: c.name }));
             const filtered = (q ? items.filter(it => (it.label || '').toLowerCase().includes(q)) : items).slice(0, 60);
-            if (!filtered.length) { list.style.display = 'none'; return; }
-            list.innerHTML = filtered.map((it, i) => `<div data-i="${i}" style="padding:11px 12px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--border-color,#eee);color:var(--text-primary,#111);">${_escHtml(it.label)}</div>`).join('');
+            // Chips only on the empty Supplier/Trade field, before a specific search
+            // starts — the moment someone types, they're after a real name and the
+            // chips would just be in the way of the results.
+            const quickHtml = (field === 'sup' && !q)
+                ? `<div id="bulk-sup-quick">${BULK_QUICK_TRADES.map(t => `<button type="button" class="bulk-quick-chip" data-quick="${_escHtml(t)}">${_escHtml(t)}</button>`).join('')}</div>`
+                : '';
+            if (!filtered.length && !quickHtml) { list.style.display = 'none'; return; }
+            list.innerHTML = quickHtml + filtered.map((it, i) => `<div data-i="${i}" style="padding:11px 12px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--border-color,#eee);color:var(--text-primary,#111);">${_escHtml(it.label)}</div>`).join('');
             list._items = filtered;
             list.onclick = (e) => {
+                // A trade chip resolves to a real contractor at save time the exact
+                // same way a typed-and-matched name does (saveBulkPhoto's existing
+                // exact-name lookup) — this is a shortcut for typing the word, not a
+                // new assignment path. If that trade isn't a live contractor/trade
+                // placeholder, it saves unassigned, same as typing it would today.
+                const chip = e.target.closest('[data-quick]');
+                if (chip) { input.value = chip.getAttribute('data-quick'); list.style.display = 'none'; return; }
                 const el = e.target.closest('[data-i]'); if (!el) return;
                 const it = list._items[Number(el.getAttribute('data-i'))];
                 input.value = it.label;
@@ -4907,7 +4935,15 @@
         }
         function bulkComboBlur(field) {
             // Delay so a tap on an option registers before the list hides.
-            setTimeout(() => { const l = document.getElementById('bulk-' + field + '-list'); if (l) l.style.display = 'none'; }, 180);
+            // Replace any earlier pending hide rather than stacking another —
+            // several blurs in quick succession (fast field-to-field taps) used
+            // to schedule one independent timer each, and whichever fired LAST
+            // would hide the list even if it had been legitimately reopened by a
+            // later focus in between. One timer per field, always the latest.
+            clearTimeout(_bulkComboHideTimers[field]);
+            _bulkComboHideTimers[field] = setTimeout(() => {
+                const l = document.getElementById('bulk-' + field + '-list'); if (l) l.style.display = 'none';
+            }, 180);
         }
 
         // Keyboard-jump mitigation for Bulk Import (site feedback 2026-08-15):
@@ -4941,6 +4977,9 @@
             s.textContent = `
                 #bulk-photo-ov .bulk-photo-wrap img { transition: max-height .18s ease; }
                 #bulk-photo-ov.bulk-typing .bulk-photo-wrap img { max-height: 72px !important; }
+                #bulk-sup-quick { display:flex; flex-wrap:wrap; gap:6px; padding:9px 10px; border-bottom:1px solid var(--border-color,#eee); }
+                .bulk-quick-chip { padding:9px 13px; border-radius:15px; border:1px solid #c6c6c8; background:var(--bg-secondary,#f2f2f2); color:var(--text-primary,#111); font-size:14px; cursor:pointer; }
+                .bulk-quick-chip:active { background:var(--blue,#2563eb); border-color:var(--blue,#2563eb); color:#fff; }
             `;
             document.head.appendChild(s);
         }
@@ -11478,7 +11517,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15c';
+        const APP_VERSION = '2026-08-15d';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11552,7 +11591,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15c"></script>
+    <script src="cloud-sync.js?v=2026-08-15d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

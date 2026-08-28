@@ -3,9 +3,52 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
+## Quick-pick trade chips on Bulk Import (2026-08-15) — build `2026-08-15d`
+**DEPLOYED 2026-08-15.** Nine one-tap buttons on the Supplier/Trade field —
+Painter, Carpenter, Cleaner, Caulker, Supervisor, Plumber, Electrician,
+Brick Cleaner, Site Cleaner — for a photo that needs a trade logged fast
+without searching a specific company. Full reasoning in DECISIONS.md.
+
+- **A chip fills the field with the word; `saveBulkPhoto()`'s EXISTING
+  exact-name match against `db.getContractors()` does the rest**, same as
+  typed text always has. No new resolution path. If that exact name matches
+  a live contractor (including a trade placeholder), it assigns for real; if
+  not, it saves unassigned — same as typing it and not picking anything.
+- **Cannot verify from here which of the nine already exist as live
+  contractors/trade placeholders.** `isTradePlaceholder` is read-only from
+  this codebase (Settings only toggles `isActive` on ones that already
+  exist — nothing here has ever created one; they come from CH Tracker /
+  direct Supabase). **Ask Spiro to check** that Painter, Carpenter, Cleaner,
+  Caulker, Supervisor, Plumber, Electrician, Brick Cleaner and Site Cleaner
+  are all set up and active. Any that aren't will still let a supervisor tap
+  the chip and save — it just lands unassigned, same as typing that word
+  today, not an error.
+- **The unmatched-chip text is not preserved anywhere on the defect** —
+  same pre-existing gap as typing a name and not picking a suggestion.
+  A defect saved via an unmatched chip is indistinguishable from one saved
+  with Supplier/Trade left blank. Worth a `defect.tradeHint`-style field if
+  it matters in practice, but that's a schema change (new column flowing
+  through `db.addDefect`, cloud-sync's diff/push, a matching Supabase
+  migration) — exactly the shape of change the `order_status` incident in
+  this file's history says needs a migration first, not something to
+  improvise mid-deploy. Watch whether it turns out to matter before building it.
+- **`BULK_QUICK_TRADES` is a hardcoded array** (`index.html`, beside
+  `bulkComboFilter`), not read from `db.getContractors()`'s trade
+  placeholders — deliberate, so it shows exactly the nine asked for
+  regardless of what's active in the live DB. Widening it later is a
+  one-line array edit.
+- **Found and fixed a real bug on the way, not part of the ask:**
+  `bulkComboBlur`'s hide-timer was unconditional and could stack — a field
+  blurred and refocused faster than 180ms apart could have its reopened
+  dropdown closed again by a stale timer from the earlier blur. Now
+  debounced through one shared per-field timer. Confirmed by reverting it
+  and watching the exact same test hang the exact same way before restoring
+  it — this is what a real supervisor tapping quickly between fields could
+  have hit, not just the test.
+
 ## Bulk Import: stop the layout jumping around while typing (2026-08-15) — build `2026-08-15c`
-**NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed live —
-`deploy` wasn't asked for this round.
+**DEPLOYED as part of `2026-08-15d`** (see above) — this build carries both
+changes together; gates were green at both `c` and `d`.
 
 **The report:** tagging photos in Bulk Import (Location / Supplier / Trade /
 Defect description per photo) was "jumpy every time I press a field" — the

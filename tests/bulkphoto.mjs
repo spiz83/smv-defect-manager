@@ -6,6 +6,11 @@
 // real iOS keyboard from headless Chromium, so it proves the three mechanisms
 // this fix installed instead: no auto-focus, the photo collapses/expands with
 // field focus, and the overlay tracks visualViewport when available.
+//
+// Also covers the same-day follow-up: one-tap generic trade chips on the
+// Supplier/Trade field (Painter, Carpenter, Cleaner, Caulker, Supervisor,
+// Plumber, Electrician, Brick Cleaner, Site Cleaner), for photos that need a
+// trade logged fast rather than a specific company searched and picked.
 import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -30,7 +35,15 @@ await new Promise(r => server.listen(PORT, r));
 
 const SEED = {
   addresses: [{ id: 1, lot: '905', street: 'Lot 905, (11) Woodlawn Rd', suburb: 'Wollert', propertyNumber: '306648', jobStatus: 'active', active: true }],
-  contractors: [{ id: 1, name: 'COSTAS PLUMBING', trades: 'Plumber', tradeIds: [1] }],
+  contractors: [
+    { id: 1, name: 'COSTAS PLUMBING', trades: 'Plumber', tradeIds: [1] },
+    // A real trade-placeholder, named to EXACTLY match one of the quick-pick
+    // chips — proves a chip tap can resolve to a genuine contractorId via the
+    // same exact-name match saveBulkPhoto already does for typed text.
+    // "Electrician" (another chip) deliberately has NO matching contractor,
+    // to prove the honest fallback: no match still saves, just unassigned.
+    { id: 2, name: 'Painter', trades: 'Painter', tradeIds: [], isTradePlaceholder: true, isActive: true },
+  ],
   trades: [{ id: 1, name: 'Plumber' }],
   defects: [],
 };
@@ -174,18 +187,25 @@ console.log('\n=== photo collapses while typing, restores when done ===');
 // by breaking the CSS rule that does the collapsing and watching it go red.
 console.log('\n=== proving the collapse check can fail ===');
 {
-  await page.evaluate(() => { document.getElementById('bulk-photo-styles').textContent = ''; });
+  // Round-trip the REAL stylesheet content rather than restoring a hardcoded
+  // copy: a hand-typed restore silently goes stale the moment the real rules
+  // in index.html change (as happened here when the quick-pick chip CSS was
+  // added later but this string wasn't updated to match) — and everything
+  // AFTER this block then runs with broken chip styling for the rest of the
+  // suite, not because chips are broken, just because the test corrupted its
+  // own environment. Saving and restoring the live value can't drift.
+  const savedCss = await page.evaluate(() => {
+    const s = document.getElementById('bulk-photo-styles');
+    const saved = s.textContent;
+    s.textContent = '';
+    return saved;
+  });
   await page.click('#bulk-sup');
   await page.waitForTimeout(250);
   const brokenHeight = await photoMaxHeightPx();
   check('with the collapse rule removed, the photo stays full size (proves the check is real)',
     !isThumb(brokenHeight), brokenHeight + 'px');
-  await page.evaluate(() => {
-    document.getElementById('bulk-photo-styles').textContent = `
-      #bulk-photo-ov .bulk-photo-wrap img { transition: max-height .18s ease; }
-      #bulk-photo-ov.bulk-typing .bulk-photo-wrap img { max-height: 72px !important; }
-    `;
-  });
+  await page.evaluate((css) => { document.getElementById('bulk-photo-styles').textContent = css; }, savedCss);
   await page.evaluate(() => document.getElementById('bulk-sup').blur());
   await page.waitForTimeout(250);
 }
@@ -207,6 +227,85 @@ console.log('\n=== autocomplete still works after the focus/blur changes ===');
   check('typing in Supplier still filters to the seeded contractor', /COSTAS PLUMBING/.test(supItems), supItems);
   await page.click('#bulk-sup-list [data-i]');
   check('…and picking it fills the field', (await page.inputValue('#bulk-sup')) === 'COSTAS PLUMBING');
+}
+
+// ===========================================================================
+//  C2. One-tap generic trade chips on Supplier/Trade — the fast path for a
+//      photo that just needs "a Painter" logged, not a specific company found.
+// ===========================================================================
+console.log('\n=== quick-pick trade chips ===');
+{
+  const WANT = ['Painter', 'Carpenter', 'Cleaner', 'Caulker', 'Supervisor', 'Plumber', 'Electrician', 'Brick Cleaner', 'Site Cleaner'];
+
+  await page.evaluate(() => { document.getElementById('bulk-sup').value = ''; });
+  await page.click('#bulk-sup');
+  await page.waitForTimeout(80);
+  const chipTexts = await page.evaluate(() =>
+    [...document.querySelectorAll('.bulk-quick-chip')].map(b => b.textContent.trim()));
+  console.log('  chips:', JSON.stringify(chipTexts));
+  check('all nine trades appear as chips, in the order asked for', JSON.stringify(chipTexts) === JSON.stringify(WANT), JSON.stringify(chipTexts));
+
+  // The chips sit ABOVE the regular contractor list, not mixed into it.
+  const order = await page.evaluate(() => {
+    const list = document.getElementById('bulk-sup-list');
+    const quick = list.querySelector('#bulk-sup-quick');
+    const firstRow = list.querySelector('[data-i]');
+    return quick && firstRow ? (quick.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 : null;
+  });
+  check('chips render before the regular contractor list', order === true, String(order));
+
+  // Tapping "Electrician" — deliberately NOT a seeded contractor — must still
+  // fill the field cleanly. This is the case that proves the fallback is
+  // honest: no matching contractor, so it will save unassigned, exactly as
+  // typing "Electrician" by hand and not picking anything would today.
+  await page.click('.bulk-quick-chip:has-text("Electrician")');
+  await page.waitForTimeout(80);
+  check('tapping a chip fills the field with that exact word', (await page.inputValue('#bulk-sup')) === 'Electrician');
+  check('…and closes the dropdown', await page.evaluate(() => document.getElementById('bulk-sup-list').style.display === 'none'));
+
+  // Typing something must hide the chips — they're the empty-field fast path,
+  // not a permanent fixture competing with an active search.
+  await page.click('#bulk-sup');
+  await page.fill('#bulk-sup', 'COS');
+  await page.waitForTimeout(80);
+  check('typing hides the quick-pick chips', await page.evaluate(() => !document.getElementById('bulk-sup-quick')));
+  check('…and the real search still works while they are hidden',
+    /COSTAS PLUMBING/.test(await page.evaluate(() => document.getElementById('bulk-sup-list').textContent)));
+
+  // Clearing back to empty and refocusing brings them back.
+  await page.fill('#bulk-sup', '');
+  await page.click('#bulk-loc');   // move focus away and back, like a real re-tap
+  await page.evaluate(() => document.getElementById('bulk-loc').blur());
+  await page.waitForTimeout(220);  // past bulkComboBlur's 180ms hide-delay, so the
+                                    // now-closed Location dropdown stops covering Supplier
+  await page.click('#bulk-sup');
+  await page.waitForTimeout(80);
+  check('clearing the field and refocusing brings the chips back',
+    (await page.evaluate(() => [...document.querySelectorAll('.bulk-quick-chip')].length)) === 9);
+
+  // Location must NOT grow chips — this is scoped to Supplier/Trade only.
+  await page.evaluate(() => { document.getElementById('bulk-loc').value = ''; });
+  await page.click('#bulk-loc');
+  await page.waitForTimeout(80);
+  check('Location gets no quick-pick chips', await page.evaluate(() => !document.getElementById('bulk-loc-list').querySelector('.bulk-quick-chip')));
+  await page.evaluate(() => document.getElementById('bulk-loc').blur());
+  await page.waitForTimeout(220);  // past bulkComboBlur's hide-delay, or the open
+                                    // Location dropdown covers Supplier below it
+
+  // Thumb-sized, matching this codebase's own bar for tap targets.
+  await page.click('#bulk-sup');
+  await page.waitForTimeout(80);
+  const chipBox = await page.evaluate(() => {
+    const b = document.querySelector('.bulk-quick-chip').getBoundingClientRect();
+    return { h: b.height, w: b.width };
+  });
+  check('chips are thumb-sized, not fiddly', chipBox.h >= 28 && chipBox.w >= 40, JSON.stringify(chipBox));
+
+  // Leave the field clean for section D/E, which continue this SAME 2-photo
+  // session and assert on its idx — the end-to-end "does a chip's Save
+  // actually assign the right contractor" check runs later, in its own fresh
+  // session, so it doesn't disturb that shared state.
+  await page.evaluate(() => { document.getElementById('bulk-sup').value = ''; });
 }
 
 // ===========================================================================
@@ -286,6 +385,47 @@ console.log('\n=== Save & Next into a fresh photo ===');
   check('finishing closes the overlay', !(await page.isVisible('#bulk-photo-ov')));
   const finalDefects = await page.evaluate(() => db.data.defects.map(d => d.description));
   check('both photos saved', finalDefects.length === 2, JSON.stringify(finalDefects));
+}
+
+// ===========================================================================
+//  F. A quick-pick chip is a shortcut for TYPING the word, nothing more — it
+//     must go through the exact same resolution saveBulkPhoto already applies
+//     to typed text. Run in its own fresh, single-photo session so the Save
+//     here doesn't disturb the idx-dependent assertions above.
+// ===========================================================================
+console.log('\n=== a chip Save resolves through the real assignment path ===');
+{
+  await openBulkStep(1);
+  await page.click('#bulk-sup');
+  await page.waitForTimeout(80);
+  // "Painter" is seeded as a real contractor (id 2); the chip is a shortcut
+  // for typing it, so tapping it must resolve the SAME way typing would.
+  await page.click('.bulk-quick-chip:has-text("Painter")');
+  await page.fill('#bulk-loc', 'Entry');
+  await page.fill('#bulk-desc', 'Overspray on skirting');
+  await page.click('button:has-text("Save & Finish")');
+  await page.waitForTimeout(300);
+  const saved = await page.evaluate(() => db.data.defects.find(d => /Overspray/.test(d.description)));
+  console.log('  saved via Painter chip:', JSON.stringify(saved && { contractorId: saved.contractorId, unassigned: saved.unassigned }));
+  check('a chip matching a real contractor assigns it, not "unassigned"',
+    !!saved && saved.contractorId === 2 && !saved.unassigned, JSON.stringify(saved));
+
+  // The honest other half: "Electrician" has no matching contractor in this
+  // job's list. It must still save — same as typing an unmatched name today —
+  // just unassigned, exactly as the response to this feature request said it
+  // would, rather than silently failing or throwing.
+  await openBulkStep(1);
+  await page.click('#bulk-sup');
+  await page.waitForTimeout(80);
+  await page.click('.bulk-quick-chip:has-text("Electrician")');
+  await page.fill('#bulk-loc', 'Entry');
+  await page.fill('#bulk-desc', 'Power point loose');
+  await page.click('button:has-text("Save & Finish")');
+  await page.waitForTimeout(300);
+  const savedNoMatch = await page.evaluate(() => db.data.defects.find(d => /Power point/.test(d.description)));
+  console.log('  saved via Electrician chip (no matching contractor):', JSON.stringify(savedNoMatch && { contractorId: savedNoMatch.contractorId, unassigned: savedNoMatch.unassigned }));
+  check('a chip with no matching contractor still saves, unassigned rather than lost',
+    !!savedNoMatch && !savedNoMatch.contractorId && savedNoMatch.unassigned === true, JSON.stringify(savedNoMatch));
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

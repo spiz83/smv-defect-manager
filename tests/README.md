@@ -44,7 +44,7 @@ changes. That has happened twice.
 | Suite | Covers |
 |---|---|
 | `addrcopy` | 📋 Copy address on a top-search row: the string, and three icons fitting a phone row |
-| `bulkphoto` | Bulk Import photo tagging: no unsolicited auto-focus, the photo collapses/restores with field focus, visualViewport tracking, autocomplete still works |
+| `bulkphoto` | Bulk Import photo tagging: no unsolicited auto-focus, the photo collapses/restores with field focus, visualViewport tracking, quick-pick trade chips, autocomplete still works |
 | `combo` | Supplier picker ranking (Reassign all / Edit defect / review); Edit defect → Save |
 | `deep` | Deep-read private-report import: admin gate, photo anchoring, fallbacks |
 | `fixes` | Search matching; the unsaved-changes guard; report re-import and re-opening |
@@ -103,6 +103,25 @@ Run one on its own with `node tests/shop.mjs`. Each prints `PASS`/`FAIL` per che
   already registered with the original function object before the reassignment — it
   keeps calling the original. To count how many times something gets registered, spy on
   `addEventListener` itself, not on the handler it will eventually call.
+- **An unguarded `setTimeout` scheduled on every blur is a bug the moment two blurs on
+  the same field land inside its delay.** `bulkphoto.mjs` hung clicking a quick-pick
+  chip that Playwright, `getComputedStyle` and `elementFromPoint` all agreed was
+  genuinely visible — the actual cause was `bulkComboBlur`'s 180ms hide-timer:
+  every blur scheduled an independent one with no cancellation, so a field
+  focused/blurred/refocused faster than 180ms (any test doing several quick
+  interactions, and plausibly a fast real tap) could reopen the dropdown and then
+  have an EARLIER blur's stale timer hide it again moments later — intermittent
+  by nature, so it didn't fail the same way twice. Fixed at the source
+  (`bulkComboFilter`/`bulkComboBlur` now debounce through one shared per-field
+  timer) rather than papered over with longer waits in the test. Confirmed by
+  reverting the fix and watching the exact same suite hang the exact same way.
+- **When a test corrupts a value it deliberately breaks (to prove a check can fail),
+  restore it by ROUND-TRIPPING the live value, never a hand-typed copy.** The same
+  suite's "prove the collapse check can fail" block blanked the injected
+  `<style>` tag, then restored it from a string written when that stylesheet had
+  two rules — by the time the quick-pick chips added three more, the hardcoded
+  restore silently dropped them for the rest of the run. Save `textContent`
+  before clearing it, restore from the saved value, and the copy can't go stale.
 - **`_review`, `db`, `state` are top-level `let`/`const`, not on `window`.** Use the bare
   identifier inside `page.evaluate`; `window._review` is `undefined`.
 - **Stub `window.CloudJobs`.** supabase-js can't load in the harness, so it never mounts,

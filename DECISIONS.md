@@ -1,6 +1,60 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (c) — Bulk Import stops jumping around while typing
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (d) — one-tap generic trade chips on Bulk Import's Supplier/Trade field
+
+- **The ask:** "Painter Carpenter Cleaner Caulker Supervisor Plumber electrician
+  Brick Cleaner site Cleaner" as one-tap buttons on the Supplier/Trade field,
+  for photos that need a trade logged fast, not a specific company searched —
+  "not using too much energy on my fingers" — with the explicit expectation
+  that these are generic and "can be edited at a later point."
+- **A chip is a shortcut for TYPING the word, not a new assignment mechanism.**
+  It fills the field with the exact trade name and lets `saveBulkPhoto()`'s
+  existing exact-name match against `db.getContractors()` do exactly what it
+  already does for hand-typed text: resolve to a real contractor if one
+  exists by that name, or save unassigned if not. No new resolution path, no
+  new field on the defect — reusing what the app already trusts.
+- **Deliberately NOT wired to create new `isTradePlaceholder` contractor
+  rows.** Grep found that concept is READ-ONLY from this codebase — Settings'
+  "Assignable Trades" only toggles `isActive` on placeholders that already
+  exist; nothing here has ever created one. They're seeded from elsewhere
+  (CH Tracker / directly in Supabase). Writing a new, never-before-exercised
+  path that inserts contractor rows into the shared production database,
+  under "deploy now," with no way to verify against the live data from this
+  environment, was the wrong kind of risk for this request. If a chip's exact
+  name doesn't currently match a live contractor, it saves unassigned —
+  same as typing that word and not picking a suggestion does today. Worth
+  fixing if any of the nine aren't already set up as trades, but that is a
+  data question for Spiro, not a guess to make from here.
+- **Exclusive to these nine, in this order — not the full Settings trade
+  list.** Asked for explicitly ("keep it exclusive to the following... for
+  the moment"). A hardcoded `BULK_QUICK_TRADES` array, not filtered from
+  `isTradePlaceholder`, so what's shown matches exactly what was asked for
+  regardless of which placeholders happen to be active in the live DB.
+- **Chips only show on the EMPTY field**, before typing starts. The instant
+  someone types, they're after a specific company and the chips would just
+  crowd the results they're now searching for — two modes, cleanly split by
+  one condition (`field === 'sup' && !q`) rather than a toggle to tap.
+- **Found and fixed a real latent bug on the way, not scope creep:**
+  `bulkComboBlur`'s 180ms hide-timer was unconditional and unguarded — every
+  blur scheduled an independent one, so a field blurred and refocused faster
+  than 180ms apart (a fast real tap between fields is entirely plausible, and
+  the test suite hit it immediately) could reopen its dropdown only to have
+  a STALE timer from an earlier blur hide it again moments later. Intermittent
+  by nature — never fails the same way twice, which is exactly why it hadn't
+  been caught. `bulkComboFilter`/`bulkComboBlur` now debounce through one
+  shared per-field timer instead of stacking. Confirmed by reverting the fix
+  and watching the same test hang the same way, then restoring it.
+- **Trade-off accepted:** unmatched trades still silently discard the typed
+  word on save (the pre-existing gap this exposed, not introduced by this
+  change) — a defect saved via an unmatched chip is indistinguishable from
+  a defect saved with the Supplier/Trade field left blank. Preserving that
+  text through an unassigned save would need a new field flowing through
+  `db.addDefect`, cloud sync's diff/push logic, and a matching Supabase
+  column — the exact shape of change this codebase's own history (the
+  `order_status` incident) says needs a migration first, not something to
+  improvise under a same-turn deploy. Flagged in NEXT_STEPS, not fixed here.
+
+## 2026-08-15 (c) — Bulk Import stops jumping around while typing
 
 - **The report, from four screenshots of the real screen:** tagging photos
   in Bulk Import (Location / Supplier / Trade / Defect description, one photo
