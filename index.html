@@ -4859,7 +4859,10 @@
                         <div id="bulk-sup-list" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:6;max-height:190px;overflow:auto;background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:9px;box-shadow:0 8px 20px rgba(0,0,0,.25);margin-top:2px;"></div>
                     </div>
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:10px 0 3px;">Defect description</label>
-                    <input id="bulk-desc" type="text" placeholder="Describe the defect" onfocus="_bulkFieldFocus()" onblur="_bulkFieldBlur()" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                    <div style="position:relative;">
+                        <input id="bulk-desc" type="text" autocomplete="off" placeholder="Describe the defect" oninput="bulkDescSuggest()" onfocus="bulkDescSuggest(); _bulkFieldFocus()" onblur="bulkDescBlur(); _bulkFieldBlur()" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                        <div id="bulk-desc-list" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:7;max-height:190px;overflow:auto;background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:9px;box-shadow:0 8px 20px rgba(0,0,0,.25);margin-top:2px;"></div>
+                    </div>
                     <div class="bulk-photo-wrap" style="text-align:center;margin:14px 0 4px;"><img src="${url}" style="max-width:100%;max-height:38vh;border-radius:10px;object-fit:contain;"></div>
                 </div>
                 <div style="display:flex;gap:10px;padding:12px 14px;border-top:1px solid var(--border-color,#eee);">
@@ -4994,6 +4997,35 @@
             setTimeout(_bulkRevealOpenList, 180);
             setTimeout(_bulkRevealOpenList, 420);
         }
+        // Defect-wording suggestions on the Bulk Import description field,
+        // narrowed by whatever supplier/trade is in the box above it.
+        function bulkDescSuggest() {
+            const input = document.getElementById('bulk-desc');
+            const list = document.getElementById('bulk-desc-list');
+            if (!input || !list) return;
+            clearTimeout(_bulkComboHideTimers.desc);
+            const trade = bpiTradeForContractorName((document.getElementById('bulk-sup') || {}).value);
+            const hits = bpiDefectSuggestions(trade, input.value, 12);
+            if (!hits.length) { list.style.display = 'none'; return; }
+            list.innerHTML = hits.map((h, i) => `<div data-d="${i}" style="padding:11px 12px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--border-color,#eee);color:var(--text-primary,#111);">${_escHtml(h.text)}</div>`).join('');
+            list._hits = hits;
+            list.onclick = (e) => {
+                const el = e.target.closest('[data-d]'); if (!el) return;
+                // Fills the box; the supervisor can still edit it afterwards —
+                // a suggestion is a shortcut for typing, never a locked value.
+                input.value = list._hits[Number(el.getAttribute('data-d'))].text;
+                list.style.display = 'none';
+            };
+            list.style.display = 'block';
+            _bulkRevealOpenList();
+            setTimeout(_bulkRevealOpenList, 180);
+        }
+        function bulkDescBlur() {
+            clearTimeout(_bulkComboHideTimers.desc);
+            _bulkComboHideTimers.desc = setTimeout(() => {
+                const l = document.getElementById('bulk-desc-list'); if (l) l.style.display = 'none';
+            }, 180);
+        }
         function bulkComboBlur(field) {
             // Delay so a tap on an option registers before the list hides.
             // Replace any earlier pending hide rather than stacking another —
@@ -5056,7 +5088,7 @@
         // changes size — see _bulkVvSync for why the second one is the load-
         // bearing case.
         function _bulkRevealOpenList() {
-            ['sup', 'loc'].forEach(f => {
+            ['sup', 'loc', 'desc'].forEach(f => {
                 const list = document.getElementById('bulk-' + f + '-list');
                 if (!list || list.style.display === 'none') return;
                 // Chips are the fast path, so they are what has to be fully
@@ -9815,6 +9847,137 @@
         // key regardless of room/quantity. This key drives the shared learning table.
         const PHRASE_ROOM_WORDS = ['master bedroom','powder room','walk in robe','linen cupboard','butlers pantry','bedroom','ensuite','bathroom','laundry','kitchen','hallway','pantry','alfresco','balcony','porch','study','rumpus','meals','living','family','garage','wir','robe'];
         const PHRASE_STOPWORDS = new Set(['to','the','of','at','an','and','is','are','be','please','required','reqd','req','need','needs','needed','provide','rectify','repair','fix','check','ensure','as','per','area','areas','no','with','for','from','has','have','around','where','there','here','this','that','all','each','both','left','right','front','rear','side']);
+        // ===================================================================
+        //  BPI DEFECT-WORDING AUTOCOMPLETE
+        //  Suggests real defect wordings from CH Tracker's BPI training data
+        //  (Admin → BPI AI → Training) as a supervisor types, narrowed to the
+        //  trade of whichever contractor is selected. Typing stays completely
+        //  free — this only ever offers, never replaces what was typed.
+        //  Corpus comes from CloudLearning.defectCatalogue(); see cloud-sync.js
+        //  for why it is bpi_training_examples and not dm_trade_learning.
+        // ===================================================================
+
+        // The trade to narrow suggestions to, from whatever is in a supplier
+        // box. Handles both shapes the picker can produce: a trade placeholder
+        // (name IS the trade — "Carpenter") and a real company categorised
+        // under one ("G&C Caulking Pty Ltd" → its `trades` string). Returns ''
+        // when nothing is chosen yet, which means "don't narrow".
+        function bpiTradeForContractorName(name) {
+            const typed = String(name || '').trim();
+            if (!typed) return '';
+            const norm = s => String(s || '').trim().toLowerCase();
+            const c = db.getContractors().find(x => norm(x.name) === norm(typed));
+            if (!c) return '';
+            if (c.isTradePlaceholder) return c.name || '';
+            // Real supplier: first trade on its list is its primary trade, the
+            // same convention the dropdown labels already use ("Name — Trade").
+            const first = String(c.trades || '').split(',')[0].trim();
+            return (first && first !== 'No Trade Assigned') ? first : '';
+        }
+
+        // Rank BPI wordings for `query`, optionally narrowed to `trade`.
+        // Every typed word must word-prefix match (matchesSearch), so each
+        // extra word can only ever shrink the list — which is the behaviour
+        // that makes this quicker than typing the sentence out.
+        function bpiDefectSuggestions(trade, query, limit) {
+            const cat = (window.CloudLearning && window.CloudLearning.defectCatalogue)
+                ? window.CloudLearning.defectCatalogue() : [];
+            if (!cat.length) return [];
+            const q = String(query || '').trim();
+            const t = String(trade || '').trim().toLowerCase();
+            // With no trade AND no query there is nothing to go on but "most
+            // common overall", which is noise — wait for a signal.
+            if (!t && !q) return [];
+            let rows = cat;
+            if (t) {
+                const inTrade = rows.filter(r => String(r.trade || '').trim().toLowerCase() === t);
+                // Unknown/absent trade in the catalogue → fall back to searching
+                // everything rather than showing an empty list, so a supplier
+                // whose trade has no history still gets help from the words.
+                if (inTrade.length) rows = inTrade;
+                else if (!q) return [];
+            }
+            if (q) rows = rows.filter(r => matchesSearch(r.text, q));
+            // Catalogue is already most-used first; keep that as the tiebreak
+            // and lift exact word-prefix hits on the FIRST word above the rest.
+            return rows.slice(0, Math.max(1, limit || 8)).map(r => ({ text: r.text, trade: r.trade, n: r.n }));
+        }
+
+        // ---- Add Defects screen: one shared popup for all 15 defect rows ----
+        // A single position:fixed popup rather than a dropdown per row. Fifteen
+        // absolutely-positioned lists inside a scrolling form is exactly the
+        // clipping problem that took three builds to fix in Bulk Import;
+        // position:fixed is measured against the viewport and cannot be cut off
+        // by an ancestor's overflow.
+        let _bpiPopEl = null;
+        function _bpiPop() {
+            if (_bpiPopEl && document.body.contains(_bpiPopEl)) return _bpiPopEl;
+            const d = document.createElement('div');
+            d.id = 'bpi-desc-pop';
+            d.style.cssText = 'display:none;position:fixed;z-index:100002;max-height:40vh;overflow:auto;' +
+                'background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:10px;' +
+                'box-shadow:0 10px 26px rgba(0,0,0,.28);';
+            document.body.appendChild(d);
+            _bpiPopEl = d;
+            return d;
+        }
+        function _bpiHidePop() { const d = document.getElementById('bpi-desc-pop'); if (d) d.style.display = 'none'; }
+        function _bpiDefectBlock(el) {
+            const m = String((el && el.className) || '').match(/add-defect-(\d+)/);
+            return m ? m[1] : null;
+        }
+        function bpiSuggestForDefectInput(input) {
+            const blk = _bpiDefectBlock(input);
+            if (!blk) return;
+            const sup = document.getElementById('add-contractor-' + blk + '-input');
+            const hits = bpiDefectSuggestions(bpiTradeForContractorName(sup && sup.value), input.value, 12);
+            const pop = _bpiPop();
+            if (!hits.length) { pop.style.display = 'none'; return; }
+            pop.innerHTML = hits.map((h, i) => `<div data-d="${i}" style="padding:11px 12px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--border-color,#eee);color:var(--text-primary,#111);">${_escHtml(h.text)}</div>`).join('');
+            pop._hits = hits; pop._input = input;
+            // mousedown, not click: it fires BEFORE the input's blur, so the
+            // pick registers instead of the popup vanishing out from under it.
+            pop.onmousedown = (e) => {
+                const el = e.target.closest('[data-d]'); if (!el) return;
+                e.preventDefault();
+                pop._input.value = pop._hits[Number(el.getAttribute('data-d'))].text;
+                pop.style.display = 'none';
+            };
+            _bpiPlacePop(input);
+        }
+        function _bpiPlacePop(input) {
+            const pop = document.getElementById('bpi-desc-pop');
+            if (!pop || !input) return;
+            const r = input.getBoundingClientRect();
+            pop.style.left = Math.max(6, r.left) + 'px';
+            pop.style.width = Math.min(r.width, window.innerWidth - 12) + 'px';
+            // Flip above the field when the keyboard leaves no room below it —
+            // the same squeeze that hid the Bulk Import chips, handled here by
+            // choosing the roomier side instead of scrolling.
+            const below = window.innerHeight - r.bottom;
+            if (below < 150 && r.top > below) {
+                pop.style.top = ''; pop.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+            } else {
+                pop.style.bottom = ''; pop.style.top = (r.bottom + 4) + 'px';
+            }
+            pop.style.display = 'block';
+        }
+        // Delegated once, so all 15 rows are covered without touching markup.
+        document.addEventListener('focusin', (e) => {
+            if (_bpiDefectBlock(e.target)) bpiSuggestForDefectInput(e.target);
+        });
+        document.addEventListener('input', (e) => {
+            if (_bpiDefectBlock(e.target)) bpiSuggestForDefectInput(e.target);
+        });
+        document.addEventListener('focusout', (e) => {
+            if (_bpiDefectBlock(e.target)) setTimeout(_bpiHidePop, 180);
+        });
+        // position:fixed does not follow a scrolling ancestor — re-place it.
+        document.addEventListener('scroll', () => {
+            const pop = document.getElementById('bpi-desc-pop');
+            if (pop && pop.style.display === 'block' && pop._input) _bpiPlacePop(pop._input);
+        }, true);
+
         function normalizePhrase(text) {
             let s = ' ' + String(text || '').toLowerCase() + ' ';
             for (const rm of PHRASE_ROOM_WORDS) s = s.split(rm).join(' ');
@@ -11601,7 +11764,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15h';
+        const APP_VERSION = '2026-08-15i';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11675,7 +11838,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15h"></script>
+    <script src="cloud-sync.js?v=2026-08-15i"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

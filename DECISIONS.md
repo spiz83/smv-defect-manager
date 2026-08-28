@@ -1,6 +1,52 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (h2) — fields above the photo in Bulk Import
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (i) — BPI defect-wording suggestions on both entry screens
+
+- **The ask:** as a supervisor types a defect, suggest real BPI wordings from
+  CH Tracker's history, narrowed to the trade of whichever contractor is
+  selected, narrowing further with each word typed. Free typing must still
+  work. Both the regular Add Defects screen and Bulk Import photo tagging.
+- **The corpus is `bpi_training_examples`, NOT `dm_trade_learning`** — and
+  this was the one finding that decided whether the feature was buildable at
+  all. `dm_trade_learning` is what the app already pulled, but it stores only
+  `phrase_key`, which `normalizePhrase()` has already stripped of
+  punctuation, room words and stopwords: "Left Elevation Caulk the gap to
+  barge eave and fascia." survives as "caulk gap barge eave fascia" and can
+  never be reconstituted into something to put in front of a human.
+  `bpi_training_examples.observation` keeps the original text and is exactly
+  what the Training tab in the screenshot lists. The app already WROTE to
+  that table (`CloudLearning.record`) and had never read it back.
+- **Capped at the newest 4000 examples, deliberately not `selectAllRows`.**
+  That table is append-only and grows with every correction anyone ever
+  makes. Paging all of it onto a phone on site, on every sync, would be an
+  unbounded and steadily worsening download for a convenience feature. The
+  cap degrades safely: fewer suggestions, never a stalled sync.
+- **Deduped by text, counted, most-used first.** The same wording logged
+  fifty times becomes one suggestion with n=50. That count is what makes
+  "the regular BPI items" float to the top, which is the point of sourcing
+  this from real history rather than a hand-written list.
+- **Trade resolution handles both shapes the picker can produce:** a trade
+  placeholder (name IS the trade) and a real company categorised under one
+  (first entry of its `trades` string). "No Trade Assigned" resolves to no
+  trade rather than to that literal string.
+- **Narrowing reuses `matchesSearch`**, the app's existing word-prefix
+  matcher, so every extra word can only ever shrink the list — the behaviour
+  that makes this faster than typing the sentence out — and partial words
+  work ("skirt" finds "skirting").
+- **Suggests nothing when there is no signal.** No trade AND nothing typed
+  returns nothing rather than "most common overall", which would be noise.
+- **One shared `position:fixed` popup for the regular screen's 15 rows**, not
+  a dropdown each. Fifteen absolutely-positioned lists inside a scrolling
+  form is precisely the clipping problem that took three builds to fix in
+  Bulk Import; a fixed popup is measured against the viewport and cannot be
+  cut off by an ancestor's overflow. It flips above the field when the
+  keyboard leaves no room below.
+- **Trade-off accepted:** suggestions are only as good as the training data.
+  A trade with no history in the newest 4000 examples suggests nothing and
+  the supervisor types as they always did — the feature is strictly
+  additive, and typing is never blocked or replaced.
+
+## 2026-08-15 (h2) — fields above the photo in Bulk Import
 
 - **The site's own suggestion, taken:** "move the description to the top…
   the photo you have to scroll up to see… leave the selection and the
