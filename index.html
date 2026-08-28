@@ -10253,6 +10253,115 @@
             return rows.slice(0, Math.max(1, limit || 8)).map(r => ({ text: r.text, trade: r.trade, n: r.n }));
         }
 
+        // ===================================================================
+        //  Clear (✕) button for every text field
+        // ===================================================================
+        // Spiro, 2026-08-15: "a little cross… to delete the text that has been
+        // written this is to be a feature across the board no matter what is
+        // being selected by it. Location supplier or defect description in All
+        // defect modes… batch defect mode or other."
+        //
+        // ONE position:fixed element for the whole app, shown against whichever
+        // field is focused, rather than a ✕ in the markup of every input. Add
+        // Defects alone has 60 text fields across 15 blocks; a permanent ✕ on
+        // each would be noise, and an absolutely-positioned one inside a
+        // scrolling form is the clipping problem that took three builds to fix
+        // in Bulk Import. Fixed positioning is measured against the viewport and
+        // cannot be cut off by an ancestor's overflow — same reasoning as the
+        // BPI suggestion popup below.
+        //
+        // Being tied to focus also means it works on fields that do not exist
+        // yet: Bulk Import builds its rows in JS, the modals build theirs on
+        // open, and neither needs to know about this.
+        const CLEARABLE_TYPES = ['text', 'search', 'tel', 'email', 'url', 'number', ''];
+        let _clrEl = null, _clrFor = null, _clrPad = null;
+
+        function _clrCanClear(el) {
+            if (!el || el.disabled || el.readOnly) return false;
+            if (el.hasAttribute && el.hasAttribute('data-no-clear')) return false;
+            const tag = (el.tagName || '').toLowerCase();
+            if (tag === 'textarea') return true;
+            if (tag !== 'input') return false;
+            return CLEARABLE_TYPES.indexOf((el.getAttribute('type') || 'text').toLowerCase()) >= 0;
+        }
+        function _clrNode() {
+            if (_clrEl && document.body.contains(_clrEl)) return _clrEl;
+            const d = document.createElement('div');
+            d.id = 'input-clear-x';
+            d.setAttribute('role', 'button');
+            d.setAttribute('aria-label', 'Clear this field');
+            // Above the modal overlay (100001), the Bulk Import screen (100000)
+            // and the suggestion popup (100002) — it sits INSIDE the field's
+            // right edge, so it never covers a list hanging below the field.
+            d.style.cssText = 'display:none;position:fixed;z-index:100003;width:30px;height:30px;' +
+                'align-items:center;justify-content:center;cursor:pointer;' +
+                'font-size:19px;line-height:1;font-weight:400;color:var(--red,#b3261e);' +
+                '-webkit-tap-highlight-color:transparent;user-select:none;';
+            d.textContent = '✕';
+            // pointerdown/touchstart rather than click, with the default
+            // prevented: tapping must NOT blur the field. A blur here would fire
+            // the dropdown-hide timers and bounce the keyboard shut, so the user
+            // would have to tap back in to keep typing.
+            const go = (e) => { e.preventDefault(); e.stopPropagation(); _clrDoClear(); };
+            d.addEventListener('touchstart', go, { passive: false });
+            d.addEventListener('mousedown', go);
+            // iOS suppresses the synthesised click after a prevented touchstart;
+            // a desktop browser does not. Swallow it either way, so the app's
+            // "close dropdowns on any outside click" handler sees the same thing
+            // on both and the ✕ behaves identically.
+            d.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+            document.body.appendChild(d);
+            _clrEl = d;
+            return d;
+        }
+        function _clrDoClear() {
+            const el = _clrFor;
+            if (!el) return;
+            el.value = '';
+            // The field's own oninput= attribute listens for this, so the
+            // autocomplete list, the BPI suggestions and the bulk row state all
+            // update exactly as if the text had been deleted by hand.
+            try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+            try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) {} }
+            _clrSync();
+        }
+        function _clrHide() {
+            if (_clrEl) _clrEl.style.display = 'none';
+            if (_clrFor && _clrPad !== null) { _clrFor.style.paddingRight = _clrPad; }
+            _clrFor = null; _clrPad = null;
+        }
+        // Show it against the focused field, if that field has anything in it.
+        function _clrSync() {
+            const el = document.activeElement;
+            if (!_clrCanClear(el) || !String(el.value || '').length) { _clrHide(); return; }
+            if (_clrFor !== el) {
+                if (_clrFor && _clrPad !== null) _clrFor.style.paddingRight = _clrPad;
+                _clrFor = el;
+                _clrPad = el.style.paddingRight || '';
+            }
+            const r = el.getBoundingClientRect();
+            if (!r.width || !r.height) { if (_clrEl) _clrEl.style.display = 'none'; return; }
+            // Keep the caret clear of the ✕ rather than letting text run under it.
+            const want = 34;
+            if (parseFloat(getComputedStyle(el).paddingRight) < want) el.style.paddingRight = want + 'px';
+            const d = _clrNode();
+            d.style.display = 'flex';
+            d.style.left = Math.round(r.right - 33) + 'px';
+            d.style.top = Math.round(r.top + (r.height - 30) / 2) + 'px';
+        }
+        document.addEventListener('focusin', _clrSync);
+        document.addEventListener('input', _clrSync);
+        document.addEventListener('focusout', () => setTimeout(_clrSync, 0));
+        // Follow the field: inner scrollers (capture), window scroll, rotation,
+        // and the iOS keyboard, which resizes the visual viewport out from under
+        // a fixed element without firing a window resize.
+        document.addEventListener('scroll', () => { if (_clrFor) _clrSync(); }, true);
+        window.addEventListener('resize', () => { if (_clrFor) _clrSync(); });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', () => { if (_clrFor) _clrSync(); });
+            window.visualViewport.addEventListener('scroll', () => { if (_clrFor) _clrSync(); });
+        }
+
         // ---- Add Defects screen: one shared popup for all 15 defect rows ----
         // A single position:fixed popup rather than a dropdown per row. Fifteen
         // absolutely-positioned lists inside a scrolling form is exactly the
@@ -12115,7 +12224,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15p';
+        const APP_VERSION = '2026-08-15q';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12189,7 +12298,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15p"></script>
+    <script src="cloud-sync.js?v=2026-08-15q"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

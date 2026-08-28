@@ -13,6 +13,25 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
+## Every text field has a ✕ to clear it (2026-08-15) — build `2026-08-15q`
+
+One `position:fixed` `#input-clear-x`, shown against the focused field, created
+lazily by `_clrNode()`. What will bite a later change:
+
+- **It is driven by focus, not markup.** Nothing declares a ✕; a new text field
+  anywhere in the app gets one automatically. To exclude one, put
+  `data-no-clear` on it.
+- **Do not move the handler to `click`.** It is on touchstart/mousedown with the
+  default prevented so the field never blurs — a blur bounces the keyboard shut
+  and fires the dropdown-hide timers. The click is swallowed separately because
+  iOS and desktop differ on whether one fires at all.
+- **z-index 100003** — above the modal overlay (100001), the Bulk Import screen
+  (100000) and the suggestion popup (100002). It sits inside the field's right
+  edge, so it never covers a list hanging below.
+- **`tests/clearx.mjs` (suite 5, 37 checks)** covers the supplier, defect
+  description, the location modal and all three batch-mode fields, plus
+  following the field on scroll and the fields it must stay off.
+
 ## Contractor ids no longer collide across phones (2026-08-15) — build `2026-08-15p`
 
 New contractor/trade ids come from `db.nextSyncSafeId()` — a high random band,

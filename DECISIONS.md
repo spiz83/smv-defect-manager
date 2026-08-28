@@ -2,6 +2,38 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (q) — one ✕ clears any text field, app-wide
+
+- **Spiro, marking up a screenshot:** "a little cross… to delete the text that
+  has been written this is to be a feature across the board no matter what is
+  being selected by it. Location supplier or defect description in All defect
+  modes… batch defect mode or other."
+- **ONE `position:fixed` element for the whole app**, shown against whichever
+  field is focused — not a ✕ in the markup of every input. Add Defects alone has
+  60 text fields across 15 blocks; a permanent ✕ on each is noise, and an
+  absolutely-positioned one inside a scrolling form is the clipping problem that
+  took three builds to fix in Bulk Import. Same reasoning, and same shape, as
+  the BPI suggestion popup.
+- **Tying it to FOCUS is what makes "across the board" true without touching
+  any markup.** Bulk Import builds its rows in JS, the modals build theirs on
+  open, and neither needed a line changed. Any field added later is covered for
+  free.
+- **It listens on `touchstart`/`mousedown`, not `click`, with the default
+  prevented.** A click would blur the field first, which fires the dropdown-hide
+  timers and bounces the keyboard shut — the user would have to tap back in to
+  keep typing. The synthesised click is then swallowed too, because iOS
+  suppresses it after a prevented touchstart and a desktop browser does not;
+  without that, the app's "close dropdowns on any outside click" handler behaves
+  differently on the two.
+- **Clearing dispatches a real `input` event** rather than just blanking
+  `.value`, so each field's own `oninput=` runs and the autocomplete, the BPI
+  suggestions and the bulk row state update exactly as if the text had been
+  deleted by hand.
+- **The field gets 34px of right padding while the ✕ is up**, restored on the
+  way out, so the caret never runs under it.
+- **Off for read-only, disabled, checkbox and date fields, on for textareas**,
+  and any field can opt out with `data-no-clear`.
+
 ## 2026-08-15 (p) — contractor ids collided across phones, destroying rows
 
 - **Spiro:** "when I've actually shared in the past they may have shared but
