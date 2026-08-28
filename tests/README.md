@@ -45,7 +45,7 @@ changes. That has happened twice.
 |---|---|
 | `addrcopy` | 📋 Copy address on a top-search row: the string, and three icons fitting a phone row |
 | `adddefects` | Add Defects (5-block screen): items reach the DB/report/list; duplicate wording; per-supplier row cap; report status filter; trade placeholders sort ahead of named companies |
-| `bulkphoto` | Bulk Import photo tagging: no unsolicited auto-focus, the photo collapses/restores with field focus, visualViewport tracking, quick-pick trade chips (incl. scrolling fully into view under a cramped keyboard), autocomplete still works |
+| `bulkphoto` | Bulk Import photo tagging: no unsolicited auto-focus, the photo collapses/restores with field focus, visualViewport tracking, quick-pick trade chips (incl. scrolling fully into view under a cramped keyboard, and trade-first ranking once you type past them) |
 | `combo` | Supplier picker ranking (Reassign all / Edit defect / review); Edit defect → Save |
 | `deep` | Deep-read private-report import: admin gate, photo anchoring, fallbacks |
 | `fixes` | Search matching; the unsaved-changes guard; report re-import and re-opening |

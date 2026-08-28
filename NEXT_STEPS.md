@@ -3,9 +3,34 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
+## Bulk Import's typed search gets the same trade-first ranking (2026-08-15) — build `2026-08-15g`
+**NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed —
+bundled with `f` (below), which is also still waiting on the go-ahead.
+
+Bulk Import already had quick-pick chips for the EMPTY Supplier/Trade field
+(build `e`). The moment you typed a character, though, the chips vanished and
+results fell back to a plain `.includes()` substring filter with NO ranking
+and NO trade-tiering — a real, pre-existing gap, not something new. Asked for
+directly: "speed up entries, minimal finger clicks."
+
+- **Reuses the exact `matchesSearch` + `searchRank` + trade-tier logic build
+  `f` gave the regular Add Defects screen** — same functions, not a
+  reimplementation. Only the Supplier branch of `bulkComboFilter` changed;
+  Location's branch is untouched (the ask was specifically "the supplier
+  thing").
+- **Word-prefix matching now replaces substring matching here too** — typing
+  a mid-word fragment ("osta" for COSTAS) no longer matches. Not a new
+  trade-off: it's the standard the regular Add Defects screen already runs
+  under, today, unchanged. Consistency, not a fresh risk.
+- **Verified capable of failing**: reverted to the old plain-substring
+  filter, watched the new order-assertion go red, restored it, watched it
+  go green again.
+- Same open data question as `d`/`f`: only reorders `isTradePlaceholder`
+  rows that already exist.
+
 ## Trade placeholders sort first in Add Defects too (2026-08-15) — build `2026-08-15f`
 **NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed —
-this round wasn't a "deploy now," unlike the trade-chips fix an hour earlier.
+bundled with `g` above; both are waiting on the same go-ahead.
 
 Same idea as the Bulk Import quick-pick chips, applied to the regular 5-block
 Add Defects screen's Supplier field (`handleAddDefectsContractorAutocomplete`,

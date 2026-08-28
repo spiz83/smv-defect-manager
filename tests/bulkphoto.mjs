@@ -43,6 +43,12 @@ const SEED = {
     // "Electrician" (another chip) deliberately has NO matching contractor,
     // to prove the honest fallback: no match still saves, just unassigned.
     { id: 2, name: 'Painter', trades: 'Painter', tradeIds: [], isTradePlaceholder: true, isActive: true },
+    // Same "C" scenario as the regular Add Defects screen's own trade-first
+    // fix, so typed-search ranking here can be checked against real
+    // companies AND real trade placeholders that both match one letter.
+    { id: 3, name: 'C & E Corp Vic Pty Ltd', trades: 'No Trade Assigned', tradeIds: [] },
+    { id: 4, name: 'Carpenter', trades: 'Carpenter', tradeIds: [], isTradePlaceholder: true, isActive: true },
+    { id: 5, name: 'Caulker', trades: 'Caulker', tradeIds: [], isTradePlaceholder: true, isActive: true },
   ],
   trades: [{ id: 1, name: 'Plumber' }],
   defects: [],
@@ -306,6 +312,39 @@ console.log('\n=== quick-pick trade chips ===');
   // actually assign the right contractor" check runs later, in its own fresh
   // session, so it doesn't disturb that shared state.
   await page.evaluate(() => { document.getElementById('bulk-sup').value = ''; });
+}
+
+// ===========================================================================
+//  C2b. Once you type PAST the empty-field chips, the same trade-first
+//       ranking the regular Add Defects screen just got (2026-08-15, same
+//       day) applies here too — "minimal finger clicks" was the explicit
+//       ask, and the old plain-substring filter had no ranking at all.
+// ===========================================================================
+console.log('\n=== typed search: trade placeholders still sort first ===');
+{
+  // #bulk-sup is left focused from the previous section — blur first so the
+  // next focus is genuine (the exact assumption that bit this file twice
+  // already; see tests/README.md).
+  await page.evaluate(() => document.getElementById('bulk-sup').blur());
+  await page.waitForTimeout(220);
+  await page.click('#bulk-sup');
+  await page.fill('#bulk-sup', 'C');
+  await page.waitForTimeout(120);
+  const names = await page.evaluate(() =>
+    [...document.querySelectorAll('#bulk-sup-list [data-i]')].map(el => el.textContent.trim()));
+  console.log('  order for "C":', JSON.stringify(names));
+  check('no quick-pick chips once typing has started', await page.evaluate(() => !document.getElementById('bulk-sup-quick')));
+  check('Carpenter and Caulker (trades) sort before the real company',
+    names.indexOf('Carpenter') >= 0 && names.indexOf('Caulker') >= 0 &&
+    names.indexOf('Carpenter') < names.indexOf('C & E Corp Vic Pty Ltd') &&
+    names.indexOf('Caulker') < names.indexOf('C & E Corp Vic Pty Ltd'),
+    JSON.stringify(names));
+  check('…and the real company is still findable, not crowded out',
+    names.includes('C & E Corp Vic Pty Ltd'), JSON.stringify(names));
+
+  await page.evaluate(() => { document.getElementById('bulk-sup').value = ''; });
+  await page.evaluate(() => document.getElementById('bulk-sup').blur());
+  await page.waitForTimeout(220);
 }
 
 // ===========================================================================

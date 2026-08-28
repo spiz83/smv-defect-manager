@@ -1,6 +1,35 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (f) — trade placeholders sort first in the regular Add Defects screen too
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (g) — Bulk Import's typed search gets the same trade-first ranking
+
+- **The ask, immediately after (f) shipped for the regular screen:** "Do the
+  supplier thing with the bulk add photos mode as well… speed up entries,
+  minimal finger clicks strokes." Bulk Import already had the quick-pick
+  chips for the EMPTY field, but the moment you typed even one character, the
+  chips vanished and the results fell back to a plain `.includes()` substring
+  filter with NO ranking and NO trade-tiering at all — a real, pre-existing
+  gap this surfaced rather than something newly introduced.
+- **Swapped `bulkComboFilter`'s Supplier branch onto the exact same
+  `matchesSearch` + `searchRank` + trade-tier logic (f) just gave the regular
+  Add Defects screen** — not a re-implementation, the same functions, same
+  order of operations. Location's branch (`field === 'loc'`) is untouched;
+  the ask was specifically "the supplier thing."
+- **Word-prefix matching (`matchesSearch`) replaces plain substring
+  (`.includes()`) as a side effect, and that's a real, if minor, behaviour
+  change:** typing a MID-WORD fragment (e.g. "osta" for COSTAS) no longer
+  matches, where the old substring filter would have found it. Accepted
+  because it's not a new risk — it's exactly the standard the regular Add
+  Defects screen already operates under, unchanged, today. Bringing Bulk
+  Import to the same standard is consistency, not a fresh trade-off.
+- **Verified the new check can fail**, not just pass: reverted to the old
+  plain-substring filter, re-ran the suite, watched the trade-first order
+  assertion go red (`C & E Corp Vic Pty Ltd` sorted ahead of `Carpenter`),
+  then restored the fix and confirmed it goes green again.
+- **Trade-off accepted:** same open question as (d)/(f) — this only reorders
+  `isTradePlaceholder` rows that already exist; it can't create Carpenter/
+  Caulker/etc. if they aren't already set up as active contractors.
+
+## 2026-08-15 (f) — trade placeholders sort first in the regular Add Defects screen too
 
 - **The ask, from a screenshot of the 5-block Add Defects screen:** typing "C"
   in a Supplier field listed real company names ("C & E Corp Vic Pty Ltd",

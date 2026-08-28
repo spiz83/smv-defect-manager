@@ -4917,10 +4917,28 @@
             // moments earlier (fast field-to-field taps land well inside 180ms).
             clearTimeout(_bulkComboHideTimers[field]);
             const q = input.value.trim().toLowerCase();
-            const items = field === 'loc'
-                ? DEFECT_LOCATIONS.map(l => ({ label: l }))
-                : db.getContractors().map(c => ({ label: c.name }));
-            const filtered = (q ? items.filter(it => (it.label || '').toLowerCase().includes(q)) : items).slice(0, 60);
+            let filtered;
+            if (field === 'loc') {
+                const items = DEFECT_LOCATIONS.map(l => ({ label: l }));
+                filtered = (q ? items.filter(it => (it.label || '').toLowerCase().includes(q)) : items).slice(0, 60);
+            } else {
+                // Same word-prefix ranking + trade-first tiering as the regular
+                // Add Defects screen's Supplier field (2026-08-15, same day):
+                // "minimal finger clicks" means the right name should surface in
+                // as few keystrokes as possible, and a trade you already know
+                // still beats reading company names once you've typed past the
+                // empty-field quick-pick chips above.
+                filtered = db.getContractors()
+                    .filter(c => matchesSearch([c.name, c.trades], q))
+                    .sort((a, b) => {
+                        const tier = (b.isTradePlaceholder ? 1 : 0) - (a.isTradePlaceholder ? 1 : 0);
+                        if (tier) return tier;
+                        const r = searchRank([a.name, a.trades], q) - searchRank([b.name, b.trades], q);
+                        return r || a.name.localeCompare(b.name);
+                    })
+                    .map(c => ({ label: c.name }))
+                    .slice(0, 60);
+            }
             // Chips only on the empty Supplier/Trade field, before a specific search
             // starts — the moment someone types, they're after a real name and the
             // chips would just be in the way of the results.
@@ -11542,7 +11560,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15f';
+        const APP_VERSION = '2026-08-15g';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11616,7 +11634,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15f"></script>
+    <script src="cloud-sync.js?v=2026-08-15g"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
