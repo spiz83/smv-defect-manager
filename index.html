@@ -4963,18 +4963,24 @@
             };
             list.style.display = 'block';
             // The dropdown opens BELOW the field, inside the same overflow:auto
-            // area as the (now-shrunk-but-still-present) photo and the other
-            // field above it — with the keyboard up there often isn't enough
-            // room left before the Skip/Save row for the chips to fit, so only
-            // their top sliver showed (site feedback 2026-08-15). scrollIntoView
-            // walks the real scroll chain and brings the target fully into view
-            // by scrolling past whatever's above it — far more reliable than
-            // hand-computing pixel offsets against a keyboard height we can't
-            // know from here. Chips are the fast path, so THEY are what must be
-            // fully visible; the longer full-contractor list below them can
-            // still need a further scroll, same as before.
-            const toReveal = quickHtml ? document.getElementById('bulk-' + field + '-quick') : list;
-            if (toReveal) toReveal.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            // area as the photo and the other field above it — with a keyboard
+            // up there often isn't room left before the Skip/Save row, so the
+            // chips need scrolling into view (site feedback 2026-08-15).
+            //
+            // This call alone is NOT enough and never was: at focus time the
+            // keyboard has not opened yet, the overlay is still full height,
+            // everything already fits and so this scrolls nowhere. The real
+            // work happens in _bulkVvSync when the keyboard actually shrinks
+            // the viewport. This is here for the case where there is already
+            // no room (a short screen, an external keyboard, a re-open while
+            // the keyboard is up).
+            _bulkRevealOpenList();
+            // Belt and braces for the keyboard animation: iOS fires
+            // visualViewport resize as it slides in, but not every browser
+            // does, and a missed event means chips stuck below the fold with
+            // no second chance. Two cheap retries across the animation window.
+            setTimeout(_bulkRevealOpenList, 180);
+            setTimeout(_bulkRevealOpenList, 420);
         }
         function bulkComboBlur(field) {
             // Delay so a tap on an option registers before the list hides.
@@ -5033,12 +5039,35 @@
         // Tracking visualViewport keeps the overlay sized to what's actually on
         // screen instead of leaving it to iOS's own scroll heuristic.
         let _bulkVvBound = false;
+        // Bring whichever combo list is currently open back into the visible
+        // area. Called both when a list first opens AND after the viewport
+        // changes size — see _bulkVvSync for why the second one is the load-
+        // bearing case.
+        function _bulkRevealOpenList() {
+            ['sup', 'loc'].forEach(f => {
+                const list = document.getElementById('bulk-' + f + '-list');
+                if (!list || list.style.display === 'none') return;
+                // Chips are the fast path, so they are what has to be fully
+                // visible; fall back to the list itself when they aren't shown.
+                const quick = document.getElementById('bulk-' + f + '-quick');
+                const target = quick || list;
+                if (target.scrollIntoView) target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            });
+        }
         function _bulkVvSync() {
             const ov = document.getElementById('bulk-photo-ov');
             const vv = window.visualViewport;
             if (!ov || !vv) return;
             ov.style.height = vv.height + 'px';
             ov.style.top = vv.offsetTop + 'px';
+            // THE case that matters (site report 2026-08-15, third attempt at
+            // this bug). The keyboard opens AFTER the field is focused: the
+            // scroll done when the list first rendered ran against a still-
+            // full-height overlay where everything already fitted, so it did
+            // nothing. Only now — once the keyboard has actually shrunk the
+            // visible area — is there anything to scroll past, and without
+            // this the chips sit below the fold showing just their top edge.
+            _bulkRevealOpenList();
         }
         function _bindBulkViewport() {
             _bulkVvSync();
@@ -11560,7 +11589,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15g';
+        const APP_VERSION = '2026-08-15h';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11634,7 +11663,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15g"></script>
+    <script src="cloud-sync.js?v=2026-08-15h"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

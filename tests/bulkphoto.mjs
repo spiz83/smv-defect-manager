@@ -360,24 +360,40 @@ console.log('\n=== typed search: trade placeholders still sort first ===');
 // ===========================================================================
 console.log('\n=== chips scroll fully into view when room is tight ===');
 {
+  // ORDER MATTERS, and getting it wrong is what let this bug ship TWICE.
+  // The first version of this section shrank the overlay and THEN focused the
+  // field — under which the fix's focus-time scrollIntoView had a cramped
+  // viewport to work against and passed happily, while the real device kept
+  // failing. On a phone the sequence is the other way round: you tap the
+  // field (overlay still full height, everything fits, that scroll does
+  // nothing), and only THEN does the keyboard slide in and shrink the
+  // viewport out from under the already-open list. So: focus first at full
+  // height, shrink second, exactly as it happens on the device.
   await page.evaluate(() => {
-    // Simulate the visible area a keyboard leaves above it on a real phone —
-    // shorter than photo(72px, already collapsed) + Location + Supplier's own
-    // label/input + the full chip grid combined, which is exactly the squeeze
-    // the screenshot showed.
     const ov = document.getElementById('bulk-photo-ov');
-    ov.style.height = '300px';
+    ov.style.height = '820px';   // full height, no keyboard yet
     ov.style.top = '0px';
+    document.getElementById('bulk-sup').value = '';
   });
-  await page.evaluate(() => { document.getElementById('bulk-sup').value = ''; });
-  // #bulk-sup is likely still focused from the previous section — clicking an
-  // ALREADY-focused element does not re-fire onfocus in a real browser, so
-  // without an explicit blur first, this click would test stale DOM state
-  // rather than a genuine fresh tap (the exact mistake that cost real time
-  // diagnosing this section the first time round).
+  // Clicking an ALREADY-focused element does not re-fire onfocus in a real
+  // browser, so blur first or this tests stale DOM state (see tests/README.md).
   await page.evaluate(() => document.getElementById('bulk-sup').blur());
   await page.waitForTimeout(220);
   await page.click('#bulk-sup');
+  await page.waitForTimeout(120);
+
+  // NOW the keyboard opens: shrink the visible area, then run the reveal that
+  // _bulkVvSync runs on a real resize. Dispatching an actual resize event here
+  // would be worse, not better — _bulkVvSync re-reads window.visualViewport
+  // and would immediately set the height back to the full 820px this headless
+  // browser reports, wiping out the simulated keyboard. That _bulkVvSync calls
+  // the reveal at all is asserted separately, below.
+  await page.evaluate(() => {
+    const ov = document.getElementById('bulk-photo-ov');
+    ov.style.height = '300px';
+    ov.style.top = '0px';
+    _bulkRevealOpenList();
+  });
   await page.waitForTimeout(120);
 
   const geom = await page.evaluate(() => {
@@ -407,8 +423,40 @@ console.log('\n=== chips scroll fully into view when room is tight ===');
   check('…and without it (scrollTop at 0) the same layout WOULD clip them (proves the check is real)',
     wouldBeClipped, JSON.stringify(geomBroken));
 
+  // The wiring the old version of this test never checked, and the whole
+  // reason the bug survived two "fixes": the reveal has to be reachable from
+  // _bulkVvSync, because THAT is what runs when the keyboard actually opens.
+  // A reveal that only ever runs at focus time is a reveal that never runs
+  // when it matters.
+  const syncReveals = await page.evaluate(() => {
+    let revealed = 0;
+    const el = document.getElementById('bulk-sup-quick');
+    if (!el) return null;
+    const orig = el.scrollIntoView.bind(el);
+    el.scrollIntoView = (...a) => { revealed++; return orig(...a); };
+    _bulkVvSync();
+    el.scrollIntoView = orig;
+    return revealed;
+  });
+  check('_bulkVvSync reveals the open list (this is what fires when the keyboard opens)',
+    syncReveals === 1, syncReveals + ' reveal(s)');
+
+  // …and it must NOT fight the user when nothing is open — a stray scroll on
+  // every viewport wobble would be its own kind of jumpiness.
+  const syncQuiet = await page.evaluate(() => {
+    document.getElementById('bulk-sup').blur();
+    ['sup', 'loc'].forEach(f => { const l = document.getElementById('bulk-' + f + '-list'); if (l) l.style.display = 'none'; });
+    let revealed = 0;
+    const el = document.getElementById('bulk-sup-list');
+    const orig = el.scrollIntoView.bind(el);
+    el.scrollIntoView = () => { revealed++; };
+    _bulkVvSync();
+    el.scrollIntoView = orig;
+    return revealed;
+  });
+  check('…and reveals nothing when no list is open', syncQuiet === 0, syncQuiet + ' reveal(s)');
+
   // Restore real sizing for the sections that follow.
-  await page.evaluate(() => { document.getElementById('bulk-sup').blur(); });
   await page.waitForTimeout(250);
   await page.evaluate(() => { _bulkVvSync(); });
 }

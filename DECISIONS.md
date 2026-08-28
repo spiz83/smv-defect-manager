@@ -1,6 +1,40 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (g) — Bulk Import's typed search gets the same trade-first ranking
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (h) — the chips fix, third attempt: the keyboard opens AFTER the focus
+
+- **Reported for the third time**, with a screenshot showing the same sliver of
+  chip-tops cut off by the Skip/Save row. Builds `e` and `g` both claimed to
+  fix this and both shipped with it still broken.
+- **The real cause, finally: an ordering assumption in the FIX, mirrored by
+  the same wrong assumption in the TEST.** `bulkComboFilter` called
+  `scrollIntoView` at focus time. But on a device the keyboard has not opened
+  yet at that moment — the overlay is still full height, everything already
+  fits, and the scroll therefore does nothing at all. Only afterwards does
+  the keyboard slide in, `_bulkVvSync` shrink the overlay to the visible
+  area, and the already-open chip list drop below the fold — with nothing
+  scrolling it back.
+- **`_bulkVvSync` now re-reveals whatever list is open**, via a shared
+  `_bulkRevealOpenList()`. That function is the load-bearing one: it runs on
+  every viewport resize, which is exactly when the keyboard appears. The
+  focus-time call is kept only for the cases where room is ALREADY tight (a
+  short screen, an external keyboard, re-opening the list while the keyboard
+  is up), and two timed retries (180ms/420ms) cover browsers that don't fire
+  `visualViewport` resize during the animation.
+- **Why the test passed twice against a broken app — worth remembering.** It
+  shrank the viewport and THEN focused the field. Under that order the
+  focus-time scroll has a cramped viewport to work against and behaves
+  perfectly; on the device the order is reversed and it never fires usefully.
+  A test that gets the sequence backwards is not a weak test, it is a test of
+  a different program. The section now forces the real order — full height,
+  focus, then shrink — and additionally asserts the reveal is reachable FROM
+  `_bulkVvSync`, which is the wiring neither earlier version ever checked.
+  Verified by deleting that one call and watching the new check go red.
+- **Trade-off accepted:** the two timed retries fire on every list open, even
+  when nothing needs moving. `scrollIntoView({block:'nearest'})` on an
+  already-visible element is a no-op, so the cost is two cheap calls against
+  a fix that has now failed twice for want of them.
+
+## 2026-08-15 (g) — Bulk Import's typed search gets the same trade-first ranking
 
 - **The ask, immediately after (f) shipped for the regular screen:** "Do the
   supplier thing with the bulk add photos mode as well… speed up entries,

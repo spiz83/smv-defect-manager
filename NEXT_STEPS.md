@@ -3,6 +3,37 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
+## Bulk Import chips, THIRD fix — the keyboard opens after the focus (2026-08-15) — build `2026-08-15h`
+**NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed.
+
+Reported three times. Builds `e` and `g` both claimed this fixed and both
+shipped it broken. Root cause was an ordering assumption shared by the fix
+AND its test: `scrollIntoView` ran at FOCUS time, when the keyboard has not
+opened yet, the overlay is still full height, everything fits and the scroll
+therefore does nothing. The keyboard shrinks the viewport *afterwards*, and
+nothing re-scrolled the already-open list.
+
+- **`_bulkVvSync` now calls `_bulkRevealOpenList()`** — that is the
+  load-bearing path, because it runs on every viewport resize, i.e. exactly
+  when the keyboard appears. The focus-time call is now only for the
+  already-tight cases (short screen, external keyboard, re-open with the
+  keyboard already up); two timed retries (180/420ms) cover browsers that
+  don't fire `visualViewport` resize.
+- **The test's sequence was the bug's accomplice.** It shrank THEN focused;
+  a phone focuses THEN shrinks. Now forced to the real order, plus a check
+  that the reveal is reachable *from `_bulkVvSync`* — the wiring neither
+  earlier version verified. Confirmed by deleting that call and watching the
+  new check go red.
+- **Still not verifiable on a real device from here** — headless Chromium
+  opens no keyboard. The mechanism and its wiring are proven; the on-device
+  feel needs a supervisor. Given two false "fixed" claims, treat this as
+  needing confirmation before believing it.
+- **Open suggestion from site, NOT yet done:** reorder the screen so the
+  fields/chips sit at the top and the photo needs a scroll to see. That
+  would make this structurally impossible rather than relying on scrolling
+  at the right moment. Worth doing if this recurs — it was asked as a
+  question, so it's left as a decision rather than assumed.
+
 ## Bulk Import's typed search gets the same trade-first ranking (2026-08-15) — build `2026-08-15g`
 **DEPLOYED 2026-08-15** — merged to `main` and pushed together with `f`
 (below) in one deploy; Vercel verified serving `deffixer-shell-2026-08-15g`,

@@ -1,7 +1,14 @@
 # Tasks
 
 ## Current sprint
-- [ ] Nothing in flight.
+- [ ] Deploy build `2026-08-15h` — third attempt at the Bulk Import chips
+      being cut off. Built and green, waiting on the go-ahead.
+- [ ] Get a supervisor to confirm on a real phone that the chips are now
+      fully visible. Two previous builds claimed this fixed and weren't —
+      do not mark it done on the strength of the test suite alone.
+- [ ] Decide on the site suggestion: reorder Bulk Import so the fields and
+      chips sit at the top and the photo needs scrolling to see. Would make
+      the problem structurally impossible instead of scroll-dependent.
 - [ ] Ask Spiro to confirm Painter / Carpenter / Cleaner / Caulker /
       Supervisor / Plumber / Electrician / Brick Cleaner / Site Cleaner are
       all live, active contractors/trade placeholders — both the Bulk Import

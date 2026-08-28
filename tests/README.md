@@ -123,6 +123,17 @@ Run one on its own with `node tests/shop.mjs`. Each prints `PASS`/`FAIL` per che
   two rules — by the time the quick-pick chips added three more, the hardcoded
   restore silently dropped them for the rest of the run. Save `textContent`
   before clearing it, restore from the saved value, and the copy can't go stale.
+- **Reproduce the real SEQUENCE, not just the real end state.** `bulkphoto.mjs`
+  shipped a broken chips fix twice because its test shrank the viewport and then
+  focused the field, while a phone does the opposite — focus first, keyboard
+  (and the shrink) second. Under the test's order the focus-time
+  `scrollIntoView` had a cramped viewport to act on and passed; under the real
+  order it fired while everything still fitted and did nothing. Both times the
+  suite was green and the device was broken. When a fix depends on *when* it
+  runs relative to something the browser does, encode that order explicitly,
+  and assert the fix is reachable from the handler that actually fires at the
+  moment it matters (here: `_bulkVvSync`, on viewport resize) — not merely
+  that the end state looks right after the test arranged it.
 - **`page.click()` on an ALREADY-focused element does not re-fire `onfocus`** —
   real browsers only fire focus events on an actual change of focus. `bulkphoto.mjs`
   hit this twice: a click meant to open a dropdown silently ran nothing, and the
