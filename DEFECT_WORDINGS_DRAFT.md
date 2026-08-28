@@ -5,8 +5,12 @@ defect they have just seen. **62 items across 12 trades**
 (your 33 questions, with the compound ones split - a supervisor logs one
 thing per line).
 
-**This file is not live.** Nothing here reaches the app until the edited
-version goes into `CURATED_DEFECT_WORDINGS` in `index.html`.
+> **SUPERSEDED 2026-08-15 (build `m`).** This list is live, and this file is
+> now just the record of how it was written. **Edit the wordings in the app:**
+> Settings → 📝 Defect wordings. Managers can add, edit and remove items under
+> each trade and the change reaches every phone. Editing this file changes
+> nothing. (The same 62 are still compiled into `CURATED_DEFECT_WORDINGS` in
+> index.html as the offline / pre-migration fallback.)
 
 ## How to edit
 

@@ -131,6 +131,12 @@
   // bpi_ai_settings), refreshed each pull so Admin edits reach the phone.
   // Defaults match the bpi_ai_settings row defaults for cold boots.
   let bpiDbRules = [];
+  // Shared defect-wording list (dm_defect_wordings), pulled each sync. Empty
+  // until the migration in supabase/migrations/2026-08-15_defect_wordings.sql
+  // has been run — index.html falls back to its built-in copy until then, so
+  // the app behaves identically either way.
+  let defectWordings = [];
+  let defectWordingsReady = false;   // false = table absent/unreadable, use the built-in list
   let bpiAiSettings = { weight_supervisor: 1, weight_senior: 3, weight_manager: 5, weight_admin: 10, min_examples: 2, auto_learning: true };
 
   function emptySnap() {
@@ -861,7 +867,7 @@
     // from idMap.defects, so reconcileLocalDefectsUp read ~1000 cloud rows as
     // un-synced local work and re-uploaded them on every boot ("Uploaded 1000
     // change(s) from this phone").
-    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, wordings] = await Promise.all([
       selectAllRows('dm_trades', '*', 'id'),
       selectAllRows('dm_contractors', '*', 'id'),
       selectAllRows('dm_contractor_trades', 'contractor_id, trade_id', 'contractor_id'),
@@ -877,7 +883,12 @@
       // Tracker). Pulled here so a rule edit reaches the phone on next sync —
       // without this the DB rule engine only ever applied to Tracker imports.
       selectAllRows('bpi_trade_rules', 'keyword, trade, priority', 'keyword', (q) => q.eq('enabled', true)),
-      sb.from('bpi_ai_settings').select('*').eq('id', 1)   // single row by pk — no paging needed
+      sb.from('bpi_ai_settings').select('*').eq('id', 1),   // single row by pk — no paging needed
+      // Shared defect wordings. Best-effort: before the migration is run this
+      // errors, defectWordingsReady stays false, and the app keeps using its
+      // built-in list. Small and bounded (a curated list, not a log), so a
+      // plain select is fine — no paging needed.
+      sb.from('dm_defect_wordings').select('id, text, trade, sort_n, active').eq('active', true)
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -996,6 +1007,21 @@
       learning.data.forEach(row => {
         (tradeLearning[row.phrase_key] = tradeLearning[row.phrase_key] || {})[row.trade] = Number(row.w != null ? row.w : row.n) || 1;
       });
+    }
+
+    // Shared defect wordings. A failed pull (table not created yet, or no
+    // read access) leaves defectWordingsReady false so index.html keeps its
+    // built-in list rather than showing an empty picker.
+    if (wordings && !wordings.error && Array.isArray(wordings.data)) {
+      defectWordings = wordings.data
+        .filter(r => r && r.text)
+        .map(r => ({ id: r.id, text: String(r.text).trim(), trade: String(r.trade || 'Supervisor').trim(), n: Number(r.sort_n) || 1 }))
+        .sort((a, b) => b.n - a.n || a.text.localeCompare(b.text));
+      defectWordingsReady = true;
+      console.info('[CloudSync] defect wordings:', defectWordings.length, 'from the shared list');
+    } else if (wordings && wordings.error) {
+      defectWordingsReady = false;
+      console.info('[CloudSync] shared defect wordings unavailable — using the built-in list.', wordings.error.message || '');
     }
 
     // DB-managed keyword rules (priority order) + live AI settings. Best-effort:
@@ -2566,6 +2592,39 @@
       default: return s.weight_supervisor;
     }
   }
+  // Shared defect wordings: read by everyone, written by managers only (RLS
+  // enforces that server-side too — this is not the security boundary).
+  window.CloudWordings = {
+    ready: () => defectWordingsReady,
+    list: () => defectWordings.slice(),
+    canEdit: () => userRole === 'manager',
+    async add(text, trade, sortN) {
+      const row = { text: String(text || '').trim(), trade: String(trade || 'Supervisor').trim(), sort_n: Number(sortN) || 1, updated_by: userId };
+      if (!row.text) return { error: 'empty' };
+      const { data, error } = await sb.from('dm_defect_wordings').insert(row).select('id, text, trade, sort_n').single();
+      if (error) return { error: error.message || String(error) };
+      defectWordings.push({ id: data.id, text: data.text, trade: data.trade, n: data.sort_n });
+      return { ok: true, id: data.id };
+    },
+    async update(id, text, trade) {
+      const patch = { text: String(text || '').trim(), trade: String(trade || 'Supervisor').trim(), updated_at: new Date().toISOString(), updated_by: userId };
+      if (!patch.text) return { error: 'empty' };
+      const { error } = await sb.from('dm_defect_wordings').update(patch).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      const hit = defectWordings.find(w => w.id === id);
+      if (hit) { hit.text = patch.text; hit.trade = patch.trade; }
+      return { ok: true };
+    },
+    // Soft delete: the row stays so a wording removed by mistake can come back.
+    async remove(id) {
+      const { error } = await sb.from('dm_defect_wordings')
+        .update({ active: false, updated_at: new Date().toISOString(), updated_by: userId }).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      defectWordings = defectWordings.filter(w => w.id !== id);
+      return { ok: true };
+    },
+  };
+
   window.CloudLearning = {
     // Best learned trade for a normalised phrase, or null. Tallies are the
     // WEIGHTED score `w` (manager corrections count more); minN gates confidence.

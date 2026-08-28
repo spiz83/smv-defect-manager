@@ -1,7 +1,43 @@
 # Next Steps / Handover
 
-STATUS: Active — mid-incident
+STATUS: Active
 LAST UPDATED: 2026-08-15
+
+## ⚠ ONE THING TO DO BEFORE THE EDITOR WORKS — build `2026-08-15m`
+
+Run `supabase/migrations/2026-08-15_defect_wordings.sql` in the Supabase SQL
+editor. Until then Settings → 📝 Defect wordings opens **read-only** over the
+62 wordings built into index.html and says so on screen. Nothing is broken in
+the meantime; nothing can be edited either.
+
+After running it, check on a phone: Settings → Defect wordings → open a trade →
+✎ an item → Save. It should stick after a pull-to-refresh.
+
+## Defect wordings are editable in Settings (2026-08-15) — build `2026-08-15m`
+
+Managers edit the suggestion list from Settings, grouped by trade; supervisors
+see it read-only. Shared through Supabase so one edit reaches every phone.
+What will bite a later change:
+
+- **Two sources, on purpose.** `defectWordingList()` in index.html returns
+  `window.CloudWordings.list()` when the table is ready and
+  `CURATED_DEFECT_WORDINGS` otherwise. Every consumer must go through that
+  function — reading `CURATED_DEFECT_WORDINGS` directly means editing the
+  list has no effect, which looks exactly like a save that failed.
+- **A trade string that matches no contractor is dead.** The trade has to
+  equal a trade-placeholder name or one of a company's `trades` entries,
+  case-insensitively. The editor paints those sections amber and explains it
+  rather than letting the wordings sit there doing nothing.
+  **Still unconfirmed on the live data: Bricklayer, Tiler, Renderer,
+  Landscaper.** If they do not exist as contractors, either add them or move
+  their 8 wordings to a trade that does.
+- **Writes need `profiles.role = 'manager'`.** If a manager sees the read-only
+  banner, check their profile row before the code — `CloudWordings.canEdit()`
+  is just that role.
+- **`tests/wordings.mjs` (45 checks) covers the screen**, including the
+  before-migration read-only state and the supervisor view. It is suite 21 in
+  `tests/run.sh`. Section J pins the built-in fallback at 62 items across 12
+  trades — bump it deliberately if the seed list changes.
 
 ## BPI defect-wording suggestions — WITHDRAWN, engine intact (2026-08-15) — build `2026-08-15j`
 **The suggestion list is EMPTY on purpose and the feature is invisible.**

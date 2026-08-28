@@ -1,15 +1,18 @@
 # Tasks
 
 ## Current sprint
-- [ ] **Waiting on Spiro: the curated defect-wording list.** Drop it into
-      `CURATED_DEFECT_WORDINGS` in index.html — that is the only change
-      needed, the engine and both screens are built and tested. Wordings must
-      carry NO location prefix (that is why v1 was withdrawn), and `trade`
-      must match a contractor/trade-placeholder name exactly ("Carpenter",
-      not "Carpentry"). `tests/bpidesc.mjs` section G will fail once the list
-      is filled — that is intentional; update it in the same change.
-- [ ] Deploy build `2026-08-15h` — third attempt at the Bulk Import chips
-      being cut off. Built and green, waiting on the go-ahead.
+- [ ] **Run `supabase/migrations/2026-08-15_defect_wordings.sql`.** Until it
+      is run, Settings → 📝 Defect wordings is read-only over the 62 built-in
+      wordings and says so on screen. This is the only step left on build
+      `2026-08-15m`.
+- [ ] **Confirm Bricklayer, Tiler, Renderer and Landscaper exist as
+      contractors / trade placeholders.** 8 of the 62 wordings sit under
+      them; if the trades don't exist those wordings can never be reached by
+      picking a supplier. The editor flags them amber, so this is visible on
+      the screen itself — either add the trades or move the wordings.
+- [x] **The curated defect-wording list is live** — 62 items across 12 trades,
+      seeded into `dm_defect_wordings` and compiled into index.html as the
+      offline/pre-migration fallback.
 - [ ] Get a supervisor to confirm on a real phone that the chips are now
       fully visible. Two previous builds claimed this fixed and weren't —
       do not mark it done on the strength of the test suite alone.

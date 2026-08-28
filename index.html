@@ -3512,6 +3512,15 @@
                             <button onclick="window.CloudAuth.openChangePassword()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--blue, #2563eb); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">Change password</button>
                         </div>` : ''}
 
+                        <!-- Defect wordings. Everyone can look (it is the list they
+                             are offered while typing); only managers can edit, and
+                             renderWordingsScreen says so rather than hiding it. -->
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                            <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">📝 Defect wordings</div>
+                            <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Suggestions offered as you type a defect, grouped by trade. <strong>${wordingsSummary()}</strong></div>
+                            <button onclick="showWordingsEditor()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--blue, #2563eb); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">${wordingsCanEdit() ? 'Edit wordings' : 'View wordings'}</button>
+                        </div>
+
                         <!-- Themes -->
                         <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
                             <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">🎨 Themes</div>
@@ -8505,6 +8514,9 @@
                     case 'manage':
                         content = renderManageScreen();
                         break;
+                    case 'wordings':
+                        content = renderWordingsScreen();
+                        break;
                 }
             } catch (err) {
                 console.error('[render] view "' + state.currentView + '" failed:', err);
@@ -9973,8 +9985,191 @@
         // Every typed word must word-prefix match (matchesSearch), so each
         // extra word can only ever shrink the list — which is the behaviour
         // that makes this quicker than typing the sentence out.
+        // The live wording list: the SHARED one from Supabase when it is
+        // available, otherwise the built-in copy above. Never both — the
+        // shared list is authoritative once it exists, or a manager's
+        // deletion would keep reappearing from the built-in fallback.
+        function defectWordingList() {
+            if (window.CloudWordings && window.CloudWordings.ready()) return window.CloudWordings.list();
+            return CURATED_DEFECT_WORDINGS;
+        }
+
+        // ===================================================================
+        //  DEFECT WORDINGS EDITOR  (Settings -> Defect wordings, managers only)
+        //  Edits the SHARED list, so one manager's change reaches every
+        //  supervisor on their next sync. Needs the migration in
+        //  supabase/migrations/2026-08-15_defect_wordings.sql; until that is
+        //  run the screen says so rather than pretending to save.
+        // ===================================================================
+        let _wordEditing = null;    // wording id currently open for edit
+        let _wordAdding = null;     // trade currently being added to
+        let _wordOpenTrade = null;  // which trade section is expanded
+        let _wordFilter = '';
+
+        function _escAttrJs(s) {
+            return _escHtml(String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+        }
+        // "62 items across 12 trades" for the Settings card. Counts the live
+        // list, so it tracks edits instead of hardcoding the seeded number.
+        function wordingsSummary() {
+            const all = defectWordingList();
+            const trades = new Set(all.map(w => String(w.trade || 'Supervisor').trim()));
+            return all.length + (all.length === 1 ? ' item' : ' items') +
+                ' across ' + trades.size + (trades.size === 1 ? ' trade' : ' trades') + '.';
+        }
+        function wordingsCanEdit() {
+            return !!(window.CloudWordings && window.CloudWordings.ready() && window.CloudWordings.canEdit());
+        }
+        // Trades that actually exist as a contractor / trade placeholder. A
+        // wording filed under anything else can never be reached by picking a
+        // supplier, so the editor flags it rather than letting it sit dead.
+        function wordingKnownTrades() {
+            const out = new Set();
+            db.getContractors().forEach(c => {
+                if (c.isTradePlaceholder) { if (c.name) out.add(String(c.name).trim().toLowerCase()); return; }
+                String(c.trades || '').split(',').forEach(t => {
+                    const v = t.trim(); if (v && v !== 'No Trade Assigned') out.add(v.toLowerCase());
+                });
+            });
+            return out;
+        }
+        function showWordingsEditor() {
+            state.currentView = 'wordings';
+            _wordEditing = null; _wordAdding = null; _wordFilter = '';
+            render();
+        }
+        function wordingsSetFilter(v) {
+            _wordFilter = v || '';
+            const c = document.getElementById('wordings-body');
+            if (c) c.innerHTML = renderWordingGroups();
+        }
+        function toggleWordingTrade(trade) {
+            _wordOpenTrade = (_wordOpenTrade === trade) ? null : trade;
+            _wordEditing = null; _wordAdding = null;
+            const c = document.getElementById('wordings-body');
+            if (c) c.innerHTML = renderWordingGroups();
+        }
+        function editWording(id) {
+            _wordEditing = id; _wordAdding = null;
+            const c = document.getElementById('wordings-body');
+            if (c) c.innerHTML = renderWordingGroups();
+            setTimeout(() => { const i = document.getElementById('wording-edit-input'); if (i) { i.focus(); i.select(); } }, 30);
+        }
+        function startAddWording(trade) {
+            _wordAdding = trade; _wordEditing = null; _wordOpenTrade = trade;
+            const c = document.getElementById('wordings-body');
+            if (c) c.innerHTML = renderWordingGroups();
+            setTimeout(() => { const i = document.getElementById('wording-edit-input'); if (i) i.focus(); }, 30);
+        }
+        function cancelWordingEdit() {
+            _wordEditing = null; _wordAdding = null;
+            const c = document.getElementById('wordings-body');
+            if (c) c.innerHTML = renderWordingGroups();
+        }
+        async function saveWordingEdit(id, trade) {
+            const input = document.getElementById('wording-edit-input');
+            const text = (input && input.value || '').trim();
+            if (!text) { showToast('Enter the wording first', true); return; }
+            const api = window.CloudWordings;
+            if (!api || !api.ready()) { showToast('Shared list not available', true); return; }
+            const res = id ? await api.update(id, text, trade) : await api.add(text, trade, 1);
+            if (res && res.error) { showToast('Could not save: ' + res.error, true); return; }
+            _wordEditing = null; _wordAdding = null;
+            showToast(id ? 'Wording updated' : 'Wording added');
+            render();
+        }
+        async function deleteWording(id) {
+            const row = defectWordingList().find(w => String(w.id) === String(id));
+            if (!confirm('Remove this wording?\n\n' + (row ? row.text : ''))) return;
+            const res = await window.CloudWordings.remove(id);
+            if (res && res.error) { showToast('Could not remove: ' + res.error, true); return; }
+            showToast('Wording removed');
+            render();
+        }
+        function renderWordingGroups() {
+            const all = defectWordingList();
+            const q = _wordFilter.trim();
+            const known = wordingKnownTrades();
+            const byTrade = {};
+            all.forEach(w => {
+                if (q && !matchesSearch([w.text, w.trade], q)) return;
+                (byTrade[w.trade || 'Supervisor'] = byTrade[w.trade || 'Supervisor'] || []).push(w);
+            });
+            const trades = Object.keys(byTrade).sort((a, b) => byTrade[b].length - byTrade[a].length || a.localeCompare(b));
+            if (!trades.length) return `<div style="padding:22px;text-align:center;color:var(--text-secondary);font-size:15px;">No wordings match "${_escHtml(q)}".</div>`;
+            const editable = wordingsCanEdit();
+            return trades.map(trade => {
+                const items = byTrade[trade];
+                const open = _wordOpenTrade === trade || !!q;
+                const unknown = !known.has(String(trade).trim().toLowerCase());
+                const rows = !open ? '' : items.map(w => (_wordEditing === w.id) ? `
+                    <div style="background:#F2F6FF;border-top:1px solid #D7E2FA;padding:12px 14px;">
+                        <input id="wording-edit-input" type="text" value="${_escHtml(w.text)}" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--blue,#2563eb);border-radius:9px;font-size:16px;margin-bottom:9px;">
+                        <div style="display:flex;gap:8px;">
+                            <button onclick="cancelWordingEdit()" style="flex:1;padding:10px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-primary,#fff);color:var(--text-secondary);font-weight:600;font-size:14px;cursor:pointer;">Cancel</button>
+                            <button onclick="saveWordingEdit('${_escAttrJs(w.id)}', '${_escAttrJs(trade)}')" style="flex:1;padding:10px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-weight:700;font-size:14px;cursor:pointer;">Save</button>
+                        </div>
+                    </div>` : `
+                    <div style="display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-top:1px solid var(--border-color,#eee);font-size:15px;line-height:1.4;">
+                        <span style="flex:1;color:var(--text-primary);">${_escHtml(w.text)}</span>
+                        ${editable ? `<span onclick="editWording('${_escAttrJs(w.id)}')" style="color:var(--text-secondary);cursor:pointer;padding:0 3px;">✎</span>
+                        <span onclick="deleteWording('${_escAttrJs(w.id)}')" style="color:var(--red,#b3261e);cursor:pointer;padding:0 3px;">✕</span>` : ''}
+                    </div>`).join('');
+                const addRow = (open && editable && _wordAdding === trade) ? `
+                    <div style="background:#F2F6FF;border-top:1px solid #D7E2FA;padding:12px 14px;">
+                        <input id="wording-edit-input" type="text" placeholder="New wording for ${_escHtml(trade)}…" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--blue,#2563eb);border-radius:9px;font-size:16px;margin-bottom:9px;">
+                        <div style="display:flex;gap:8px;">
+                            <button onclick="cancelWordingEdit()" style="flex:1;padding:10px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-primary,#fff);color:var(--text-secondary);font-weight:600;font-size:14px;cursor:pointer;">Cancel</button>
+                            <button onclick="saveWordingEdit('', '${_escAttrJs(trade)}')" style="flex:1;padding:10px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-weight:700;font-size:14px;cursor:pointer;">Add</button>
+                        </div>
+                    </div>` : '';
+                return `
+                <div style="background:${unknown ? '#FFF6E6' : 'var(--card-bg,#fff)'};border:1px solid ${unknown ? '#E8C98A' : 'var(--border-color)'};border-radius:12px;margin-bottom:10px;overflow:hidden;">
+                    <div onclick="toggleWordingTrade('${_escAttrJs(trade)}')" style="display:flex;align-items:center;gap:8px;padding:13px 14px;font-weight:700;font-size:16px;cursor:pointer;color:${unknown ? '#8A5A12' : 'var(--text-primary)'};">
+                        <span style="color:var(--text-secondary);font-size:13px;">${open ? '▾' : '▸'}</span>
+                        <span>${unknown ? '⚠ ' : ''}${_escHtml(trade)}</span>
+                        <span style="color:var(--text-secondary);font-weight:400;font-size:14px;">${items.length}</span>
+                        ${editable ? `<span onclick="event.stopPropagation(); startAddWording('${_escAttrJs(trade)}')" style="margin-left:auto;color:var(--blue,#2563eb);font-weight:700;font-size:14px;">+ Add</span>` : ''}
+                    </div>
+                    ${(open && unknown) ? `<div style="font-size:13px;color:#8A5A12;padding:0 14px 12px;line-height:1.45;">No contractor or trade named “${_escHtml(trade)}” — these never appear when a supplier is picked. Rename to match, or leave them for typing only.</div>` : ''}
+                    ${rows}${addRow}
+                </div>`;
+            }).join('');
+        }
+        function renderWordingsScreen() {
+            const api = window.CloudWordings;
+            const shared = !!(api && api.ready());
+            const editable = wordingsCanEdit();
+            const total = defectWordingList().length;
+            let banner = '';
+            if (!shared) {
+                banner = `<div style="background:#FFF6E6;border:1px solid #E8C98A;border-radius:10px;padding:13px 14px;margin-bottom:12px;font-size:14px;color:#8A5A12;line-height:1.5;">
+                    <strong>Read-only — the shared list isn't set up yet.</strong><br>
+                    Showing the ${total} wordings built into this app. To make them editable, run
+                    <code>supabase/migrations/2026-08-15_defect_wordings.sql</code> in Supabase, then reopen.
+                </div>`;
+            } else if (!editable) {
+                banner = `<div style="background:var(--bg-secondary,#f2f2f2);border:1px solid var(--border-color);border-radius:10px;padding:13px 14px;margin-bottom:12px;font-size:14px;color:var(--text-secondary);line-height:1.5;">
+                    Managers edit this list. You're seeing what supervisors are offered.
+                </div>`;
+            }
+            return `
+                <div class="defects-container">
+                    <div class="app-header">
+                        <a href="#" class="back-link" onclick="event.preventDefault(); state.currentView='manage'; render()">Back</a>
+                        <div class="header-title">Defect wordings</div>
+                        <div style="width:60px;"></div>
+                    </div>
+                    <div class="manage-container" id="wordings-scroll">
+                        ${banner}
+                        <input type="text" value="${_escHtml(_wordFilter)}" oninput="wordingsSetFilter(this.value)" placeholder="Search wordings or trade…" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:10px;font-size:16px;margin-bottom:12px;background:var(--bg-primary,#fff);">
+                        <div id="wordings-body">${renderWordingGroups()}</div>
+                    </div>
+                </div>`;
+        }
+
         function bpiDefectSuggestions(trade, query, limit) {
-            const cat = CURATED_DEFECT_WORDINGS;
+            const cat = defectWordingList();
             if (!cat || !cat.length) return [];
             const q = String(query || '').trim();
             const t = String(trade || '').trim().toLowerCase();
@@ -11857,7 +12052,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15l';
+        const APP_VERSION = '2026-08-15m';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11931,7 +12126,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15l"></script>
+    <script src="cloud-sync.js?v=2026-08-15m"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

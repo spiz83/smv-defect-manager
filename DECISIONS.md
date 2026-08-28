@@ -1,6 +1,42 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (j) — the BPI suggestion list is withdrawn (the source had locations baked in)
+Newest at top. Format: date — decision — why — trade-off accepted.
+
+## 2026-08-15 (m) — the wording list moves out of the code and into Settings
+
+- **Spiro's ask, in his words:** "create a feature in the settings that allows
+  you to edit these so under the certain trade categorise the respective items
+  and then as part of that future I can add a defect or remove a defect Edit a
+  comment". A screen, not a code edit, and grouped by trade.
+- **Shared through Supabase, not per-phone** (Spiro picked B over device-local).
+  New table `dm_defect_wordings`, migration
+  `supabase/migrations/2026-08-15_defect_wordings.sql`, seeded with the same 62
+  items. A supervisor's phone gets the manager's edit on its next sync; a list
+  that drifted per device would defeat the point of standardising wordings.
+- **Managers write, everyone reads.** RLS gates writes on
+  `profiles.role = 'manager'`, matching every other admin surface in the app.
+  Supervisors still open the screen and see exactly what they will be offered —
+  hiding it would leave them guessing why a suggestion never appears.
+- **The 62 stay compiled into index.html as a fallback.** `defectWordingList()`
+  reads the cloud when it is ready and the built-in list otherwise, so the app
+  works before the migration is run, offline, and in local-only mode. The screen
+  says "Read-only — the shared list isn't set up yet" and names the .sql file
+  rather than silently pretending edits saved.
+- **Unassigned items go to Supervisor** (Spiro: "defects that are not assigned
+  under a trade to be go as Supervisor"). The column defaults to it, so a row
+  can never be trade-less and invisible.
+- **A trade no contractor answers to is FLAGGED, not hidden.** Spiro: "with the
+  trades they need to match exactly how they are written in the database". A
+  wording under "Landscaper" when nothing is a Landscaper can never be reached
+  by picking a supplier — it just quietly does nothing. The section goes amber
+  and says why. Four of the shipped trades (Bricklayer, Tiler, Renderer,
+  Landscaper) are exactly this case until they are confirmed to exist.
+- **Delete is a soft delete** (`active=false`), like the rest of the app. A
+  wording removed by mistake is one SQL update away from coming back.
+- **Trade-off accepted:** two sources of truth for the list. It is deliberate —
+  the fallback is what keeps the feature alive before the migration and offline
+  — but a divergence is possible, so the seed is guarded
+  (`where not exists`) and re-running the migration cannot duplicate rows.## 2026-08-15 (j) — the BPI suggestion list is withdrawn (the source had locations baked in)
 
 - **What real data showed, within the hour of (i) shipping:** the suggestions
   worked mechanically and were useless in practice. Every observation in
