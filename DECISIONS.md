@@ -1,6 +1,42 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (d) — one-tap generic trade chips on Bulk Import's Supplier/Trade field
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (e) — the trade chips were only ever a sliver visible
+
+- **The report, same day the chips shipped, with a screenshot:** tap Supplier
+  and the chips DID appear — as a thin strip of rounded tops right above
+  Skip/Save & Next, immediately cut off. "Make sure they're all visible so
+  just as I click on it I can pretty much select from list."
+- **Cause: the dropdown opens BELOW the field, inside the same scrollable area
+  as the photo and the other field above it.** With a keyboard up, the visible
+  room left above Skip/Save & Next is often only a couple hundred px — less
+  than collapsed-photo + Location + Supplier's own label/input + the chip
+  grid combined. The chips existed and were positioned correctly; there just
+  wasn't room left to show them without scrolling, and nothing was scrolling.
+- **Fixed with `scrollIntoView`, not hand-computed pixel offsets.** The
+  dropdown's containing scroller has real scroll range (confirmed by
+  measuring `scrollHeight` directly) — `#bulk-sup-quick.scrollIntoView({block:
+  'nearest'})` right after the chips render walks the actual scroll chain and
+  scrolls exactly as far as needed, correctly handling however tall the
+  keyboard turns out to be on whatever device, rather than a guess baked in
+  at build time that would be wrong on some phones and right on others.
+- **First attempt at testing this reported a false negative** — not a fix
+  that didn't work, a test that didn't run it. `#bulk-sup` was still focused
+  from an earlier section; clicking an already-focused element doesn't
+  re-fire `onfocus` in a real browser, so `bulkComboFilter` (and the new
+  `scrollIntoView` inside it) silently never ran, and the test measured
+  leftover state from before the fix existed. Explicit blur, then refocus,
+  before measuring — the second time round the same check passed cleanly.
+  Two `bulkphoto.mjs` sections have now been bitten by this exact assumption;
+  worth remembering as a category, not just fixing case by case.
+- **Reproduced the cramped-keyboard geometry deterministically** by setting
+  the overlay's own `style.height` to a couple hundred px directly, rather
+  than trying to simulate a real iOS keyboard (headless Chromium can't).
+  Screenshotted the result at that exact size: all nine chips fully visible,
+  photo and Location scrolled out of the way to make room.
+- **Trade-off accepted:** none really — this is strictly a fix to the chips
+  feature shipped hours earlier, not a new design decision.
+
+## 2026-08-15 (d) — one-tap generic trade chips on Bulk Import's Supplier/Trade field
 
 - **The ask:** "Painter Carpenter Cleaner Caulker Supervisor Plumber electrician
   Brick Cleaner site Cleaner" as one-tap buttons on the Supplier/Trade field,

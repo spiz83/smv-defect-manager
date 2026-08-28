@@ -3,11 +3,45 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
-## Quick-pick trade chips on Bulk Import (2026-08-15) — build `2026-08-15d`
-**DEPLOYED 2026-08-15.** Nine one-tap buttons on the Supplier/Trade field —
+## Quick-pick trade chips on Bulk Import (2026-08-15) — build `2026-08-15e`
+**DEPLOYED 2026-08-15** (shipped as `d`, then `e` fixed a real-device report
+against `d` within the hour — see the fix note right below before the `d`
+writeup). Nine one-tap buttons on the Supplier/Trade field —
 Painter, Carpenter, Cleaner, Caulker, Supervisor, Plumber, Electrician,
 Brick Cleaner, Site Cleaner — for a photo that needs a trade logged fast
 without searching a specific company. Full reasoning in DECISIONS.md.
+
+### The `e` fix: chips were only ever a sliver visible
+Reported minutes after `d` went live, with a screenshot: tapping Supplier DID
+show the chips — as a thin cut-off strip right above Skip/Save & Next. The
+dropdown opens inside the same scrollable area as the photo and Location
+above it; with a keyboard up there often isn't room for all of it at once,
+and nothing was scrolling to compensate.
+
+- **Fixed with `scrollIntoView({block:'nearest'})` on the chips wrapper**,
+  called right after they render in `bulkComboFilter`. This walks the actual
+  scroll chain rather than guessing a pixel offset — correct regardless of
+  how tall any given phone's keyboard turns out to be.
+- **The dropdown is `position:absolute` on purpose** (from the earlier
+  jumpiness fix — an absolutely-positioned dropdown doesn't push layout
+  around when it opens/closes). Turned out NOT to block `scrollIntoView`:
+  measuring confirmed the scroller's `scrollHeight` does account for it, so
+  the browser has real range to scroll into. Worth knowing if this class of
+  "dropdown is cut off" bug recurs elsewhere in the app — check the scroller
+  actually has scroll range before assuming abspos is the obstacle.
+- **The first test of this reported success when the fix wasn't even
+  running.** `#bulk-sup` was already focused from an earlier test section;
+  `page.click()` on an already-focused element doesn't re-fire `onfocus` in
+  a real browser, so `bulkComboFilter` (and the new `scrollIntoView` inside
+  it) silently never executed — the test measured stale leftover state.
+  Explicit blur before refocusing fixed it. This is the SECOND time this
+  exact assumption has bitten `bulkphoto.mjs` — worth grep-ing for bare
+  `page.click('#bulk-...')` without a preceding blur if this file gets
+  touched again.
+- Verified by forcing the same cramped geometry a real keyboard would leave
+  (`ov.style.height` set directly to a few hundred px — headless Chromium
+  can't open a real keyboard to test against) and screenshotting it: all nine
+  chips fully visible, photo and Location scrolled out of the way.
 
 - **A chip fills the field with the word; `saveBulkPhoto()`'s EXISTING
   exact-name match against `db.getContractors()` does the rest**, same as

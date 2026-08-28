@@ -309,6 +309,72 @@ console.log('\n=== quick-pick trade chips ===');
 }
 
 // ===========================================================================
+//  C3. The chips must be FULLY visible the instant the field is tapped, not
+//      just present in the DOM. Site feedback (2026-08-15): on a real phone
+//      with the keyboard up, only the top sliver of the chip grid showed
+//      before the Skip/Save row cut it off — the chips existed, they just
+//      weren't scrolled into the visible area. Headless Chromium never opens
+//      a real keyboard, so the cramped-viewport condition is forced directly
+//      by shrinking the overlay to the same few hundred px a keyboard would
+//      leave above it — this reproduces the SAME "not enough room" geometry
+//      deterministically, without needing a real device.
+// ===========================================================================
+console.log('\n=== chips scroll fully into view when room is tight ===');
+{
+  await page.evaluate(() => {
+    // Simulate the visible area a keyboard leaves above it on a real phone —
+    // shorter than photo(72px, already collapsed) + Location + Supplier's own
+    // label/input + the full chip grid combined, which is exactly the squeeze
+    // the screenshot showed.
+    const ov = document.getElementById('bulk-photo-ov');
+    ov.style.height = '300px';
+    ov.style.top = '0px';
+  });
+  await page.evaluate(() => { document.getElementById('bulk-sup').value = ''; });
+  // #bulk-sup is likely still focused from the previous section — clicking an
+  // ALREADY-focused element does not re-fire onfocus in a real browser, so
+  // without an explicit blur first, this click would test stale DOM state
+  // rather than a genuine fresh tap (the exact mistake that cost real time
+  // diagnosing this section the first time round).
+  await page.evaluate(() => document.getElementById('bulk-sup').blur());
+  await page.waitForTimeout(220);
+  await page.click('#bulk-sup');
+  await page.waitForTimeout(120);
+
+  const geom = await page.evaluate(() => {
+    const quick = document.getElementById('bulk-sup-quick');
+    const scroller = document.querySelector('#bulk-photo-ov > div[style*="overflow:auto"]');
+    if (!quick || !scroller) return null;
+    const q = quick.getBoundingClientRect(), s = scroller.getBoundingClientRect();
+    return { qTop: q.top, qBottom: q.bottom, sTop: s.top, sBottom: s.bottom };
+  });
+  console.log('  geometry:', JSON.stringify(geom));
+  const EPS = 1;
+  const fullyVisible = !!geom && geom.qTop >= geom.sTop - EPS && geom.qBottom <= geom.sBottom + EPS;
+  check('the chips are scrolled fully within the visible scroll area, top to bottom',
+    fullyVisible, JSON.stringify(geom));
+
+  // Prove it: without the scrollIntoView call, this same cramped layout must
+  // leave the chips clipped — otherwise the check above isn't testing anything.
+  const geomBroken = await page.evaluate(() => {
+    const ov = document.getElementById('bulk-photo-ov');
+    const scroller = document.querySelector('#bulk-photo-ov > div[style*="overflow:auto"]');
+    scroller.scrollTop = 0;   // back to the top, as a fresh open (no scrollIntoView) would leave it
+    const quick = document.getElementById('bulk-sup-quick');
+    const q = quick.getBoundingClientRect(), s = scroller.getBoundingClientRect();
+    return { qTop: q.top, qBottom: q.bottom, sTop: s.top, sBottom: s.bottom };
+  });
+  const wouldBeClipped = geomBroken.qBottom > geomBroken.sBottom + EPS;
+  check('…and without it (scrollTop at 0) the same layout WOULD clip them (proves the check is real)',
+    wouldBeClipped, JSON.stringify(geomBroken));
+
+  // Restore real sizing for the sections that follow.
+  await page.evaluate(() => { document.getElementById('bulk-sup').blur(); });
+  await page.waitForTimeout(250);
+  await page.evaluate(() => { _bulkVvSync(); });
+}
+
+// ===========================================================================
 //  D. visualViewport tracking. Headless Chromium doesn't open a real soft
 //     keyboard, so this can't observe an actual clip — it proves the
 //     mechanism is wired up: the sync function runs without throwing, and it

@@ -4,7 +4,7 @@
 - [ ] Ask Spiro to confirm Painter / Carpenter / Cleaner / Caulker /
       Supervisor / Plumber / Electrician / Brick Cleaner / Site Cleaner are
       all live, active contractors/trade placeholders — the new Bulk Import
-      chips only assign for real if the name matches one. Build `2026-08-15d`.
+      chips only assign for real if the name matches one. Build `2026-08-15e`.
 - [ ] Get a supervisor to confirm on a real iPhone that Bulk Import no longer
       jumps around while tagging photos. Can't be verified from this
       environment — headless Chromium doesn't open a real keyboard.
@@ -31,6 +31,10 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-15 — Fixed the trade chips within the hour: they were only ever a
+  thin cut-off sliver above Skip/Save & Next on a real phone with the keyboard
+  up. `scrollIntoView` on the chip panel after it renders. Build `2026-08-15e`,
+  deployed.
 - 2026-08-15 — Bulk Import: nine one-tap generic-trade chips (Painter,
   Carpenter, Cleaner, Caulker, Supervisor, Plumber, Electrician, Brick
   Cleaner, Site Cleaner) on the Supplier/Trade field — a shortcut for typing

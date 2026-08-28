@@ -4932,6 +4932,19 @@
                 list.style.display = 'none';
             };
             list.style.display = 'block';
+            // The dropdown opens BELOW the field, inside the same overflow:auto
+            // area as the (now-shrunk-but-still-present) photo and the other
+            // field above it — with the keyboard up there often isn't enough
+            // room left before the Skip/Save row for the chips to fit, so only
+            // their top sliver showed (site feedback 2026-08-15). scrollIntoView
+            // walks the real scroll chain and brings the target fully into view
+            // by scrolling past whatever's above it — far more reliable than
+            // hand-computing pixel offsets against a keyboard height we can't
+            // know from here. Chips are the fast path, so THEY are what must be
+            // fully visible; the longer full-contractor list below them can
+            // still need a further scroll, same as before.
+            const toReveal = quickHtml ? document.getElementById('bulk-' + field + '-quick') : list;
+            if (toReveal) toReveal.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         }
         function bulkComboBlur(field) {
             // Delay so a tap on an option registers before the list hides.
@@ -11517,7 +11530,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15d';
+        const APP_VERSION = '2026-08-15e';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11591,7 +11604,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15d"></script>
+    <script src="cloud-sync.js?v=2026-08-15e"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

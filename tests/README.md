@@ -44,7 +44,7 @@ changes. That has happened twice.
 | Suite | Covers |
 |---|---|
 | `addrcopy` | 📋 Copy address on a top-search row: the string, and three icons fitting a phone row |
-| `bulkphoto` | Bulk Import photo tagging: no unsolicited auto-focus, the photo collapses/restores with field focus, visualViewport tracking, quick-pick trade chips, autocomplete still works |
+| `bulkphoto` | Bulk Import photo tagging: no unsolicited auto-focus, the photo collapses/restores with field focus, visualViewport tracking, quick-pick trade chips (incl. scrolling fully into view under a cramped keyboard), autocomplete still works |
 | `combo` | Supplier picker ranking (Reassign all / Edit defect / review); Edit defect → Save |
 | `deep` | Deep-read private-report import: admin gate, photo anchoring, fallbacks |
 | `fixes` | Search matching; the unsaved-changes guard; report re-import and re-opening |
@@ -122,6 +122,19 @@ Run one on its own with `node tests/shop.mjs`. Each prints `PASS`/`FAIL` per che
   two rules — by the time the quick-pick chips added three more, the hardcoded
   restore silently dropped them for the rest of the run. Save `textContent`
   before clearing it, restore from the saved value, and the copy can't go stale.
+- **`page.click()` on an ALREADY-focused element does not re-fire `onfocus`** —
+  real browsers only fire focus events on an actual change of focus. `bulkphoto.mjs`
+  hit this twice: a click meant to open a dropdown silently ran nothing, and the
+  test read leftover DOM state from whenever the field was last genuinely focused,
+  reporting PASS or FAIL for behaviour that never executed. If a section clicks a
+  field that an earlier section may have left focused, blur it first (and wait past
+  any hide-delay) so the click is a genuine fresh focus, not a no-op.
+- **Before blaming `position:absolute` for a scrollable ancestor "having no room
+  to scroll," measure `scrollHeight` — don't assume.** The natural guess (an
+  absolutely-positioned dropdown doesn't inflate its scroll container's
+  `scrollHeight`, so there's nothing to scroll INTO) was wrong here; measuring
+  showed real scroll range existed the whole time, and the actual bug was the
+  test never triggering the code that would have used it (see the point above).
 - **`_review`, `db`, `state` are top-level `let`/`const`, not on `window`.** Use the bare
   identifier inside `page.evaluate`; `window._review` is `undefined`.
 - **Stub `window.CloudJobs`.** supabase-js can't load in the harness, so it never mounts,
