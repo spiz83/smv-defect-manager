@@ -10405,7 +10405,10 @@
             if (_bpiPopEl && document.body.contains(_bpiPopEl)) return _bpiPopEl;
             const d = document.createElement('div');
             d.id = 'bpi-desc-pop';
-            d.style.cssText = 'display:none;position:fixed;z-index:100002;max-height:40vh;overflow:auto;' +
+            // No max-height here — _bpiPlacePop sets it from the space actually
+            // free below the field. A vh cap measures the layout viewport, which
+            // is the wrong number the moment the keyboard is up.
+            d.style.cssText = 'display:none;position:fixed;z-index:100002;overflow:auto;' +
                 'background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:10px;' +
                 'box-shadow:0 10px 26px rgba(0,0,0,.28);';
             document.body.appendChild(d);
@@ -10436,22 +10439,50 @@
             };
             _bpiPlacePop(input);
         }
+        // ALWAYS below the field, never above it (Spiro, 2026-08-15: "the options
+        // from dropdown menu seem to hover around. Can you make it consistent so
+        // that it actually goes below the text… the user can always see what they
+        // are typing?").
+        //
+        // This used to flip above when it judged the space below too tight. Two
+        // things were wrong with that. It measured against window.innerHeight —
+        // the LAYOUT viewport, which iOS does not shrink for the keyboard — so
+        // the judgement was made on space that was not really there. And when it
+        // did flip, the list landed on top of the field the user was typing in.
+        // A list that picks a different side depending on where the row sits is
+        // also the "hovering around" itself: fifteen rows, no two behaving the
+        // same.
+        //
+        // One side, always. Room is made by CAPPING THE HEIGHT to what is
+        // actually free below the field inside the VISIBLE viewport; the list
+        // scrolls inside that. A short list beats a list over the text.
         function _bpiPlacePop(input) {
             const pop = document.getElementById('bpi-desc-pop');
             if (!pop || !input) return;
             const r = input.getBoundingClientRect();
             pop.style.left = Math.max(6, r.left) + 'px';
             pop.style.width = Math.min(r.width, window.innerWidth - 12) + 'px';
-            // Flip above the field when the keyboard leaves no room below it —
-            // the same squeeze that hid the Bulk Import chips, handled here by
-            // choosing the roomier side instead of scrolling.
-            const below = window.innerHeight - r.bottom;
-            if (below < 150 && r.top > below) {
-                pop.style.top = ''; pop.style.bottom = (window.innerHeight - r.top + 4) + 'px';
-            } else {
-                pop.style.bottom = ''; pop.style.top = (r.bottom + 4) + 'px';
-            }
+            const vv = window.visualViewport;
+            // Bottom of what the user can actually see. With the keyboard up that
+            // is well above window.innerHeight, which is the whole point.
+            const visibleBottom = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
+            const top = r.bottom + 4;
+            pop.style.bottom = '';
+            pop.style.top = top + 'px';
+            pop.style.maxHeight = Math.max(72, Math.round(visibleBottom - top - 8)) + 'px';
             pop.style.display = 'block';
+            // Settle on the next frame. Focusing an input makes the browser
+            // scroll it into view, which happens AFTER this runs — so the first
+            // placement is measured against where the field was, not where it
+            // lands. That one-frame stale position is the list appearing to move
+            // on its own.
+            if (!pop._settling) {
+                pop._settling = true;
+                requestAnimationFrame(() => {
+                    pop._settling = false;
+                    if (pop.style.display === 'block' && pop._input) _bpiPlacePop(pop._input);
+                });
+            }
         }
         // Delegated once, so all 15 rows are covered without touching markup.
         document.addEventListener('focusin', (e) => {
@@ -10463,11 +10494,19 @@
         document.addEventListener('focusout', (e) => {
             if (_bpiDefectBlock(e.target)) setTimeout(_bpiHidePop, 180);
         });
-        // position:fixed does not follow a scrolling ancestor — re-place it.
-        document.addEventListener('scroll', () => {
+        // position:fixed does not follow a scrolling ancestor — re-place it. The
+        // visualViewport events matter as much: the keyboard opening changes how
+        // much room is free below the field without firing a scroll or a resize.
+        const _bpiReplace = () => {
             const pop = document.getElementById('bpi-desc-pop');
             if (pop && pop.style.display === 'block' && pop._input) _bpiPlacePop(pop._input);
-        }, true);
+        };
+        document.addEventListener('scroll', _bpiReplace, true);
+        window.addEventListener('resize', _bpiReplace);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', _bpiReplace);
+            window.visualViewport.addEventListener('scroll', _bpiReplace);
+        }
 
         function normalizePhrase(text) {
             let s = ' ' + String(text || '').toLowerCase() + ' ';
@@ -12256,7 +12295,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15r';
+        const APP_VERSION = '2026-08-15s';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12330,7 +12369,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15r"></script>
+    <script src="cloud-sync.js?v=2026-08-15s"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

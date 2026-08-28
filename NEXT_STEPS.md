@@ -13,6 +13,25 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
+## Defect suggestions always sit below the field (2026-08-15) — build `2026-08-15s`
+
+`_bpiPlacePop` places the popup at `input.bottom + 4`, unconditionally, and caps
+its height to the room free below inside the visual viewport. What will bite a
+later change:
+
+- **Do not re-add a flip-above branch.** It is what put the list over the text,
+  and — because fifteen rows sit at fifteen heights — it is what made the list
+  appear to move around. Height, not position, absorbs a tight fit.
+- **Never size this popup in vh.** `window.innerHeight` and vh both measure the
+  LAYOUT viewport, which iOS does not shrink for the keyboard. Use
+  `visualViewport.offsetTop + visualViewport.height`.
+- **The requestAnimationFrame re-place is load-bearing**, not a tidy-up: focus
+  scrolls the field into view after the first placement, so without it the list
+  paints one frame in the wrong spot.
+- **`tests/bpidesc.mjs` section H** simulates a keyboard (headless Chromium has
+  none) and asserts all 15 rows place the list below, that the field is never
+  covered, and that the cap follows the keyboard.
+
 ## Modals are pinned to the top (2026-08-15) — build `2026-08-15r`
 
 `#imp-ov` is `align-items:flex-start`, and `#imp-card`'s max-height is

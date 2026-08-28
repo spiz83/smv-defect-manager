@@ -2,6 +2,35 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (s) — the defect suggestion list is always BELOW the field
+
+- **Spiro:** "the options from dropdown menu seem to hover around. Can you make
+  it consistent so that it actually goes below the text so that it's a lot more
+  stable and the user can always see what they are typing?"
+- **It used to flip above the field** when it judged the room below too tight.
+  Two things wrong with that. It measured `window.innerHeight` — the LAYOUT
+  viewport, which iOS does not shrink for the keyboard — so the judgement was
+  made on space that was not really there. And when it flipped, the list landed
+  ON the field being typed in, which is the screenshot.
+- **The flip was also the "hovering" itself.** Fifteen defect rows at different
+  heights, each choosing its own side: the list moves depending on which row you
+  are in. One side always is what "consistent" means here.
+- **Room is made by CAPPING THE HEIGHT, not by moving.** `max-height` is now the
+  space actually free below the field inside the VISIBLE viewport
+  (`visualViewport.offsetTop + height`), floored at 72px, and the list scrolls
+  inside that. The old `max-height:40vh` in the popup's own CSS is gone — a vh
+  cap measures the layout viewport, the wrong number the moment a keyboard is up.
+- **Re-placed on a settle frame.** Focusing an input makes the browser scroll it
+  into view AFTER the placement runs, so the first paint was measured against
+  where the field was, not where it landed — one frame of visible drift, and
+  part of what "hover around" describes. A `requestAnimationFrame` re-place
+  fixes it without a timer.
+- **Also re-places on visualViewport resize/scroll**, not just document scroll:
+  the keyboard opening changes the room below a field without firing either.
+- **Trade-off accepted:** a field low on the screen with the keyboard up now
+  gets a short list rather than a tall one over the text. That is the trade Spiro
+  asked for, in his words — seeing what you are typing beats seeing more options.
+
 ## 2026-08-15 (r) — modals sit at the top, and stop at the keyboard
 
 - **Spiro, on the Location picker:** "it needs to bring it up top (like the

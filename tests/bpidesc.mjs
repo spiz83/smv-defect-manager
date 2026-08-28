@@ -381,6 +381,105 @@ console.log('\n--- G · the shipped curated list ---');
     JSON.stringify(real.supervisor));
 }
 
+// ===========================================================================
+//  H. The list is ALWAYS below the field, keyboard or no keyboard.
+// ===========================================================================
+// Spiro, 2026-08-15: "the options from dropdown menu seem to hover around. Can
+// you make it consistent so that it actually goes below the text… the user can
+// always see what they are typing?"
+//
+// It used to flip above when it judged the space below too tight, measuring
+// against window.innerHeight — the LAYOUT viewport, which iOS does not shrink
+// for the keyboard. So it judged on space that was not there, and when it
+// flipped it landed on top of the field being typed in.
+console.log('\n--- H · the list stays below the field ---');
+{
+  const VH = 820, KEYBOARD = 336;      // this context's viewport, and iOS's keyboard
+  // Headless Chromium has no soft keyboard. Shrink the visual viewport the way
+  // iOS does; without this every row has room below and the bug is invisible.
+  const keyboard = (up) => page.evaluate(({ up, VH, KEYBOARD }) => {
+    const vv = window.visualViewport;
+    if (!window.__vvPatched) {
+      window.__vvH = VH;
+      Object.defineProperty(vv, 'height', { get: () => window.__vvH, configurable: true });
+      window.__vvPatched = true;
+    }
+    window.__vvH = up ? VH - KEYBOARD : VH;
+    vv.dispatchEvent(new Event('resize'));
+  }, { up, VH, KEYBOARD });
+
+  const place = (sel) => page.evaluate((sel) => {
+    const inp = document.querySelector(sel);
+    inp.focus(); inp.value = 'c';
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    const pop = document.getElementById('bpi-desc-pop');
+    const pr = pop.getBoundingClientRect(), ir = inp.getBoundingClientRect();
+    return { shown: pop.style.display === 'block',
+             popTop: Math.round(pr.top), popBottom: Math.round(pr.bottom),
+             inputTop: Math.round(ir.top), inputBottom: Math.round(ir.bottom),
+             maxH: Math.round(parseFloat(pop.style.maxHeight) || 0) };
+  }, sel);
+
+  await page.evaluate(() => { state.currentView = 'home'; render(); startDefectsForJob(1); });
+  await page.waitForSelector('.add-defect-1');
+
+  // A row near the TOP — plenty of room below either way.
+  await keyboard(false);
+  const top = await place('.add-defect-1');
+  check('a row near the top puts the list below the field',
+    top.shown && top.popTop >= top.inputBottom, `pop ${top.popTop}, field ends ${top.inputBottom}`);
+
+  // A row far DOWN the form, with the keyboard up — the case that used to flip.
+  await keyboard(true);
+  const rows = await page.evaluate(() => document.querySelectorAll('[class*="add-defect-"]').length);
+  const lastSel = '[class*="add-defect-"]:nth-last-of-type(1)';
+  const low = await page.evaluate(() => {
+    // Pick whichever defect row currently sits lowest on screen.
+    const all = [...document.querySelectorAll('input[class*="add-defect-"]')];
+    let best = all[0], bestY = -1;
+    all.forEach(i => { const y = i.getBoundingClientRect().top; if (y > bestY) { bestY = y; best = i; } });
+    best.focus(); best.value = 'c';
+    best.dispatchEvent(new Event('input', { bubbles: true }));
+    const pop = document.getElementById('bpi-desc-pop');
+    const pr = pop.getBoundingClientRect(), ir = best.getBoundingClientRect();
+    return { shown: pop.style.display === 'block',
+             popTop: Math.round(pr.top), popBottom: Math.round(pr.bottom),
+             inputTop: Math.round(ir.top), inputBottom: Math.round(ir.bottom),
+             maxH: Math.round(parseFloat(pop.style.maxHeight) || 0) };
+  });
+  console.log(`  ${rows} defect rows; lowest one at y=${low.inputTop}, list at ${low.popTop}..${low.popBottom}, cap ${low.maxH}px`);
+  check('a row low on the form STILL puts the list below, never over the text',
+    low.shown && low.popTop >= low.inputBottom, `pop ${low.popTop}, field ends ${low.inputBottom}`);
+  check('…so the field being typed in is never covered',
+    low.popTop > low.inputTop, `pop ${low.popTop} vs field top ${low.inputTop}`);
+  check('…and it is capped to the room actually free, not left to run on',
+    low.maxH > 0, `${low.maxH}px`);
+
+  // Every row behaves the same way — "hovering around" was rows disagreeing.
+  const sides = await page.evaluate(() => {
+    const out = [];
+    [...document.querySelectorAll('input[class*="add-defect-"]')].forEach(i => {
+      i.focus(); i.value = 'c'; i.dispatchEvent(new Event('input', { bubbles: true }));
+      const pop = document.getElementById('bpi-desc-pop');
+      if (pop.style.display !== 'block') return;
+      out.push(pop.getBoundingClientRect().top >= i.getBoundingClientRect().bottom ? 'below' : 'ABOVE');
+    });
+    return out;
+  });
+  const below = sides.filter(x => x === 'below').length;
+  console.log(`  ${below}/${sides.length} rows place the list below`);
+  check('EVERY row agrees — one side, so it stops moving around',
+    sides.length > 0 && below === sides.length, JSON.stringify([...new Set(sides)]));
+
+  // The cap has to react to the keyboard, or the list runs behind it.
+  const capUp = (await place('.add-defect-1')).maxH;
+  await keyboard(false);
+  const capDown = (await place('.add-defect-1')).maxH;
+  console.log(`  cap with keyboard up ${capUp}px, down ${capDown}px`);
+  check('the height cap follows the keyboard', capDown > capUp, `${capUp} -> ${capDown}`);
+  await page.evaluate(() => { window.__vvH = 820; });
+}
+
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));
 console.log('\nerrors:', bad.length ? bad : 'none');
 if (bad.length) fail.push('page errors');
