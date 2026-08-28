@@ -13,6 +13,20 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
+## Settings → Contractors to review is collapsed (2026-08-15) — build `2026-08-15o`
+
+A header with a count; tap to open the full list. `state.pendingExpanded`,
+same idiom as `state.tradesExpanded` right below it. `tests/pendingcontractors.mjs`
+(suite 12) covers it — including the share rollback, which had no test before.
+
+**The card is a QUEUE, not a record.** A contractor a supervisor adds is
+private to them (`isShared === false`) until a manager taps ✓ Share. Rows still
+in the card have NOT been shared. If a manager's OWN added contractor turns up
+here, the cause is `openAddContractor` reading
+`CloudJobs.isManager()` as false at the moment of the tap — it falls back to
+`cachedIdentity.role`, so that only happens on a first login before the profile
+fetch returns. Share it and move on; if it recurs, that race is the place to look.
+
 ## Defect wordings are editable in Settings (2026-08-15) — build `2026-08-15n`
 
 Managers edit the suggestion list from Settings, grouped by trade. **Manager

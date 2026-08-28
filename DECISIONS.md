@@ -2,6 +2,30 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (o) — Contractors to review collapses to a header
+
+- **Spiro, with six waiting:** "they don't need to be brought up as a list. It
+  can just be a header and when I click into it you can show a complete list."
+  Six rows at ~62px each pushed every other Settings card off a phone screen —
+  Assignable Trades now sits at y=277 in an 844px viewport instead of below the
+  fold, and it is measured in `tests/pendingcontractors.mjs`, not assumed.
+- **The count stays in the header.** "(6)" is the only thing a manager needs
+  from the card without opening it — is there anything waiting. Collapsing it
+  to a bare title would have traded one problem for a worse one.
+- **No chevron and no count when the queue is empty**, just "Nothing to review
+  right now." An expander that opens onto nothing is a wasted tap.
+- **Same pattern as Assignable Trades directly below it**, deliberately — a
+  second collapse idiom on one screen would be the actual design mistake.
+- **Nothing about sharing changed.** Worth writing down since it prompted the
+  question: this card is a QUEUE, not a record. A supervisor-added contractor
+  sits in it (`isShared === false`) until a manager taps ✓ Share, which writes
+  to the cloud, WAITS for confirmation, and only then drops the row for good. A
+  refused write is rolled back so the card keeps telling the truth. Rows still
+  showing have NOT been shared.
+- **The card had no test at all before this.** It has one now, including the
+  rollback path, which was previously covered only by the comment above
+  `shareContractor`.
+
 ## 2026-08-15 (n) — the wordings screen is manager-only, card and all
 
 - **Spiro, on seeing (m): "Manager only."** Build (m) let supervisors open the

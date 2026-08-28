@@ -9062,11 +9062,26 @@
                     <button onclick="shareContractor(${c.id})" style="${btn}border-color:#16a34a;color:#16a34a;">✓ Share</button>
                     <button onclick="deletePendingContractor(${c.id})" style="${btn}border-color:#dc2626;color:#dc2626;">🗑</button>
                 </div>`).join('');
+            // Collapsed by default (Spiro, 2026-08-15: "they don't need to be
+            // brought up as a list. It can just be a header and when I click into
+            // it you can show a complete list"). Six pending contractors pushed
+            // every other Settings card off the screen. The count stays in the
+            // header, so the thing you need to know — is there anything waiting —
+            // is still readable without opening it. Same pattern as Assignable
+            // Trades directly below.
+            const open = !!state.pendingExpanded;
             return `
                 <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
-                    <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">🔎 Contractors to review${pending.length ? ' (' + pending.length + ')' : ''}</div>
-                    <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Added by supervisors and private to them. Clean up the details, then <b>Share</b> to make a contractor visible to the whole team.</div>
-                    ${pending.length ? rowsHtml : '<div style="font-size:13px;color:var(--text-secondary);">Nothing to review right now.</div>'}
+                    <div onclick="togglePendingExpanded()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:10px;">
+                        <div>
+                            <div style="font-size: 17px; font-weight: 600; color: var(--text-primary);">🔎 Contractors to review${pending.length ? ' (' + pending.length + ')' : ''}</div>
+                            <div style="font-size: 14px; color: var(--text-secondary);">${pending.length
+                                ? 'Added by supervisors and private to them. Tap to check the details, then <b>Share</b> each one to make it visible to the whole team.'
+                                : 'Nothing to review right now.'}</div>
+                        </div>
+                        ${pending.length ? `<span style="font-size:22px;color:var(--text-secondary);line-height:1">${open ? '▴' : '▾'}</span>` : ''}
+                    </div>
+                    ${(open && pending.length) ? `<div style="margin-top:12px;">${rowsHtml}</div>` : ''}
                 </div>`;
         }
         // Clicking a job/address defaults to VIEWING its defects.
@@ -10910,6 +10925,7 @@
         }
         // Collapse/expand the Assignable Trades list in Settings.
         function toggleTradesExpanded() { state.tradesExpanded = !state.tradesExpanded; render(); }
+        function togglePendingExpanded() { state.pendingExpanded = !state.pendingExpanded; render(); }
         // Manager toggles a trade option on/off (Settings → Assignable Trades).
         async function toggleTradeActive(legacyId, active) {
             if (!window.CloudContractors) { showToast('Log in to change this', true); return; }
@@ -12079,7 +12095,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15n';
+        const APP_VERSION = '2026-08-15o';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12153,7 +12169,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15n"></script>
+    <script src="cloud-sync.js?v=2026-08-15o"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
