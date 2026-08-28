@@ -2,6 +2,30 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (n) — the wordings screen is manager-only, card and all
+
+- **Spiro, on seeing (m): "Manager only."** Build (m) let supervisors open the
+  screen read-only, on the reasoning that they should know what they will be
+  offered. Overruled: the card is now hidden from them and the screen refuses
+  them if reached another way.
+- **Gated on `CloudJobs.isManager()`, not `CloudWordings.canEdit()`.** The
+  first is the role check every other admin card in Settings already uses and
+  it falls back to `cachedIdentity.role`, so a manager opening the app before
+  the first sync lands still sees their own card. The second additionally
+  requires the shared table, which is the right gate for WRITING and the wrong
+  one for LOOKING.
+- **The screen re-checks rather than trusting the card.** `showWordingsEditor()`
+  is a plain function on a page a supervisor has loaded; hiding the button is
+  not access control. Server-side, RLS was already the real boundary — this is
+  the UI catching up to it.
+- **`CloudWordings.canEdit()` picked up the same `cachedIdentity` fallback**
+  the app's other role checks have. Bare `userRole` is null until the profile
+  fetch returns, so a manager could land on "read-only" for the first second
+  of a cold start and think the migration hadn't run.
+- **Supervisors lose nothing they use.** The wordings still reach them as
+  suggestions while typing, which is the whole point of the list; only the
+  screen that edits it is gone.
+
 ## 2026-08-15 (m) — the wording list moves out of the code and into Settings
 
 - **Spiro's ask, in his words:** "create a feature in the settings that allows

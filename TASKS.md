@@ -4,7 +4,7 @@
 - [ ] **Run `supabase/migrations/2026-08-15_defect_wordings.sql`.** Until it
       is run, Settings → 📝 Defect wordings is read-only over the 62 built-in
       wordings and says so on screen. This is the only step left on build
-      `2026-08-15m`.
+      `2026-08-15n`.
 - [ ] **Confirm Bricklayer, Tiler, Renderer and Landscaper exist as
       contractors / trade placeholders.** 8 of the 62 wordings sit under
       them; if the trades don't exist those wordings can never be reached by

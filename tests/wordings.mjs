@@ -7,6 +7,9 @@
 //   "under the certain trade categorise the respective items … I can add a
 //    defect or remove a defect Edit a comment"
 //   "defects that are not assigned under a trade to be go as Supervisor"
+//   "Manager only"  → the CARD and the SCREEN, not just the ✎ buttons. A
+//    supervisor never sees this; the wordings still reach them as suggestions
+//    while they type, which is the only part of it they need.
 //   "with the trades they need to match exactly how they are written in the
 //    database to match"  → the editor FLAGS a trade no contractor answers to,
 //    because a wording filed under it can never be reached by picking a
@@ -70,7 +73,7 @@ await page.addInitScript(seed => {
 await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
 await page.waitForFunction(() => typeof window.render === 'function');
 await page.evaluate(() => {
-  window.CloudJobs = { isManager: () => true, currentUserId: () => 'me' };
+  window.CloudJobs = { isManager: () => true, currentUserId: () => 'me' };   // sections A-G run as a manager
   window.__shippedWordings = CURATED_DEFECT_WORDINGS.slice();
 });
 
@@ -80,6 +83,9 @@ const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? ' 
 // A stand-in for the Supabase-backed CloudWordings: same signatures, same
 // return shapes, backed by an array so the round-trip is observable.
 const installFakeCloud = (role, rows) => page.evaluate(({ role, rows }) => {
+  // Both role gates move together, the way they do in cloud-sync.js: CloudJobs
+  // for who may see the screen, CloudWordings for who may write to the table.
+  window.CloudJobs = { isManager: () => role === 'manager', currentUserId: () => 'me' };
   let list = rows.map(r => ({ ...r }));
   let seq = 100;
   window.__cloudCalls = [];
@@ -306,24 +312,34 @@ console.log("--- G · wordings with an apostrophe (the ' in \"it's\") ---");
 }
 
 // ===========================================================================
-//  H. A supervisor can look but not touch.
+//  H. A supervisor never gets here at all.
 // ===========================================================================
-console.log('\n--- H · supervisors see the list, managers edit it ---');
+console.log('\n--- H · manager only ---');
 {
   await installFakeCloud('supervisor', FIXTURE);
+  await page.evaluate(() => { state.currentView = 'manage'; render(); });
+  const settings = await screen();
+  check('a supervisor does not see the Defect wordings card in Settings',
+    !/Defect wordings/.test(settings), settings.replace(/\n/g, ' | ').slice(0, 200));
+  check('…and the rest of Settings is untouched', /Themes/.test(settings) || /login/i.test(settings));
+
+  // The card is the only door, but showWordingsEditor() is a function on a page
+  // a supervisor has loaded. The screen has to hold on its own.
   await page.evaluate(() => showWordingsEditor());
-  const s = await screen();
-  check('a supervisor is told who edits this', /Managers edit this list/.test(s), s.split('\n').slice(0, 4).join(' | '));
-  await openTrade('Carpenter');
-  const t = await body();
-  check('…sees the wordings', t.includes('Align door with jamb.'));
-  check('…but gets no ✎, ✕ or + Add', !/[✎✕]/.test(t) && !/\+ Add/.test(t), t.replace(/\n/g, ' | '));
+  const s2 = await screen();
+  check('…and opening the screen directly says Managers only', /Managers only/.test(s2), s2.replace(/\n/g, ' | ').slice(0, 160));
+  check('…without listing a single wording', !/Align door with jamb/.test(s2) && !/\+ Add/.test(s2));
+  check('…and tells them the suggestions still work', /suggestions/i.test(s2), s2.replace(/\n/g, ' | ').slice(0, 200));
+  check('…with editing off', await page.evaluate(() => wordingsCanEdit() === false));
+
   const blocked = await page.evaluate(async () => {
     const before = window.CloudWordings.list().length;
-    await saveWordingEdit('w2', 'Carpenter');   // no input on screen → refused
+    await saveWordingEdit('w2', 'Carpenter');   // nothing on screen to read → refused
     return window.CloudWordings.list().length === before;
   });
-  check('…and calling save with nothing open changes nothing', blocked);
+  check('…and a stray save call changes nothing', blocked);
+  check('Back still works from the locked screen',
+    await page.evaluate(() => { document.querySelector('.back-link').click(); return state.currentView === 'manage'; }));
 }
 
 // ===========================================================================
@@ -344,6 +360,7 @@ console.log('\n--- I · getting out ---');
 console.log('\n--- J · the built-in list behind the shared one ---');
 {
   const r = await page.evaluate(() => {
+    window.CloudJobs = { isManager: () => true, currentUserId: () => 'me' };
     delete window.CloudWordings;
     const all = defectWordingList();
     return {

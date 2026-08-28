@@ -3,7 +3,7 @@
 STATUS: Active
 LAST UPDATED: 2026-08-15
 
-## ⚠ ONE THING TO DO BEFORE THE EDITOR WORKS — build `2026-08-15m`
+## ⚠ ONE THING TO DO BEFORE THE EDITOR WORKS — build `2026-08-15n`
 
 Run `supabase/migrations/2026-08-15_defect_wordings.sql` in the Supabase SQL
 editor. Until then Settings → 📝 Defect wordings opens **read-only** over the
@@ -13,11 +13,12 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
-## Defect wordings are editable in Settings (2026-08-15) — build `2026-08-15m`
+## Defect wordings are editable in Settings (2026-08-15) — build `2026-08-15n`
 
-Managers edit the suggestion list from Settings, grouped by trade; supervisors
-see it read-only. Shared through Supabase so one edit reaches every phone.
-What will bite a later change:
+Managers edit the suggestion list from Settings, grouped by trade. **Manager
+only** — supervisors don't see the card and the screen refuses them; they still
+get the wordings as suggestions while typing. Shared through Supabase so one
+edit reaches every phone. What will bite a later change:
 
 - **Two sources, on purpose.** `defectWordingList()` in index.html returns
   `window.CloudWordings.list()` when the table is ready and
@@ -31,11 +32,14 @@ What will bite a later change:
   **Still unconfirmed on the live data: Bricklayer, Tiler, Renderer,
   Landscaper.** If they do not exist as contractors, either add them or move
   their 8 wordings to a trade that does.
-- **Writes need `profiles.role = 'manager'`.** If a manager sees the read-only
-  banner, check their profile row before the code — `CloudWordings.canEdit()`
-  is just that role.
-- **`tests/wordings.mjs` (45 checks) covers the screen**, including the
-  before-migration read-only state and the supervisor view. It is suite 21 in
+- **Two role gates, on purpose.** `wordingsIsManager()` (CloudJobs) decides who
+  SEES the card and screen; `wordingsCanEdit()` also needs the shared table, and
+  decides who can WRITE. Writes are enforced again by RLS on
+  `profiles.role = 'manager'` — if a manager sees the read-only banner, check
+  their profile row before the code.
+- **`tests/wordings.mjs` (46 checks) covers the screen**, including the
+  before-migration read-only state and a supervisor being kept out of both the
+  card and the screen. It is suite 21 in
   `tests/run.sh`. Section J pins the built-in fallback at 62 items across 12
   trades — bump it deliberately if the seed list changes.
 

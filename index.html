@@ -3512,14 +3512,15 @@
                             <button onclick="window.CloudAuth.openChangePassword()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--blue, #2563eb); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">Change password</button>
                         </div>` : ''}
 
-                        <!-- Defect wordings. Everyone can look (it is the list they
-                             are offered while typing); only managers can edit, and
-                             renderWordingsScreen says so rather than hiding it. -->
+                        <!-- Defect wordings (manager only). The wordings themselves
+                             reach every supervisor through the suggestions while they
+                             type; the list that produces them is a manager's to keep. -->
+                        ${wordingsIsManager() ? `
                         <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
                             <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">📝 Defect wordings</div>
                             <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Suggestions offered as you type a defect, grouped by trade. <strong>${wordingsSummary()}</strong></div>
                             <button onclick="showWordingsEditor()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--blue, #2563eb); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">${wordingsCanEdit() ? 'Edit wordings' : 'View wordings'}</button>
-                        </div>
+                        </div>` : ''}
 
                         <!-- Themes -->
                         <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
@@ -10017,8 +10018,19 @@
             return all.length + (all.length === 1 ? ' item' : ' items') +
                 ' across ' + trades.size + (trades.size === 1 ? ' trade' : ' trades') + '.';
         }
+        // This list is a manager's to keep (Spiro, 2026-08-15: "Manager only").
+        // CloudJobs.isManager() is the role check every other admin card uses and
+        // it falls back to the cached identity, so a manager who opens the app
+        // before the first sync lands is still a manager — a role check that
+        // reads "supervisor" for the first two seconds would hide the card from
+        // the person who owns it.
+        function wordingsIsManager() {
+            return !!(window.CloudJobs && window.CloudJobs.isManager());
+        }
+        // Editing additionally needs the shared table: before the migration is
+        // run there is nowhere to save to, and the screen says so.
         function wordingsCanEdit() {
-            return !!(window.CloudWordings && window.CloudWordings.ready() && window.CloudWordings.canEdit());
+            return wordingsIsManager() && !!(window.CloudWordings && window.CloudWordings.ready() && window.CloudWordings.canEdit());
         }
         // Trades that actually exist as a contractor / trade placeholder. A
         // wording filed under anything else can never be reached by picking a
@@ -10137,6 +10149,25 @@
             }).join('');
         }
         function renderWordingsScreen() {
+            // Belt and braces: the Settings card is already hidden from
+            // supervisors, but showWordingsEditor() is a plain function on a
+            // page they load, so the screen makes its own check rather than
+            // trusting that the only door is locked.
+            if (!wordingsIsManager()) {
+                return `
+                <div class="defects-container">
+                    <div class="app-header">
+                        <a href="#" class="back-link" onclick="event.preventDefault(); state.currentView='manage'; render()">Back</a>
+                        <div class="header-title">Defect wordings</div>
+                        <div style="width:60px;"></div>
+                    </div>
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔒</div>
+                        <p>Managers only.</p>
+                        <p style="font-size:12px;color:var(--text-secondary,#888);max-width:320px;margin:6px auto 0;">The wordings still come up as suggestions while you type a defect — this is just the screen that edits the list.</p>
+                    </div>
+                </div>`;
+            }
             const api = window.CloudWordings;
             const shared = !!(api && api.ready());
             const editable = wordingsCanEdit();
@@ -10147,10 +10178,6 @@
                     <strong>Read-only — the shared list isn't set up yet.</strong><br>
                     Showing the ${total} wordings built into this app. To make them editable, run
                     <code>supabase/migrations/2026-08-15_defect_wordings.sql</code> in Supabase, then reopen.
-                </div>`;
-            } else if (!editable) {
-                banner = `<div style="background:var(--bg-secondary,#f2f2f2);border:1px solid var(--border-color);border-radius:10px;padding:13px 14px;margin-bottom:12px;font-size:14px;color:var(--text-secondary);line-height:1.5;">
-                    Managers edit this list. You're seeing what supervisors are offered.
                 </div>`;
             }
             return `
@@ -12052,7 +12079,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15m';
+        const APP_VERSION = '2026-08-15n';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12126,7 +12153,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15m"></script>
+    <script src="cloud-sync.js?v=2026-08-15n"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -2597,7 +2597,7 @@
   window.CloudWordings = {
     ready: () => defectWordingsReady,
     list: () => defectWordings.slice(),
-    canEdit: () => userRole === 'manager',
+    canEdit: () => (userRole || cachedIdentity.role) === 'manager',
     async add(text, trade, sortN) {
       const row = { text: String(text || '').trim(), trade: String(trade || 'Supervisor').trim(), sort_n: Number(sortN) || 1, updated_by: userId };
       if (!row.text) return { error: 'empty' };
