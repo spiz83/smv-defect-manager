@@ -1,9 +1,7 @@
 # Tasks
 
 ## Current sprint
-- [ ] Deploy build `2026-08-15g` (trade-first sort in the regular Add Defects
-      screen, AND the same ranking in Bulk Import's typed search — `f` and
-      `g`, bundled). Built and green, waiting on the go-ahead.
+- [ ] Nothing in flight.
 - [ ] Ask Spiro to confirm Painter / Carpenter / Cleaner / Caulker /
       Supervisor / Plumber / Electrician / Brick Cleaner / Site Cleaner are
       all live, active contractors/trade placeholders — both the Bulk Import
@@ -34,15 +32,19 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-15 — Shipped build `2026-08-15g` (bundles `f` + `g`): trade-first
+  sort in the regular Add Defects screen, and the same ranking in Bulk
+  Import's typed Supplier search. Vercel verified; live files hashed
+  byte-identical to the tested tree.
 - 2026-08-15 — Bulk Import's typed Supplier search gets the same trade-first
   ranking as Add Defects (word-prefix `matchesSearch`+`searchRank`, not the
   old plain substring filter) — "speed up entries, minimal finger clicks."
-  `tests/bulkphoto.mjs`. Build `2026-08-15g`, gates green, not deployed.
+  `tests/bulkphoto.mjs`. Build `2026-08-15g`.
 - 2026-08-15 — Trade placeholders (Carpenter, Caulker, Cleaner, …) now sort
   ahead of named companies in the regular Add Defects screen's Supplier
   field too, same reasoning as the Bulk Import chips — a re-sort of real
   contractor rows, not a new mechanism. `tests/adddefects.mjs`. Build
-  `2026-08-15f`, gates green, not deployed.
+  `2026-08-15f`.
 - 2026-08-15 — Fixed the trade chips within the hour: they were only ever a
   thin cut-off sliver above Skip/Save & Next on a real phone with the keyboard
   up. `scrollIntoView` on the chip panel after it renders. Build `2026-08-15e`,

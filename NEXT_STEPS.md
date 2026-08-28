@@ -4,8 +4,10 @@ STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
 ## Bulk Import's typed search gets the same trade-first ranking (2026-08-15) — build `2026-08-15g`
-**NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed —
-bundled with `f` (below), which is also still waiting on the go-ahead.
+**DEPLOYED 2026-08-15** — merged to `main` and pushed together with `f`
+(below) in one deploy; Vercel verified serving `deffixer-shell-2026-08-15g`,
+`APP_VERSION 2026-08-15g`, and both trade-tier comparators present in the
+live `index.html`. All three files hashed byte-identical to the tested tree.
 
 Bulk Import already had quick-pick chips for the EMPTY Supplier/Trade field
 (build `e`). The moment you typed a character, though, the chips vanished and
@@ -29,8 +31,7 @@ directly: "speed up entries, minimal finger clicks."
   rows that already exist.
 
 ## Trade placeholders sort first in Add Defects too (2026-08-15) — build `2026-08-15f`
-**NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed —
-bundled with `g` above; both are waiting on the same go-ahead.
+**DEPLOYED 2026-08-15** — shipped together with `g` above, in one deploy.
 
 Same idea as the Bulk Import quick-pick chips, applied to the regular 5-block
 Add Defects screen's Supplier field (`handleAddDefectsContractorAutocomplete`,
