@@ -39,6 +39,12 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-15 — BPI defect-wording suggestions as you type, narrowed by the
+  selected contractor's trade, on BOTH Add Defects and Bulk Import. Sourced
+  from `bpi_training_examples` (the readable observations behind CH Tracker's
+  Admin → BPI AI → Training tab) — `dm_trade_learning` could NOT be used, its
+  `phrase_key` is normalised beyond recovery. `tests/bpidesc.mjs`. Build
+  `2026-08-15i`.
 - 2026-08-15 — Shipped build `2026-08-15g` (bundles `f` + `g`): trade-first
   sort in the regular Add Defects screen, and the same ranking in Bulk
   Import's typed Supplier search. Vercel verified; live files hashed

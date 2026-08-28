@@ -3,6 +3,35 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
+## BPI defect-wording suggestions (2026-08-15) — build `2026-08-15i`
+Typing a defect now suggests real BPI wordings from CH Tracker's history,
+narrowed to the trade of whichever contractor is selected, narrowing further
+with each word. On BOTH the regular Add Defects screen and Bulk Import photo
+tagging. Full reasoning in DECISIONS.md. What will bite a later change:
+
+- **The corpus is `bpi_training_examples.observation`, and it HAS to be.**
+  `dm_trade_learning` (already pulled, tempting) stores only `phrase_key`,
+  which `normalizePhrase()` has stripped of punctuation, room words and
+  stopwords — unrecoverable into readable text. If suggestions ever go blank,
+  check that table pull first, not the UI.
+- **The pull is capped at the newest 4000 rows on purpose.** That table is
+  append-only and grows forever; `selectAllRows` on it would be an unbounded,
+  worsening download on a phone. Raising the cap has a real cost; removing it
+  has an unbounded one.
+- **Suggestion quality depends entirely on the training data.** A trade with
+  no history in those 4000 suggests nothing, and the supervisor types as
+  before. Feature is strictly additive — typing is never blocked or replaced.
+- **The Add Defects popup is ONE shared `position:fixed` element**
+  (`#bpi-desc-pop`) for all 15 rows, not a dropdown per row. Do not "tidy"
+  this into per-row absolutely-positioned dropdowns: that is precisely the
+  overflow-clipping that took three builds to fix in Bulk Import.
+- **Picking uses `mousedown`, not `click`** — it fires before the input's
+  blur, so the pick registers instead of the popup vanishing first.
+- **Not yet verified on a real device with real data.** The suite seeds a
+  synthetic catalogue; nobody has yet seen this against the live
+  `bpi_training_examples`. Worth watching the first real use for whether the
+  4000-row cap and the trade labels line up with what supervisors expect.
+
 ## Bulk Import chips, THIRD fix — the keyboard opens after the focus (2026-08-15) — build `2026-08-15h`
 **NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed.
 
