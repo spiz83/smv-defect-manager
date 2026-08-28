@@ -13,6 +13,23 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
+## Modals are pinned to the top (2026-08-15) — build `2026-08-15r`
+
+`#imp-ov` is `align-items:flex-start`, and `#imp-card`'s max-height is
+`var(--imp-max-h, 90vh)`, set from `visualViewport.height` by
+`_impSizeToViewport()`. What will bite a later change:
+
+- **Do NOT put the centring back**, and do not make the position adaptive. iOS
+  does not shrink the layout viewport for the keyboard, so a centred card hides
+  its own content behind it; a card that moves when the keyboard opens is the
+  jumpiness the site already rejected once.
+- **Both halves are needed.** Top alignment puts the field above the fold; the
+  visualViewport cap stops a tall card running on behind the keyboard.
+- **A test that does not simulate a keyboard proves nothing here.** Everything
+  fits on a full-height headless screen. `tests/locmodal.mjs` (suite 12) shrinks
+  `visualViewport` to 508px and fires the resize, then asserts the matches for
+  "ent" are above that line.
+
 ## Every text field has a ✕ to clear it (2026-08-15) — build `2026-08-15q`
 
 One `position:fixed` `#input-clear-x`, shown against the focused field, created

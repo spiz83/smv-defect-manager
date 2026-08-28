@@ -2,6 +2,35 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (r) — modals sit at the top, and stop at the keyboard
+
+- **Spiro, on the Location picker:** "it needs to bring it up top (like the
+  first photo) so that all of the predictive options can be seen."
+- **The overlay centred its card**, measured against the LAYOUT viewport — which
+  iOS does not shrink for the keyboard. A card centred on an 844px screen sat
+  half behind a 336px keyboard, and the matches under the search box ("ent" →
+  "Entry") were hidden by it. The same failure as Bulk Import, in a different
+  place.
+- **Two parts, and the second is what makes it hold.** Top-aligned, so the field
+  and everything under it are above the fold whatever the keyboard does; AND the
+  card capped to `visualViewport.height`, which DOES shrink, so it can never
+  extend behind the keyboard. Top alignment alone would still let a tall card
+  run on underneath.
+- **Static, not adaptive.** A card that repositions itself when the keyboard
+  opens is exactly the jumpiness Spiro objected to on Bulk Import ("it kind of
+  jumps up or down the screen"). Pinned means pinned; only the height changes.
+- **Applied to the shared overlay, not just Location.** Every modal that uses it
+  has a text field, and three of them have a list under that field, so they all
+  had the same latent bug. One position for every modal also beats Location
+  behaving differently from the rest.
+- **`#imp-body.combo-open{padding-bottom:min(440px,56vh)}` stays.** It solves a
+  different problem — the CARD clipping its own dropdown — and this change does
+  not replace it.
+- **The test stands in a keyboard** by shrinking `visualViewport` and firing the
+  resize, because headless Chromium has none. Without that the bug is invisible:
+  everything fits on a full-height screen, which is how the Bulk Import version
+  of this got shipped broken twice.
+
 ## 2026-08-15 (q) — one ✕ clears any text field, app-wide
 
 - **Spiro, marking up a screenshot:** "a little cross… to delete the text that

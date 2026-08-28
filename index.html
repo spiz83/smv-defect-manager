@@ -9203,10 +9203,23 @@
             const s = document.createElement('style');
             s.id = 'imp-styles';
             s.textContent = `
+              /* Pinned to the TOP, not centred (Spiro 2026-08-15, on the Location
+                 picker: "it needs to bring it up top… so that all of the
+                 predictive options can be seen"). Centring measures against the
+                 LAYOUT viewport, which iOS does not shrink for the keyboard, so
+                 a card centred on a 844px screen sat half behind a 336px
+                 keyboard and hid the list under the search box. Top-aligned, the
+                 field and everything under it are above the fold whatever the
+                 keyboard does — structural, not dependent on a scroll firing.
+                 Static, so the card does not jump when the keyboard opens. */
               #imp-ov{position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.55);
-                display:flex;align-items:center;justify-content:center;padding:14px;}
+                display:flex;align-items:flex-start;justify-content:center;
+                padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 14px;}
+              /* --imp-max-h is set from visualViewport.height, which DOES shrink
+                 for the keyboard, so the card never extends behind it. Falls back
+                 to 90vh where the API is missing. */
               #imp-card{background:var(--bg-primary,#fff);color:var(--text-primary,#111);
-                width:min(96vw,560px);max-height:90vh;border-radius:18px;overflow:hidden;
+                width:min(96vw,560px);max-height:var(--imp-max-h,90vh);border-radius:18px;overflow:hidden;
                 display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.45);}
               #imp-head{display:flex;align-items:center;justify-content:space-between;
                 padding:16px 18px;border-bottom:1px solid var(--border-color,#eee);}
@@ -9323,6 +9336,23 @@
             });
         }
 
+        // The keyboard shrinks the VISUAL viewport but not the layout one, so a
+        // card sized in vh runs on behind it. Re-measure whenever that changes.
+        function _impSizeToViewport() {
+            const ov = document.getElementById('imp-ov');
+            if (!ov) return;
+            const vv = window.visualViewport;
+            if (!vv) return;
+            const top = parseFloat(getComputedStyle(ov).paddingTop) || 10;
+            ov.style.setProperty('--imp-max-h', Math.max(180, Math.round(vv.height - top - 14)) + 'px');
+        }
+        let _impVvBound = false;
+        function _impBindViewport() {
+            if (_impVvBound || !window.visualViewport) return;
+            _impVvBound = true;
+            window.visualViewport.addEventListener('resize', _impSizeToViewport);
+            window.visualViewport.addEventListener('scroll', _impSizeToViewport);
+        }
         function impClose() { const o = document.getElementById('imp-ov'); if (o) o.remove(); }
         function impOverlay(inner) {
             impInjectStyles(); impClose();
@@ -9330,6 +9360,8 @@
             ov.id = 'imp-ov';
             ov.innerHTML = `<div id="imp-card">${inner}</div>`;
             document.body.appendChild(ov);
+            _impBindViewport();
+            _impSizeToViewport();
             ov.addEventListener('click', (e) => {
                 if (e.target !== ov) return;
                 // Mid-review, a tap outside must NOT dismiss — that loses entries
@@ -12224,7 +12256,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15q';
+        const APP_VERSION = '2026-08-15r';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12298,7 +12330,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15q"></script>
+    <script src="cloud-sync.js?v=2026-08-15r"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
