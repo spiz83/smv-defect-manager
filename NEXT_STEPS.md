@@ -3,6 +3,36 @@
 STATUS: Active — mid-incident
 LAST UPDATED: 2026-08-15
 
+## Trade placeholders sort first in Add Defects too (2026-08-15) — build `2026-08-15f`
+**NOT DEPLOYED.** Gates green (19 suites), committed to `main`, not pushed —
+this round wasn't a "deploy now," unlike the trade-chips fix an hour earlier.
+
+Same idea as the Bulk Import quick-pick chips, applied to the regular 5-block
+Add Defects screen's Supplier field (`handleAddDefectsContractorAutocomplete`,
+`index.html`): typing "C" now lists Carpenter / Caulker / Cleaner (any
+matching `isTradePlaceholder` contractor) before real company names like
+"C & E Corp Vic Pty Ltd", instead of one flat alphabetical list mixing both.
+
+- **Not a new mechanism — a re-sort of what was already there.** Every row in
+  this dropdown is, and remains, a real `db.getContractors()` entry; tapping
+  one still sets a real `contractorId`. Only the ORDER changed: trade
+  placeholders first, then the existing rank-then-A-Z order, unchanged,
+  within each tier.
+- **Scoped to exactly this one function.** Two other screens
+  (`handleQuickContractorAutocomplete`, `handleContractorAutocomplete`) have
+  the identical rank+sort+cap logic copy-pasted and were NOT touched — not
+  what was shown or asked about. Worth doing for consistency if wanted later.
+- **Raised the result cap from 5 to 60**, or trade placeholders sorting first
+  could have pushed real companies out of the list ENTIRELY on a job with a
+  few matches, rather than just below the trades as intended. The dropdown
+  CSS already scrolls (`max-height:200px`); the code just wasn't giving it
+  enough rows to need to. Same cap Bulk Import's own dropdown already uses.
+- **Same open data question as the Bulk Import chips:** this only shows what
+  already exists. If Carpenter/Caulker/Cleaner/etc. aren't yet active
+  `isTradePlaceholder` contractors, this screen behaves exactly as it did
+  before for those letters — nothing to reorder. Same "ask Spiro to confirm
+  the nine trades are set up" item below covers this too.
+
 ## Quick-pick trade chips on Bulk Import (2026-08-15) — build `2026-08-15e`
 **DEPLOYED 2026-08-15** (shipped as `d`, then `e` fixed a real-device report
 against `d` within the hour — see the fix note right below before the `d`

@@ -1,10 +1,13 @@
 # Tasks
 
 ## Current sprint
+- [ ] Deploy build `2026-08-15f` (trade placeholders sort first in the
+      regular Add Defects screen too). Built and green, waiting on the
+      go-ahead.
 - [ ] Ask Spiro to confirm Painter / Carpenter / Cleaner / Caulker /
       Supervisor / Plumber / Electrician / Brick Cleaner / Site Cleaner are
-      all live, active contractors/trade placeholders — the new Bulk Import
-      chips only assign for real if the name matches one. Build `2026-08-15e`.
+      all live, active contractors/trade placeholders — both the Bulk Import
+      chips AND the regular Add Defects sort now depend on it.
 - [ ] Get a supervisor to confirm on a real iPhone that Bulk Import no longer
       jumps around while tagging photos. Can't be verified from this
       environment — headless Chromium doesn't open a real keyboard.
@@ -31,6 +34,11 @@
       `LOCATION_ABBR` is wrong, not the idea.
 
 ## Done
+- 2026-08-15 — Trade placeholders (Carpenter, Caulker, Cleaner, …) now sort
+  ahead of named companies in the regular Add Defects screen's Supplier
+  field too, same reasoning as the Bulk Import chips — a re-sort of real
+  contractor rows, not a new mechanism. `tests/adddefects.mjs`. Build
+  `2026-08-15f`, gates green, not deployed.
 - 2026-08-15 — Fixed the trade chips within the hour: they were only ever a
   thin cut-off sliver above Skip/Save & Next on a real phone with the keyboard
   up. `scrollIntoView` on the chip panel after it renders. Build `2026-08-15e`,

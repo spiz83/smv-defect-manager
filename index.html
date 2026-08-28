@@ -4384,22 +4384,34 @@
             const value = input.value.toLowerCase();
             const dropdownId = contractorNum ? `add-contractor-${contractorNum}-dropdown` : 'add-defects-contractor-dropdown';
             const dropdown = document.getElementById(dropdownId);
-            
+
             if (!dropdown) return;
-            
+
+            // Trade placeholders (Painter, Carpenter, …) sort ahead of named
+            // companies (site feedback 2026-08-15): typing "C" is meant to
+            // surface "Carpenter / Caulker / Cleaner" before "C & E Corp Vic
+            // Pty Ltd" — faster to tap a trade you already know than to read
+            // company names looking for the right one. Existing rank-then-A-Z
+            // still decides order within each tier, unchanged.
             const contractors = db.getContractors()
                 .filter(c => matchesSearch([c.name, c.trades], value))
                 .sort((a, b) => {
+                    const tier = (b.isTradePlaceholder ? 1 : 0) - (a.isTradePlaceholder ? 1 : 0);
+                    if (tier) return tier;
                     const r = searchRank([a.name, a.trades], value) - searchRank([b.name, b.trades], value);
                     return r || a.name.localeCompare(b.name);
                 });
-            
+
             if (contractors.length === 0 || value === '') {
                 dropdown.classList.remove('active');
                 return;
             }
-            
-            dropdown.innerHTML = contractors.slice(0, 5).map(c => `
+
+            // Was capped at 5, which would let a handful of matching trades
+            // crowd every real company off the list rather than let you
+            // scroll to them as intended — the dropdown already scrolls
+            // (.autocomplete-dropdown, max-height:200px), so let it.
+            dropdown.innerHTML = contractors.slice(0, 60).map(c => `
                 <div class="autocomplete-item" onclick="selectAddDefectsContractor(${c.id}, '${c.name.replace(/'/g, "\\'")}', ${contractorNum || 0})">
                     ${c.name} - ${c.trades || 'No Trade'}
                 </div>
@@ -11530,7 +11542,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15e';
+        const APP_VERSION = '2026-08-15f';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -11604,7 +11616,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15e"></script>
+    <script src="cloud-sync.js?v=2026-08-15f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

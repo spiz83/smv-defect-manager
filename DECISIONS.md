@@ -1,6 +1,47 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (e) — the trade chips were only ever a sliver visible
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (f) — trade placeholders sort first in the regular Add Defects screen too
+
+- **The ask, from a screenshot of the 5-block Add Defects screen:** typing "C"
+  in a Supplier field listed real company names ("C & E Corp Vic Pty Ltd",
+  "G&C Caulking Pty Ltd") with no trades in sight. Wanted: "Carpenter Caulker
+  Cleaner to begin with and then as you scroll down the list... supplier
+  names" — a trade you already know beats reading company names to find the
+  right one, same reasoning as the Bulk Import chips from two builds earlier.
+- **This is a DIFFERENT screen and a DIFFERENT mechanism from the Bulk Import
+  chips** — no new buttons, no shortcut-that-might-not-match. This screen's
+  dropdown items are already real `db.getContractors()` rows the user taps to
+  set a real `contractorId` (`state.selectedAddDefectsContractors[i]`); the
+  fix only changes the SORT — trade-placeholder rows (`isTradePlaceholder`)
+  now sort ahead of ordinary company rows that match the same query, before
+  the existing rank-then-alphabetical order decides within each tier.
+  Nothing synthetic, nothing that can fail to resolve to something real.
+- **Scoped to exactly the function behind this screen**
+  (`handleAddDefectsContractorAutocomplete`), not the two other,
+  structurally-identical contractor-search functions found alongside it
+  (`handleQuickContractorAutocomplete`, `handleContractorAutocomplete` —
+  different screens, not what was shown or asked about). Consistency across
+  all three is a reasonable future ask; not this one, unasked.
+- **The 5-result cap had to go too, or the fix would have made things worse
+  in the other direction.** With trades sorting first, a job with several
+  matching placeholders could push every real company out of a 5-item list
+  entirely — invisible, not just lower — the opposite of "scroll down to
+  supplier names," which is what was explicitly described as the expected
+  interaction. Raised to 60 (matching Bulk Import's own dropdown cap). The
+  CSS (`.autocomplete-dropdown`, `max-height:200px;overflow-y:auto`) already
+  scrolled; the code just wasn't giving it enough rows to need to.
+- **Depends on the same open data question as the Bulk Import chips:**
+  whether Carpenter/Caulker/Cleaner/etc. currently exist as active
+  `isTradePlaceholder` contractor rows. This sort change reorders whatever
+  already matches — it does not create rows. If none exist yet for a given
+  letter, this screen behaves exactly as before for that letter, same
+  caveat already sitting in NEXT_STEPS.md.
+- **Trade-off accepted:** none beyond what raising the cap costs — a longer
+  scrollable list before you're done typing, versus the search narrowing it
+  the moment you type past one letter. Matches how this same trade-off was
+  already made for Bulk Import's own dropdown.
+
+## 2026-08-15 (e) — the trade chips were only ever a sliver visible
 
 - **The report, same day the chips shipped, with a screenshot:** tap Supplier
   and the chips DID appear — as a thin strip of rounded tops right above

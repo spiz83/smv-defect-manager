@@ -27,6 +27,14 @@ const SEED = {
   contractors: [
     { id: 1, name: 'COSTAS PLUMBING', trades: 'Plumber', tradeIds: [1] },
     { id: 2, name: 'AUZ PAINTING', trades: 'Painter', tradeIds: [2] },
+    // Real named companies AND trade placeholders that all match "C" — the
+    // exact letter from the site report — so the sort-tier fix has both
+    // kinds to actually separate, not just an empty tier passing vacuously.
+    { id: 3, name: 'C & E Corp Vic Pty Ltd', trades: 'No Trade Assigned', tradeIds: [] },
+    { id: 4, name: 'G&C Caulking Pty Ltd', trades: 'Caulking, Waterproofing', tradeIds: [] },
+    { id: 5, name: 'Carpenter', trades: 'Carpenter', tradeIds: [], isTradePlaceholder: true, isActive: true },
+    { id: 6, name: 'Caulker', trades: 'Caulker', tradeIds: [], isTradePlaceholder: true, isActive: true },
+    { id: 7, name: 'Cleaner', trades: 'Cleaner', tradeIds: [], isTradePlaceholder: true, isActive: true },
   ],
   trades: [{ id: 1, name: 'Plumber' }, { id: 2, name: 'Painter' }],
   defects: [],
@@ -196,6 +204,66 @@ console.log('\n--- F · does the report drop anything by status? ---');
   check('open + pending are included by default', pdf && pdf.length === 2, `${pdf && pdf.length} of 3`);
   check('the completed one is excluded (by design — the dialog can tick it back on)',
     pdf && !pdf.some(d => /Item two/.test(d)), JSON.stringify(pdf));
+}
+
+// ========== G. trade placeholders sort before named companies ================
+// Site feedback (2026-08-15), from a screenshot of this exact screen: typing
+// "C" listed real company names ("C & E Corp…", "G&C Caulking…") with no
+// generic trades in sight — tapping a trade you already know beats reading
+// company names hunting for the right one.
+console.log('\n--- G · trade placeholders sort ahead of named companies ---');
+{
+  await reset();
+  await page.waitForTimeout(200);
+  const order = await page.evaluate(() => {
+    const input = document.getElementById('add-contractor-1-input');
+    input.value = 'C';
+    handleAddDefectsContractorAutocomplete(input, 1);
+    return [...document.querySelectorAll('#add-contractor-1-dropdown .autocomplete-item')].map(el => el.textContent.trim());
+  });
+  console.log('  order for "C":', JSON.stringify(order));
+  const names = order.map(t => t.split(' - ')[0]);
+  const placeholderIdx = ['Carpenter', 'Caulker', 'Cleaner'].map(n => names.indexOf(n));
+  const companyIdx = names.indexOf('C & E Corp Vic Pty Ltd');
+  check('all three trade placeholders matched "C"', placeholderIdx.every(i => i >= 0), JSON.stringify(names));
+  check('every trade placeholder sorts before the real companies',
+    companyIdx >= 0 && placeholderIdx.every(i => i < companyIdx), JSON.stringify(names));
+  check('…and specifically in the order asked for: Carpenter, Caulker, Cleaner',
+    JSON.stringify(names.slice(0, 3)) === JSON.stringify(['Carpenter', 'Caulker', 'Cleaner']), JSON.stringify(names));
+  check('the real companies are still there, just after the trades — not crowded out',
+    names.includes('C & E Corp Vic Pty Ltd') && names.includes('G&C Caulking Pty Ltd'), JSON.stringify(names));
+
+  // Prove the tiering check is real: break it and watch it fail.
+  const brokenOrder = await page.evaluate(() => {
+    const input = document.getElementById('add-contractor-1-input');
+    input.value = 'C';
+    const contractors = db.getContractors()
+      .filter(c => matchesSearch([c.name, c.trades], 'c'))
+      .sort((a, b) => {
+        const r = searchRank([a.name, a.trades], 'c') - searchRank([b.name, b.trades], 'c');
+        return r || a.name.localeCompare(b.name);
+      });
+    return contractors.map(c => c.name);
+  });
+  const brokenPlaceholderIdx = ['Carpenter', 'Caulker', 'Cleaner'].map(n => brokenOrder.indexOf(n));
+  const brokenCompanyIdx = brokenOrder.indexOf('C & E Corp Vic Pty Ltd');
+  check('…without the tier (plain rank+A-Z), a company CAN sort before a trade (proves the check is real)',
+    brokenPlaceholderIdx.some(i => i > brokenCompanyIdx), JSON.stringify(brokenOrder));
+
+  // Picking a trade placeholder from the dropdown must resolve to its real
+  // contractor id, same guarantee Bulk Import's chips carry — this list has
+  // no synthetic/fake entries, every row is a real, selectable contractor.
+  await page.evaluate(() => {
+    const input = document.getElementById('add-contractor-1-input');
+    input.value = 'C'; handleAddDefectsContractorAutocomplete(input, 1);
+  });
+  await page.click('#add-contractor-1-dropdown .autocomplete-item:has-text("Carpenter")');
+  const picked = await page.evaluate(() => ({
+    text: document.getElementById('add-contractor-1-input').value,
+    id: state.selectedAddDefectsContractors && state.selectedAddDefectsContractors[1],
+  }));
+  check('tapping the Carpenter placeholder fills the field', picked.text === 'Carpenter', JSON.stringify(picked));
+  check('…and resolves to its real contractor id, not a fake entry', picked.id === 5, JSON.stringify(picked));
 }
 
 console.log('\nerrors:', errs.length ? errs : 'none');
