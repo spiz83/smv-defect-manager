@@ -456,6 +456,81 @@ console.log('\n=== chips scroll fully into view when room is tight ===');
   });
   check('…and reveals nothing when no list is open', syncQuiet === 0, syncQuiet + ' reveal(s)');
 
+  // THE STRUCTURAL GUARANTEE (site suggestion 2026-08-15, after two failed
+  // scroll-based fixes): with the fields moved above the photo, the chips are
+  // within the visible area at a keyboard-sized viewport WITHOUT ANY SCROLL AT
+  // ALL. Everything above tests that scrolling recovers the chips; this tests
+  // that they were never lost. scrollTop is forced to 0 first, so a scroll
+  // cannot be what makes this pass.
+  // 390px overlay ≈ the ACTUAL condition in the site's screenshot: measuring
+  // it against the phone's screen height, the scroll area between the header
+  // and the Skip/Save row is only ~275px, tighter than the ~348px an iPhone 14
+  // leaves on paper. Test the real thing, not the flattering estimate.
+  await page.evaluate(() => {
+    const ov = document.getElementById('bulk-photo-ov');
+    ov.style.height = '390px'; ov.style.top = '0px';
+    document.getElementById('bulk-sup').value = '';
+  });
+  await page.evaluate(() => document.getElementById('bulk-sup').blur());
+  await page.waitForTimeout(220);
+  await page.click('#bulk-sup');          // reopen: the quiet-check above hid every list
+  await page.waitForTimeout(120);
+
+  // What the keyboard opening does on a device, in the right order: the list
+  // is already open, THEN the viewport shrinks and _bulkVvSync reveals it.
+  const realGeom = await page.evaluate(() => {
+    const scroller = document.querySelector('#bulk-photo-ov > div[style*="overflow:auto"]');
+    scroller.scrollTop = 0;               // start from "nothing has scrolled yet"
+    _bulkRevealOpenList();                // …exactly what _bulkVvSync calls
+    const quick = document.getElementById('bulk-sup-quick');
+    if (!quick) return null;
+    const q = quick.getBoundingClientRect(), s = scroller.getBoundingClientRect();
+    return { qTop: q.top, qBottom: q.bottom, sTop: s.top, sBottom: s.bottom };
+  });
+  console.log('  at the screenshot\'s real viewport:', JSON.stringify(realGeom));
+  check('all nine chips are fully visible at the viewport from the actual report',
+    !!realGeom && realGeom.qTop >= realGeom.sTop - EPS && realGeom.qBottom <= realGeom.sBottom + EPS,
+    JSON.stringify(realGeom));
+
+  // How much the reorder actually buys. Being precise matters here: with the
+  // photo collapsed to a 72px thumbnail the OLD order still fits on a roomy
+  // screen, so "the reorder alone fixes it" would be an overclaim. What it
+  // does is free the photo's height from above the chips, shrinking the
+  // deficit that the scroll then has to make up — the two together are what
+  // makes this work at the tight viewport above.
+  const headroom = await page.evaluate(() => {
+    const scroller = document.querySelector('#bulk-photo-ov > div[style*="overflow:auto"]');
+    const wrap = scroller.querySelector('.bulk-photo-wrap');
+    const restore = wrap.nextSibling;
+    const quick = document.getElementById('bulk-sup-quick');
+    scroller.scrollTop = 0;
+    const now = quick.getBoundingClientRect().bottom;
+    scroller.insertBefore(wrap, scroller.firstChild);   // the OLD order
+    scroller.scrollTop = 0;
+    const before = quick.getBoundingClientRect().bottom;
+    scroller.insertBefore(wrap, restore);               // put it back
+    scroller.scrollTop = 0;
+    return { fieldsFirst: now, photoFirst: before, freed: before - now };
+  });
+  console.log('  space the reorder frees above the chips:', JSON.stringify(headroom));
+  // Threshold is deliberately modest: this suite's "photo" is a fake File that
+  // renders as a broken-image placeholder a few px tall, so the space freed
+  // here (~36px, mostly margins) UNDERSTATES a real device, where the
+  // collapsed photo is a full 72px thumbnail plus margins. Asserting a big
+  // number would only be asserting something this environment cannot produce.
+  check('moving the photo below the fields genuinely frees vertical space above the chips',
+    headroom.freed > 25, JSON.stringify(headroom));
+
+  // The photo is still there, just below the fields — not deleted.
+  const photoBelow = await page.evaluate(() => {
+    const wrap = document.querySelector('#bulk-photo-ov .bulk-photo-wrap');
+    const desc = document.getElementById('bulk-desc');
+    if (!wrap || !desc) return null;
+    return (desc.compareDocumentPosition(wrap) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  });
+  check('the photo still exists, positioned after the fields (a scroll away, not gone)',
+    photoBelow === true, String(photoBelow));
+
   // Restore real sizing for the sections that follow.
   await page.waitForTimeout(250);
   await page.evaluate(() => { _bulkVvSync(); });

@@ -1,6 +1,35 @@
 # Decisions Log
 
-Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (h) — the chips fix, third attempt: the keyboard opens AFTER the focus
+Newest at top. Format: date — decision — why — trade-off accepted.## 2026-08-15 (h2) — fields above the photo in Bulk Import
+
+- **The site's own suggestion, taken:** "move the description to the top…
+  the photo you have to scroll up to see… leave the selection and the
+  predictive buttons in visible area." The photo now sits AFTER the three
+  fields in the scroll area instead of above them.
+- **Why this on top of the (h) scroll fix rather than instead of it.** They
+  do different things and the honest measurement says both are needed at the
+  viewport from the actual screenshot (~275px of scroll area, tighter than
+  the ~348px an iPhone 14 leaves on paper). The reorder frees the photo's
+  height from above the chips; the scroll makes up what is still short. Alone,
+  neither is enough there.
+- **Resisted the overclaim.** The first version of this test asserted the
+  chips fit "with ZERO scrolling — the reorder, not the scroll, is doing
+  this." Measuring properly killed that: with the photo collapsed to a 72px
+  thumbnail the OLD order also fits on a roomy screen, so the reorder is a
+  contribution, not a cure. The check now measures the space actually freed
+  and says so, and the real guarantee is asserted at the real viewport.
+- **The test's photo understates the real gain**, and the threshold says so:
+  the suite's fake File renders as a broken-image placeholder a few px tall,
+  freeing ~36px, where a device frees the full 72px thumbnail plus margins.
+  Better a modest threshold that is true than a big one this environment
+  cannot produce.
+- **Trade-off accepted, and it is a real one:** the photo is no longer the
+  first thing on screen — at rest you see the fields and scroll down for the
+  photo. Asked for explicitly, and the header still says which photo you are
+  on ("Photo 1 of 3"), but it IS a downgrade for anyone who wants to eyeball
+  the photo while typing the description. Watch for that.
+
+## 2026-08-15 (h) — the chips fix, third attempt: the keyboard opens AFTER the focus
 
 - **Reported for the third time**, with a screenshot showing the same sliver of
   chip-tops cut off by the Skip/Save row. Builds `e` and `g` both claimed to

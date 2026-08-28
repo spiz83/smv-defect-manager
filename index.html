@@ -4836,7 +4836,18 @@
                     <button onclick="closeBulkPhoto(true)" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary,#777);">✕</button>
                 </div>
                 <div style="flex:1;overflow:auto;padding:12px 14px;">
-                    <div class="bulk-photo-wrap" style="text-align:center;margin-bottom:12px;"><img src="${url}" style="max-width:100%;max-height:38vh;border-radius:10px;object-fit:contain;"></div>
+                    <!-- FIELDS FIRST, PHOTO BELOW (site suggestion 2026-08-15).
+                         The photo used to sit here, above the fields, which is
+                         why the Supplier suggestions kept ending up under the
+                         keyboard: photo + two fields + the chip grid simply do
+                         not fit in the ~300px a keyboard leaves, so the chips
+                         were always the thing pushed off. Scrolling them back
+                         was tried twice and shipped broken twice. With the
+                         fields at the top of the scroll area they are above the
+                         fold whatever the keyboard does — structural, not
+                         dependent on a scroll firing at the right moment. The
+                         photo is a scroll away, which is the trade the site
+                         explicitly asked for. -->
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:8px 0 3px;">Location</label>
                     <div style="position:relative;">
                         <input id="bulk-loc" type="text" autocomplete="off" placeholder="Type to search location…" oninput="bulkComboFilter('loc')" onfocus="bulkComboFilter('loc'); _bulkFieldFocus()" onblur="bulkComboBlur('loc'); _bulkFieldBlur()" style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
@@ -4849,6 +4860,7 @@
                     </div>
                     <label style="display:block;font-size:12px;color:var(--text-secondary);margin:10px 0 3px;">Defect description</label>
                     <input id="bulk-desc" type="text" placeholder="Describe the defect" onfocus="_bulkFieldFocus()" onblur="_bulkFieldBlur()" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:9px;font-size:16px;">
+                    <div class="bulk-photo-wrap" style="text-align:center;margin:14px 0 4px;"><img src="${url}" style="max-width:100%;max-height:38vh;border-radius:10px;object-fit:contain;"></div>
                 </div>
                 <div style="display:flex;gap:10px;padding:12px 14px;border-top:1px solid var(--border-color,#eee);">
                     <button onclick="skipBulkPhoto()" style="flex:1;padding:13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary,#f2f2f2);color:var(--text-secondary,#777);font-size:15px;cursor:pointer;">Skip</button>
