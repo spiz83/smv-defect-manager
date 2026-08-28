@@ -346,13 +346,17 @@ console.log('\n--- G · the shipped curated list ---');
   // narrows to nothing, so the item would be unreachable by picking a
   // supplier. Blank is allowed and meaningful: findable by typing only.
   const KNOWN = ['Painter', 'Carpenter', 'Caulker', 'Cleaner', 'Brick Cleaner', 'Bricklayer',
-                 'Plumber', 'Electrician', 'Tiler', 'Renderer', 'Landscaper', ''];
+                 'Plumber', 'Electrician', 'Tiler', 'Renderer', 'Landscaper', 'Supervisor'];
   const oddTrades = [...new Set(shipped.map(w => w.trade).filter(t => !KNOWN.includes(t)))];
-  check('every trade is one of the agreed names (or deliberately blank)',
-    oddTrades.length === 0, JSON.stringify(oddTrades));
+  check('every trade is one of the agreed names', oddTrades.length === 0, JSON.stringify(oddTrades));
 
-  check('the four unassigned items are still blank-traded, not guessed at',
-    (byTrade['(none)'] || 0) === 4, String(byTrade['(none)'] || 0));
+  // Spiro's rule (2026-08-15): anything not owned by a specific trade goes to
+  // Supervisor. So NOTHING should be blank — a blank trade now means an item
+  // slipped through unassigned rather than being a deliberate choice.
+  check('no item is left without a trade — unassigned means Supervisor now',
+    (byTrade['(none)'] || 0) === 0, String(byTrade['(none)'] || 0));
+  check('the four formerly-unassigned items are Supervisor',
+    (byTrade['Supervisor'] || 0) === 4, String(byTrade['Supervisor'] || 0));
 
   // Duplicates would show twice in one dropdown.
   const seen = new Set(), dupes = [];
@@ -364,15 +368,17 @@ console.log('\n--- G · the shipped curated list ---');
     const seeded = CURATED_DEFECT_WORDINGS;
     CURATED_DEFECT_WORDINGS = window.__shippedWordings;      // run against the REAL list
     const out = { carpenter: bpiDefectSuggestions('Carpenter', 'door', 20).map(x => x.text),
-                  blankTraded: bpiDefectSuggestions('', 'vermin', 20).map(x => x.text) };
+                  supervisor: bpiDefectSuggestions('Supervisor', '', 20).map(x => x.text) };
     CURATED_DEFECT_WORDINGS = seeded;
     return out;
   });
   console.log('  real list, Carpenter + "door":', JSON.stringify(real.carpenter));
   check('the real shipped list suggests sensibly for a picked trade',
     real.carpenter.length >= 3 && real.carpenter.every(t => /door/i.test(t)), JSON.stringify(real.carpenter));
-  check('…and a blank-traded item is still reachable by typing',
-    real.blankTraded.some(t => /vermin proof/i.test(t)), JSON.stringify(real.blankTraded));
+  console.log('  real list, Supervisor:', JSON.stringify(real.supervisor));
+  check('…and picking Supervisor surfaces the four catch-all items',
+    real.supervisor.length === 4 && real.supervisor.some(t => /vermin proof/i.test(t)),
+    JSON.stringify(real.supervisor));
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

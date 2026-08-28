@@ -1,7 +1,7 @@
 # Defect wording list — DRAFT for Spiro's final edit
 
 Rewritten from the inspection checklist into the way a supervisor writes a
-defect they have just seen. **62 items across 11 trades**, plus 4 unassigned
+defect they have just seen. **62 items across 12 trades**
 (your 33 questions, with the compound ones split - a supervisor logs one
 thing per line).
 
@@ -113,7 +113,7 @@ Compact landscaping correctly.
 Repair damaged stormwater riser.
 Clear debris and excess materials from nature strip.
 
-## UNASSIGNED - needs a trade
+## Supervisor
 
 Seal hole in oven space to make vermin proof.
 Repair dented window frame.
@@ -148,8 +148,10 @@ as Brick Cleaner, blow outs as Bricklayer. Split accordingly. Correct?
 (Painter) and "Remove paint, plaster and mortar residue from garage"
 (Cleaner). Keep both, or drop one?
 
-**6. The four UNASSIGNED items.** The window frame ones could be Glazier or
-Painter depending on who you would actually send.
+**6. RESOLVED - the four unassigned items go to Supervisor.** Spiro's rule:
+anything not owned by a specific trade is Supervisor. Worth noting an existing
+BPI classifier rule in index.html already routes window-frame touch-up and
+scratch defects to Supervisor, so this matches what the app already does.
 
 **7. Ranking.** Items currently have no priority - they will list
 alphabetically within a trade. If some are far more common than others, mark
