@@ -2,6 +2,31 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (k) — crop, in the one editor the whole app shares
+
+- **Spiro: "in the mark up mode add the ability to crop photo aswell… across
+  entire app."** It IS across the entire app, for free: the camera, the per-row
+  📸, Bulk Import and plan markups all resolve through
+  `CloudPhotos.editPhoto` → `openPhotoEditor`. One implementation, every photo.
+- **A box you drag by the middle and size by the corners**, everything outside
+  it dimmed by a single 9999px box-shadow rather than four shade panels — the
+  hole always matches, with nothing to keep in sync. 30px hit areas around 16px
+  dots, because a 16px target is not a finger target.
+- **Applying BAKES the composite down.** The crop takes the current canvas —
+  drawing and all — into a new base, then clears the annotation list, since
+  those pixels are now in the image and their old coordinates would scatter.
+  So you can crop then draw, or draw then crop, and both work.
+- **Stroke width and text size are recomputed after a crop.** They derive from
+  the image width; without that, drawing on a tight crop comes out with the fat
+  lines of the whole sheet.
+- **Crop mode hides the colours and the drawing hint** and swaps the top row
+  for its own Cancel / Crop ✓, so there is no doubt what Cancel cancels — and
+  the picture gets the room back.
+- **`tests/photoedit.mjs` is a new suite, because this editor had NONE.** It
+  lives in cloud-sync.js, so nothing was driving it. The image is four coloured
+  quadrants: a crop is proved by WHICH COLOURS SURVIVE, not by size — a size
+  check passes just as happily on a crop of entirely the wrong region.
+
 ## 2026-08-16 (h) — Add Defects gets the same one-line address as View Defects
 
 - **Spiro, with the two screens side by side:** "The address on one goes across

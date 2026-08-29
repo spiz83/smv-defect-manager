@@ -1,3 +1,16 @@
+## The photo editor is shared by the whole app (2026-08-16) — build `2026-08-16k`
+
+`openPhotoEditor` in cloud-sync.js is the ONE editor: camera, per-row 📸, Bulk
+Import and plan markups all reach it through `CloudPhotos.editPhoto`. Draw,
+text and crop live there, so a change reaches every photo in the app — and a
+second editor anywhere would be the mistake.
+
+- **Crop swaps the BASE image**, not a viewport: it bakes the composite into
+  a new canvas and clears the annotations, which are already in those pixels.
+  Anything sized from the image width (stroke, font) must be recomputed.
+- **`tests/photoedit.mjs` (suite 16)** drives it against a four-quadrant
+  image, so a crop is checked by which colours survive rather than by size.
+
 # Next Steps / Handover
 
 STATUS: Active

@@ -1598,13 +1598,21 @@
         canvas.width = w; canvas.height = h;
         canvas.style.cssText = 'max-width:100%;max-height:100%;display:block;touch-action:none;border-radius:6px;';
         const ctx = canvas.getContext('2d');
-        const lw = Math.max(4, Math.round(w / 170));
-        const fsz = Math.max(20, Math.round(w / 20));
+        // Stroke and text are sized from the image's width, so a crop has to
+        // recompute them — otherwise drawing on a tight crop comes out with the
+        // fat lines of the full sheet.
+        let lw = Math.max(4, Math.round(w / 170));
+        let fsz = Math.max(20, Math.round(w / 20));
         let color = '#e11d2a';
         let textY = Math.round(fsz * 0.6);   // stacking position for added text
         const anns = [];
+        // The base is swappable: a crop bakes the current composite down to the
+        // chosen region and makes THAT the thing everything is drawn on from
+        // then on. Annotations are cleared with it — they are already in the
+        // pixels, and keeping their old coordinates would scatter them.
+        let base = img;
         function redraw() {
-          ctx.drawImage(img, 0, 0, w, h);
+          ctx.drawImage(base, 0, 0, w, h);
           for (const a of anns) {
             if (a.type === 'stroke') {
               ctx.strokeStyle = a.color; ctx.lineWidth = a.w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -1626,14 +1634,15 @@
         ov.innerHTML =
           '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;background:#1b1b1b;">' +
             '<button data-act="cancel" style="' + bs('#333') + '">✕ Cancel</button>' +
-            '<button data-act="text" style="' + bs('#2563eb') + 'font-weight:700;">🅣 Add text</button>' +
+            '<button data-act="crop" style="' + bs('#333') + '">⛶ Crop</button>' +
+            '<button data-act="text" style="' + bs('#2563eb') + 'font-weight:700;">🅣 Text</button>' +
             '<button data-act="undo" style="' + bs('#333') + '">↶ Undo</button>' +
           '</div>' +
-          '<div style="display:flex;align-items:center;gap:7px;padding:4px 14px 9px;background:#1b1b1b;">' +
+          '<div id="cs-edit-cols" style="display:flex;align-items:center;gap:7px;padding:4px 14px 9px;background:#1b1b1b;">' +
             cols.map((c) => '<button data-color="' + c + '" aria-label="colour" style="flex:1;height:36px;border-radius:9px;border:3px solid ' + (c === color ? '#fff' : 'transparent') + ';background:' + c + ';cursor:pointer;box-shadow:0 0 0 1px #555;"></button>').join('') +
           '</div>' +
-          '<div style="text-align:center;font-size:11px;color:#aaa;padding:0 0 6px;background:#1b1b1b;">Draw on the photo with your finger · pick a colour above · tap “Add text” for notes</div>' +
-          '<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:6px;background:#111;"><div id="cs-edit-wrap" style="display:flex;max-width:100%;max-height:100%;"></div></div>' +
+          '<div id="cs-edit-hint" style="text-align:center;font-size:11px;color:#aaa;padding:0 0 6px;background:#1b1b1b;">Draw with your finger · pick a colour · “Text” for notes · “Crop” to trim</div>' +
+          '<div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:6px;background:#111;"><div id="cs-edit-wrap" style="position:relative;display:flex;max-width:100%;max-height:100%;"></div></div>' +
           '<div style="display:flex;gap:10px;padding:10px 12px;background:#1b1b1b;">' +
             '<button data-act="asis" style="' + bs('#444') + 'flex:1;">Use as-is</button>' +
             '<button data-act="save" style="' + bs('#16a34a') + 'flex:2;font-weight:700;">Save ✓</button>' +
@@ -1656,6 +1665,132 @@
           }
         };
         ov.querySelector('[data-act="undo"]').onclick = () => { anns.pop(); redraw(); };
+
+        // ---- Crop (Spiro 2026-08-16: "add the ability to crop photo aswell…
+        // across entire app"). This editor IS the whole app's editor — the
+        // camera, Bulk Import and plan markups all come through here — so one
+        // implementation covers all of them.
+        //
+        // A box you drag by the middle and size by the corners, with everything
+        // outside it dimmed. Applying bakes the current picture (drawing and
+        // all) down to that region and carries on from there, so you can crop
+        // then draw, or draw then crop.
+        const wrap = ov.querySelector('#cs-edit-wrap');
+        const topRow = ov.querySelector('[data-act="cancel"]').parentElement;
+        let cropUI = null;
+        const colsRow = ov.querySelector('#cs-edit-cols');
+        const hintRow = ov.querySelector('#cs-edit-hint');
+        function cropExit() {
+          if (cropUI) { cropUI.remove(); cropUI = null; }
+          topRow.style.display = '';
+          // The colours and the drawing hint mean nothing while a box is being
+          // dragged; putting them away also gives the picture more room.
+          if (colsRow) colsRow.style.display = '';
+          if (hintRow) hintRow.style.display = '';
+        }
+        ov.querySelector('[data-act="crop"]').onclick = () => {
+          if (cropUI) { cropExit(); return; }
+          const r = canvas.getBoundingClientRect();
+          const W = r.width, H = r.height;
+          // Start a little inside the edges, so both the box and the handles are
+          // obviously grabbable rather than pinned to the frame.
+          let sel = { x: W * 0.1, y: H * 0.1, w: W * 0.8, h: H * 0.8 };
+          const MIN = 40;
+          cropUI = document.createElement('div');
+          cropUI.id = 'cs-crop';
+          cropUI.style.cssText = 'position:absolute;inset:0;touch-action:none;';
+          const boxEl = document.createElement('div');
+          // One huge shadow instead of four shade panels — it always matches the
+          // hole exactly, with nothing to keep in sync.
+          boxEl.style.cssText = 'position:absolute;box-sizing:border-box;border:2px solid #fff;' +
+            'box-shadow:0 0 0 9999px rgba(0,0,0,.55);cursor:move;';
+          const HS = 30;
+          ['nw', 'ne', 'sw', 'se'].forEach((k) => {
+            const hEl = document.createElement('div');
+            hEl.dataset.h = k;
+            hEl.style.cssText = 'position:absolute;width:' + HS + 'px;height:' + HS + 'px;background:transparent;';
+            const dot = document.createElement('div');
+            dot.style.cssText = 'position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.4);' +
+              'top:' + (k[0] === 'n' ? '2px' : 'auto') + ';bottom:' + (k[0] === 's' ? '2px' : 'auto') + ';' +
+              'left:' + (k[1] === 'w' ? '2px' : 'auto') + ';right:' + (k[1] === 'e' ? '2px' : 'auto') + ';';
+            hEl.appendChild(dot);
+            boxEl.appendChild(hEl);
+          });
+          cropUI.appendChild(boxEl);
+          wrap.appendChild(cropUI);
+          const place = () => {
+            boxEl.style.left = sel.x + 'px'; boxEl.style.top = sel.y + 'px';
+            boxEl.style.width = sel.w + 'px'; boxEl.style.height = sel.h + 'px';
+            boxEl.querySelectorAll('[data-h]').forEach((hEl) => {
+              const k = hEl.dataset.h;
+              hEl.style.left = k[1] === 'w' ? (-HS / 2) + 'px' : 'auto';
+              hEl.style.right = k[1] === 'e' ? (-HS / 2) + 'px' : 'auto';
+              hEl.style.top = k[0] === 'n' ? (-HS / 2) + 'px' : 'auto';
+              hEl.style.bottom = k[0] === 's' ? (-HS / 2) + 'px' : 'auto';
+            });
+          };
+          place();
+          let drag = null;
+          cropUI.addEventListener('pointerdown', (ev) => {
+            const hEl = ev.target.closest && ev.target.closest('[data-h]');
+            const inside = ev.target === boxEl || boxEl.contains(ev.target);
+            if (!hEl && !inside) return;
+            ev.preventDefault(); ev.stopPropagation();
+            drag = { k: hEl ? hEl.dataset.h : 'move', x: ev.clientX, y: ev.clientY, s: { ...sel } };
+            try { cropUI.setPointerCapture(ev.pointerId); } catch (e) {}
+          });
+          cropUI.addEventListener('pointermove', (ev) => {
+            if (!drag) return;
+            const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y, s0 = drag.s;
+            if (drag.k === 'move') {
+              sel.x = Math.min(Math.max(0, s0.x + dx), W - s0.w);
+              sel.y = Math.min(Math.max(0, s0.y + dy), H - s0.h);
+            } else {
+              let x1 = s0.x, y1 = s0.y, x2 = s0.x + s0.w, y2 = s0.y + s0.h;
+              if (drag.k[1] === 'w') x1 = Math.min(Math.max(0, s0.x + dx), x2 - MIN);
+              else x2 = Math.max(Math.min(W, x2 + dx), x1 + MIN);
+              if (drag.k[0] === 'n') y1 = Math.min(Math.max(0, s0.y + dy), y2 - MIN);
+              else y2 = Math.max(Math.min(H, y2 + dy), y1 + MIN);
+              sel = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+            }
+            place();
+          });
+          const endDrag = () => { drag = null; };
+          cropUI.addEventListener('pointerup', endDrag);
+          cropUI.addEventListener('pointercancel', endDrag);
+
+          // The crop's own two buttons replace the top row while it is open, so
+          // there is no doubt about what Cancel cancels.
+          const bar = document.createElement('div');
+          bar.id = 'cs-crop-bar';
+          bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;background:#1b1b1b;';
+          bar.innerHTML = '<button data-act="cropcancel" style="' + bs('#333') + 'white-space:nowrap;">✕ Cancel</button>' +
+                          '<span style="color:#aaa;font-size:12px;">Drag the box · corners resize</span>' +
+                          '<button data-act="cropok" style="' + bs('#16a34a') + 'font-weight:700;white-space:nowrap;">Crop ✓</button>';
+          topRow.style.display = 'none';
+          if (colsRow) colsRow.style.display = 'none';
+          if (hintRow) hintRow.style.display = 'none';
+          topRow.parentElement.insertBefore(bar, topRow);
+          cropUI._bar = bar;
+          const closeBar = () => { bar.remove(); };
+          bar.querySelector('[data-act="cropcancel"]').onclick = () => { closeBar(); cropExit(); };
+          bar.querySelector('[data-act="cropok"]').onclick = () => {
+            const k = canvas.width / W;                       // displayed px -> canvas px
+            const cw = Math.max(1, Math.round(sel.w * k)), ch = Math.max(1, Math.round(sel.h * k));
+            const sx = Math.round(sel.x * k), sy = Math.round(sel.y * k);
+            const out = document.createElement('canvas');
+            out.width = cw; out.height = ch;
+            out.getContext('2d').drawImage(canvas, sx, sy, cw, ch, 0, 0, cw, ch);
+            base = out; w = cw; h = ch;
+            canvas.width = cw; canvas.height = ch;
+            anns.length = 0;                                   // already baked in
+            lw = Math.max(4, Math.round(w / 170));
+            fsz = Math.max(20, Math.round(w / 20));
+            textY = Math.round(fsz * 0.6);
+            redraw();
+            closeBar(); cropExit();
+          };
+        };
         ov.querySelector('[data-act="cancel"]').onclick = () => done(null);
         ov.querySelector('[data-act="asis"]').onclick = () => done(file);
         ov.querySelector('[data-act="save"]').onclick = () => canvas.toBlob((b) => done(b || file), 'image/jpeg', 0.92);
