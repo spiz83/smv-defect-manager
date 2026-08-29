@@ -10394,24 +10394,38 @@
             window.visualViewport.addEventListener('scroll', () => { if (_clrFor) _clrSync(); });
         }
 
-        // ---- Add Defects screen: one shared popup for all 15 defect rows ----
-        // A single position:fixed popup rather than a dropdown per row. Fifteen
-        // absolutely-positioned lists inside a scrolling form is exactly the
-        // clipping problem that took three builds to fix in Bulk Import;
-        // position:fixed is measured against the viewport and cannot be cut off
-        // by an ancestor's overflow.
+        // ---- Add Defects screen: one shared list for all 15 defect rows ----
+        // IN NORMAL FLOW, inserted directly after the row being typed in. Not
+        // position:fixed, not absolute — no coordinates at all.
+        //
+        // Spiro, 2026-08-15: "As I scroll up and down the screen, it just moves
+        // around and it's really cra[p]." That is what a fixed-position list
+        // costs: it is measured against the viewport, so it has to be re-placed
+        // on every scroll event, and on a phone those arrive late and in bursts
+        // during momentum scrolling. The list visibly lags the field, snaps, and
+        // during the flick is somewhere else entirely. Two builds of placement
+        // maths (flip-above, then always-below with a visualViewport cap) each
+        // fixed one symptom of chasing without stopping the chase.
+        //
+        // In normal flow there is nothing to chase: the browser keeps the list
+        // under the field because it IS under the field, one element later in
+        // the document. Scroll, keyboard, rotation, momentum — all free.
+        //
+        // The original note here said fifteen absolutely-positioned lists inside
+        // a scrolling form would be clipped, as in Bulk Import. That does not
+        // apply: .defects-container is `min-height:100vh` with no overflow, so
+        // the PAGE scrolls and there is no clipping ancestor to escape. The
+        // fixed positioning bought nothing and cost the stability.
         let _bpiPopEl = null;
         function _bpiPop() {
             if (_bpiPopEl && document.body.contains(_bpiPopEl)) return _bpiPopEl;
             const d = document.createElement('div');
             d.id = 'bpi-desc-pop';
-            // No max-height here — _bpiPlacePop sets it from the space actually
-            // free below the field. A vh cap measures the layout viewport, which
-            // is the wrong number the moment the keyboard is up.
-            d.style.cssText = 'display:none;position:fixed;z-index:100002;overflow:auto;' +
+            // Capped at about five rows so the list reads as attached to the
+            // field rather than taking the screen — it scrolls inside that.
+            d.style.cssText = 'display:none;max-height:236px;overflow:auto;margin:-2px 0 8px;' +
                 'background:var(--bg-primary,#fff);border:1px solid var(--border-color,#ccc);border-radius:10px;' +
-                'box-shadow:0 10px 26px rgba(0,0,0,.28);';
-            document.body.appendChild(d);
+                'box-shadow:0 6px 16px rgba(0,0,0,.16);-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
             _bpiPopEl = d;
             return d;
         }
@@ -10424,7 +10438,7 @@
             const blk = _bpiDefectBlock(input);
             if (!blk) return;
             const sup = document.getElementById('add-contractor-' + blk + '-input');
-            const hits = bpiDefectSuggestions(bpiTradeForContractorName(sup && sup.value), input.value, 12);
+            const hits = bpiDefectSuggestions(bpiTradeForContractorName(sup && sup.value), input.value, 8);
             const pop = _bpiPop();
             if (!hits.length) { pop.style.display = 'none'; return; }
             pop.innerHTML = hits.map((h, i) => `<div data-d="${i}" style="padding:11px 12px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--border-color,#eee);color:var(--text-primary,#111);">${_escHtml(h.text)}</div>`).join('');
@@ -10437,52 +10451,12 @@
                 pop._input.value = pop._hits[Number(el.getAttribute('data-d'))].text;
                 pop.style.display = 'none';
             };
-            _bpiPlacePop(input);
-        }
-        // ALWAYS below the field, never above it (Spiro, 2026-08-15: "the options
-        // from dropdown menu seem to hover around. Can you make it consistent so
-        // that it actually goes below the text… the user can always see what they
-        // are typing?").
-        //
-        // This used to flip above when it judged the space below too tight. Two
-        // things were wrong with that. It measured against window.innerHeight —
-        // the LAYOUT viewport, which iOS does not shrink for the keyboard — so
-        // the judgement was made on space that was not really there. And when it
-        // did flip, the list landed on top of the field the user was typing in.
-        // A list that picks a different side depending on where the row sits is
-        // also the "hovering around" itself: fifteen rows, no two behaving the
-        // same.
-        //
-        // One side, always. Room is made by CAPPING THE HEIGHT to what is
-        // actually free below the field inside the VISIBLE viewport; the list
-        // scrolls inside that. A short list beats a list over the text.
-        function _bpiPlacePop(input) {
-            const pop = document.getElementById('bpi-desc-pop');
-            if (!pop || !input) return;
-            const r = input.getBoundingClientRect();
-            pop.style.left = Math.max(6, r.left) + 'px';
-            pop.style.width = Math.min(r.width, window.innerWidth - 12) + 'px';
-            const vv = window.visualViewport;
-            // Bottom of what the user can actually see. With the keyboard up that
-            // is well above window.innerHeight, which is the whole point.
-            const visibleBottom = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
-            const top = r.bottom + 4;
-            pop.style.bottom = '';
-            pop.style.top = top + 'px';
-            pop.style.maxHeight = Math.max(72, Math.round(visibleBottom - top - 8)) + 'px';
+            // Park it directly after the row being typed in. Moving one element
+            // around the DOM keeps "one list for fifteen rows" while making the
+            // position the browser's problem rather than ours.
+            const row = input.closest('.defect-input-row') || input;
+            if (pop.previousElementSibling !== row) row.insertAdjacentElement('afterend', pop);
             pop.style.display = 'block';
-            // Settle on the next frame. Focusing an input makes the browser
-            // scroll it into view, which happens AFTER this runs — so the first
-            // placement is measured against where the field was, not where it
-            // lands. That one-frame stale position is the list appearing to move
-            // on its own.
-            if (!pop._settling) {
-                pop._settling = true;
-                requestAnimationFrame(() => {
-                    pop._settling = false;
-                    if (pop.style.display === 'block' && pop._input) _bpiPlacePop(pop._input);
-                });
-            }
         }
         // Delegated once, so all 15 rows are covered without touching markup.
         document.addEventListener('focusin', (e) => {
@@ -10492,21 +10466,19 @@
             if (_bpiDefectBlock(e.target)) bpiSuggestForDefectInput(e.target);
         });
         document.addEventListener('focusout', (e) => {
-            if (_bpiDefectBlock(e.target)) setTimeout(_bpiHidePop, 180);
+            if (!_bpiDefectBlock(e.target)) return;
+            // Only hide if focus actually LEFT the defect rows. Moving from one
+            // row to the next fires this blur while the new row is already
+            // showing its list — an unconditional hide then wiped that list out
+            // 180ms later, so it appeared and vanished on its own. Part of what
+            // "it just moves around" describes.
+            setTimeout(() => {
+                if (_bpiDefectBlock(document.activeElement)) return;
+                _bpiHidePop();
+            }, 180);
         });
-        // position:fixed does not follow a scrolling ancestor — re-place it. The
-        // visualViewport events matter as much: the keyboard opening changes how
-        // much room is free below the field without firing a scroll or a resize.
-        const _bpiReplace = () => {
-            const pop = document.getElementById('bpi-desc-pop');
-            if (pop && pop.style.display === 'block' && pop._input) _bpiPlacePop(pop._input);
-        };
-        document.addEventListener('scroll', _bpiReplace, true);
-        window.addEventListener('resize', _bpiReplace);
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', _bpiReplace);
-            window.visualViewport.addEventListener('scroll', _bpiReplace);
-        }
+        // No scroll / resize / visualViewport listeners: an in-flow element has
+        // nothing to re-place. Deleting them is the fix, not an optimisation.
 
         function normalizePhrase(text) {
             let s = ' ' + String(text || '').toLowerCase() + ' ';
@@ -12295,7 +12267,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15s';
+        const APP_VERSION = '2026-08-15t';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12369,7 +12341,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15s"></script>
+    <script src="cloud-sync.js?v=2026-08-15t"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -382,102 +382,102 @@ console.log('\n--- G · the shipped curated list ---');
 }
 
 // ===========================================================================
-//  H. The list is ALWAYS below the field, keyboard or no keyboard.
+//  H. The list is IN THE FLOW, directly under the row. Nothing to chase.
 // ===========================================================================
-// Spiro, 2026-08-15: "the options from dropdown menu seem to hover around. Can
-// you make it consistent so that it actually goes below the text… the user can
-// always see what they are typing?"
+// Spiro, 2026-08-15: "As I scroll up and down the screen, it just moves around
+// and it's really cra[p]."
 //
-// It used to flip above when it judged the space below too tight, measuring
-// against window.innerHeight — the LAYOUT viewport, which iOS does not shrink
-// for the keyboard. So it judged on space that was not there, and when it
-// flipped it landed on top of the field being typed in.
-console.log('\n--- H · the list stays below the field ---');
+// It was position:fixed, so it had to be re-placed on every scroll event, and
+// on a phone those arrive late and in bursts during momentum scrolling — the
+// list lags the field and snaps. Two builds of placement maths each fixed a
+// symptom of chasing without stopping the chase. It is now one element moved
+// around the DOM: the browser keeps it under the field because it IS under the
+// field. These checks are about that, not about coordinates.
+console.log('\n--- H · the list sits in the flow, under the row ---');
 {
-  const VH = 820, KEYBOARD = 336;      // this context's viewport, and iOS's keyboard
-  // Headless Chromium has no soft keyboard. Shrink the visual viewport the way
-  // iOS does; without this every row has room below and the bug is invisible.
-  const keyboard = (up) => page.evaluate(({ up, VH, KEYBOARD }) => {
-    const vv = window.visualViewport;
-    if (!window.__vvPatched) {
-      window.__vvH = VH;
-      Object.defineProperty(vv, 'height', { get: () => window.__vvH, configurable: true });
-      window.__vvPatched = true;
-    }
-    window.__vvH = up ? VH - KEYBOARD : VH;
-    vv.dispatchEvent(new Event('resize'));
-  }, { up, VH, KEYBOARD });
+  await page.evaluate(() => { state.currentView = 'home'; render(); startDefectsForJob(1); });
+  await page.waitForSelector('.add-defect-1');
 
-  const place = (sel) => page.evaluate((sel) => {
-    const inp = document.querySelector(sel);
+  const type = (idx) => page.evaluate((idx) => {
+    const inp = [...document.querySelectorAll('input[class*="add-defect-"]')][idx];
     inp.focus(); inp.value = 'c';
     inp.dispatchEvent(new Event('input', { bubbles: true }));
     const pop = document.getElementById('bpi-desc-pop');
     const pr = pop.getBoundingClientRect(), ir = inp.getBoundingClientRect();
-    return { shown: pop.style.display === 'block',
-             popTop: Math.round(pr.top), popBottom: Math.round(pr.bottom),
-             inputTop: Math.round(ir.top), inputBottom: Math.round(ir.bottom),
-             maxH: Math.round(parseFloat(pop.style.maxHeight) || 0) };
-  }, sel);
+    return {
+      shown: pop.style.display === 'block',
+      // The thing that makes it stable: no coordinates of our own.
+      position: getComputedStyle(pop).position,
+      hasInlineTop: !!pop.style.top, hasInlineLeft: !!pop.style.left,
+      // …and it is the element immediately after the row being typed in.
+      rightAfterRow: pop.previousElementSibling === (inp.closest('.defect-input-row') || inp),
+      insideSameBlock: pop.parentElement === (inp.closest('.defect-input-row') || inp).parentElement,
+      popTop: Math.round(pr.top), popBottom: Math.round(pr.bottom),
+      inputTop: Math.round(ir.top), inputBottom: Math.round(ir.bottom),
+      height: Math.round(pr.height), rows: pop.querySelectorAll('[data-d]').length,
+    };
+  }, idx);
 
-  await page.evaluate(() => { state.currentView = 'home'; render(); startDefectsForJob(1); });
-  await page.waitForSelector('.add-defect-1');
+  const first = await type(0);
+  check('the list shows under the first row', first.shown && first.popTop >= first.inputBottom,
+    `pop ${first.popTop}, field ends ${first.inputBottom}`);
+  check('…in NORMAL FLOW, not fixed or absolute', first.position === 'static', first.position);
+  check('…with no coordinates of its own to go stale',
+    !first.hasInlineTop && !first.hasInlineLeft, `top:${first.hasInlineTop} left:${first.hasInlineLeft}`);
+  check('…as the very next element after the row', first.rightAfterRow);
+  check('…in the same supplier block, so it cannot be orphaned', first.insideSameBlock);
 
-  // A row near the TOP — plenty of room below either way.
-  await keyboard(false);
-  const top = await place('.add-defect-1');
-  check('a row near the top puts the list below the field',
-    top.shown && top.popTop >= top.inputBottom, `pop ${top.popTop}, field ends ${top.inputBottom}`);
-
-  // A row far DOWN the form, with the keyboard up — the case that used to flip.
-  await keyboard(true);
-  const rows = await page.evaluate(() => document.querySelectorAll('[class*="add-defect-"]').length);
-  const lastSel = '[class*="add-defect-"]:nth-last-of-type(1)';
-  const low = await page.evaluate(() => {
-    // Pick whichever defect row currently sits lowest on screen.
-    const all = [...document.querySelectorAll('input[class*="add-defect-"]')];
-    let best = all[0], bestY = -1;
-    all.forEach(i => { const y = i.getBoundingClientRect().top; if (y > bestY) { bestY = y; best = i; } });
-    best.focus(); best.value = 'c';
-    best.dispatchEvent(new Event('input', { bubbles: true }));
-    const pop = document.getElementById('bpi-desc-pop');
-    const pr = pop.getBoundingClientRect(), ir = best.getBoundingClientRect();
-    return { shown: pop.style.display === 'block',
-             popTop: Math.round(pr.top), popBottom: Math.round(pr.bottom),
-             inputTop: Math.round(ir.top), inputBottom: Math.round(ir.bottom),
-             maxH: Math.round(parseFloat(pop.style.maxHeight) || 0) };
-  });
-  console.log(`  ${rows} defect rows; lowest one at y=${low.inputTop}, list at ${low.popTop}..${low.popBottom}, cap ${low.maxH}px`);
-  check('a row low on the form STILL puts the list below, never over the text',
-    low.shown && low.popTop >= low.inputBottom, `pop ${low.popTop}, field ends ${low.inputBottom}`);
-  check('…so the field being typed in is never covered',
-    low.popTop > low.inputTop, `pop ${low.popTop} vs field top ${low.inputTop}`);
-  check('…and it is capped to the room actually free, not left to run on',
-    low.maxH > 0, `${low.maxH}px`);
-
-  // Every row behaves the same way — "hovering around" was rows disagreeing.
-  const sides = await page.evaluate(() => {
-    const out = [];
-    [...document.querySelectorAll('input[class*="add-defect-"]')].forEach(i => {
-      i.focus(); i.value = 'c'; i.dispatchEvent(new Event('input', { bubbles: true }));
+  // Scrolling is where it used to come apart. In the flow there is nothing to
+  // re-place: the offset from the field is fixed by the document, not recomputed.
+  const gapAt = async (y) => {
+    await page.evaluate((y) => window.scrollTo(0, y), y);
+    await page.waitForTimeout(30);
+    return page.evaluate(() => {
       const pop = document.getElementById('bpi-desc-pop');
-      if (pop.style.display !== 'block') return;
-      out.push(pop.getBoundingClientRect().top >= i.getBoundingClientRect().bottom ? 'below' : 'ABOVE');
+      const inp = pop._input;
+      // A hidden element measures as all zeros, which would read as a wild gap
+      // rather than as "the list disappeared" — say which it is.
+      if (pop.style.display !== 'block') return 'HIDDEN';
+      return Math.round(pop.getBoundingClientRect().top - inp.getBoundingClientRect().bottom);
     });
-    return out;
-  });
-  const below = sides.filter(x => x === 'below').length;
-  console.log(`  ${below}/${sides.length} rows place the list below`);
-  check('EVERY row agrees — one side, so it stops moving around',
-    sides.length > 0 && below === sides.length, JSON.stringify([...new Set(sides)]));
+  };
+  const gaps = [];
+  for (const y of [0, 60, 150, 320, 150, 0]) gaps.push(await gapAt(y));
+  console.log('  gap between field and list at scroll 0/60/150/320/150/0:', JSON.stringify(gaps));
+  check('the list stays up throughout the scroll', gaps.every(g => g !== 'HIDDEN'), JSON.stringify(gaps));
+  check('the list keeps EXACTLY the same gap under the field at every scroll position',
+    gaps.every(g => g === gaps[0]), JSON.stringify(gaps));
+  await page.evaluate(() => window.scrollTo(0, 0));
 
-  // The cap has to react to the keyboard, or the list runs behind it.
-  const capUp = (await place('.add-defect-1')).maxH;
-  await keyboard(false);
-  const capDown = (await place('.add-defect-1')).maxH;
-  console.log(`  cap with keyboard up ${capUp}px, down ${capDown}px`);
-  check('the height cap follows the keyboard', capDown > capUp, `${capUp} -> ${capDown}`);
-  await page.evaluate(() => { window.__vvH = 820; });
+  // Every row behaves the same — "moving around" was rows disagreeing.
+  const all = [];
+  const n = await page.evaluate(() => document.querySelectorAll('input[class*="add-defect-"]').length);
+  for (let i = 0; i < n; i++) {
+    const r = await type(i);
+    if (r.shown) all.push(r.rightAfterRow && r.popTop >= r.inputBottom);
+  }
+  console.log(`  ${all.filter(Boolean).length}/${all.length} rows anchor the list under themselves`);
+  check('EVERY row anchors it the same way', all.length > 0 && all.every(Boolean),
+    `${all.filter(Boolean).length}/${all.length}`);
+
+  // It must stay a list, not take the screen — that was the other complaint.
+  const last = await type(0);
+  console.log(`  ${last.rows} suggestions, ${last.height}px tall`);
+  check('it stays a compact list rather than filling the screen', last.height <= 240, `${last.height}px`);
+  check('…and still offers a useful number of wordings', last.rows >= 4, String(last.rows));
+  check('…scrolling inside itself when there are more',
+    await page.evaluate(() => getComputedStyle(document.getElementById('bpi-desc-pop')).overflowY === 'auto'));
+
+  // Picking still works now that it lives somewhere else in the DOM.
+  const picked = await page.evaluate(() => {
+    const pop = document.getElementById('bpi-desc-pop');
+    const row = pop.querySelector('[data-d]');
+    const want = row.textContent.trim();
+    row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    return { want, got: pop._input.value, hidden: pop.style.display === 'none' };
+  });
+  check('tapping a suggestion still fills the field and closes the list',
+    picked.got === picked.want && picked.hidden, JSON.stringify(picked));
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

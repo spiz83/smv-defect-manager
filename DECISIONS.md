@@ -2,6 +2,35 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (t) — the suggestion list stops chasing the field
+
+- **Spiro, after testing (s):** "As I scroll up and down the screen, it just
+  moves around and it's really cra[p]." Fair.
+- **The list was `position:fixed`, so it had to be RE-PLACED on every scroll
+  event.** On a phone those arrive late and in bursts during momentum
+  scrolling: the list lags the field, snaps to catch up, and mid-flick is
+  somewhere else entirely. Builds (r) and (s) each fixed a symptom of chasing —
+  first the flip-above, then the height cap — without stopping the chase.
+- **It is now IN NORMAL FLOW**, inserted as the element immediately after the
+  row being typed in. There are no coordinates: the browser keeps it under the
+  field because it IS under the field. Scroll, keyboard, rotation and momentum
+  are all free. Measured: the gap stays exactly 6px at every scroll position,
+  where before it was recomputed each time.
+- **The original justification for `position:fixed` was wrong.** The comment
+  said fifteen absolutely-positioned lists inside a scrolling form would be
+  clipped, as in Bulk Import. `.defects-container` is `min-height:100vh` with no
+  overflow — the PAGE scrolls, there is no clipping ancestor. It bought nothing
+  and cost the stability.
+- **All the scroll / resize / visualViewport listeners are DELETED.** That is
+  the fix, not a tidy-up: nothing to re-place means nothing to get wrong.
+- **Found while testing: the list wiped itself out when moving between rows.**
+  `focusout` scheduled an unconditional hide 180ms later, so tabbing from one
+  defect row to the next showed the new list and then killed it. It now checks
+  whether focus actually left the defect rows. Part of "it just moves around".
+- **Capped at 236px (~5 rows) and 8 suggestions**, so it reads as attached to
+  the field instead of taking the screen — the previous build's cap could grow
+  to the whole visible viewport, which is the second screenshot.
+
 ## 2026-08-15 (s) — the defect suggestion list is always BELOW the field
 
 - **Spiro:** "the options from dropdown menu seem to hover around. Can you make

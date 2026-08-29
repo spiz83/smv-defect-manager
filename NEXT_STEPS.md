@@ -13,6 +13,24 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
+## Defect suggestions are in the flow, not positioned (2026-08-15) — build `2026-08-15t`
+
+`#bpi-desc-pop` is a plain block element moved around the DOM — inserted after
+the `.defect-input-row` being typed in. What will bite a later change:
+
+- **Do not give it `position`, `top` or `left` again.** Three builds went into
+  placement maths (flip-above, always-below, visualViewport cap) and every one
+  of them still had to chase the field on scroll, which is what the site
+  actually rejected. In the flow there is nothing to chase.
+- **There is no clipping ancestor on this screen.** `.defects-container` is
+  `min-height:100vh` with no overflow. The Bulk Import clipping problem, which
+  the old comment cited, does not apply here.
+- **The `focusout` hide checks `document.activeElement` first.** Without that,
+  moving between defect rows shows the new list and then hides it 180ms later.
+- **`tests/bpidesc.mjs` section H** asserts `position: static`, no inline
+  coordinates, that it is the very next element after the row, and that the gap
+  to the field is byte-identical across six scroll positions.
+
 ## Defect suggestions always sit below the field (2026-08-15) — build `2026-08-15s`
 
 `_bpiPlacePop` places the popup at `input.bottom + 4`, unconditionally, and caps
