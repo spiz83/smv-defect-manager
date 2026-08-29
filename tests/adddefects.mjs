@@ -237,6 +237,18 @@ console.log('\n--- E · three blocks of five, each row on ONE line ---');
   console.log('after setting a long location:', JSON.stringify(widths));
   check('a row with a location set is no narrower than the rest',
     new Set(widths.w).size === 1, JSON.stringify(widths));
+
+  // Type: both fields Titillium Web, supplier bold, defect lines regular.
+  const type = await page.evaluate(() => {
+    const c = getComputedStyle(document.getElementById('add-contractor-1-input'));
+    const d = getComputedStyle(document.querySelector('.add-defect-1'));
+    return { cf: c.fontFamily, cw: c.fontWeight, df: d.fontFamily, dw: d.fontWeight };
+  });
+  console.log('type:', JSON.stringify(type));
+  check('supplier and defect fields are both Titillium Web',
+    /Titillium Web/.test(type.cf) && /Titillium Web/.test(type.df), JSON.stringify(type));
+  check('the supplier reads bold, the defect lines do not',
+    type.cw === '700' && type.dw === '400', `${type.cw} vs ${type.dw}`);
 }
 
 // ================= F. the report's own status filter =========================

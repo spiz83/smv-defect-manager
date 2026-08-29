@@ -814,7 +814,17 @@
                input so one number governs every defect row in the app. */
             padding: 6px 10px;
             line-height: 1.25;
+            font-weight: 400;
         }
+
+        /* The supplier is the heading of its block, so it reads bold — the way
+           a job row on the index does — and the defect lines under it stay
+           regular, so the eye lands on the supplier first (Spiro 2026-08-16:
+           "Contractor name to be bold but the defects not to be"). Both are
+           already Titillium Web, from body.design-f1's input rule. The
+           placeholder drops back to regular: it is a prompt, not a name. */
+        .add-contractor-input { font-weight: 700; }
+        .add-contractor-input::placeholder { font-weight: 400; }
         /* Both icons: the padding makes a finger-sized target, the negative
            margins stop that padding from taking width off the description or
            height off the row, and the bigger negative on the outer edge slides
@@ -3173,6 +3183,7 @@
                             <div class="autocomplete-container" style="position: relative; margin-bottom: 8px;">
                                 <input type="text"
                                        id="add-contractor-${i}-input"
+                                       class="add-contractor-input"
                                        placeholder="Contractor ${i} \u2014 start typing name\u2026"
                                        oninput="handleAddDefectsContractorAutocomplete(this, ${i})"
                                        onfocus="handleAddDefectsContractorAutocomplete(this, ${i})"
@@ -12997,7 +13008,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16m';
+        const APP_VERSION = '2026-08-16n';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13071,7 +13082,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16m"></script>
+    <script src="cloud-sync.js?v=2026-08-16n"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -2,6 +2,23 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (n) — the supplier reads bold, the defects do not
+
+- **Spiro: "the text of the contractor and the defects to be Titillium Web…
+  contractor name to be bold but the defects not to be."** The family was
+  already right — `body.design-f1 input` sets Titillium Web with `!important`,
+  and a computed-style probe confirmed both fields at 400 weight. Only the
+  weight needed changing, so this is two CSS lines, not a font change.
+- **Worth recording because the screenshots lie here:** the sandbox stubs out
+  Google Fonts, so every render in this repo's tooling falls back to system-ui.
+  A screenshot cannot tell you which family shipped — read the computed
+  `fontFamily`, which is what `adddefects.mjs` now does.
+- **The supplier is the heading of its block**, so 700 matches how a job row on
+  the index is set; the five defect lines under it stay 400 so the eye lands on
+  the supplier first.
+- **The placeholder drops back to 400.** "Contractor 1 — start typing name…" is
+  a prompt, not a name, and bold placeholder text reads as filled-in.
+
 ## 2026-08-16 (m) — the defect rows lose their padding
 
 - **Spiro, from a phone with the keyboard up: "too much space above and below
