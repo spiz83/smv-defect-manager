@@ -2,6 +2,28 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (pending) — two whole supplier blocks on one screen
+
+- **Spiro: "reduce the height of the input fields so that I can see all five
+  defects of two contractors."** In `m` the fifth row of Contractor 2 sat about
+  20px below the fold on his phone. Two blocks now need 490px instead of 562,
+  and 12px also came off above block 1 — 84px in total, so it clears by ~60px.
+- **Where the 72px came from:** defect row 34→32, supplier field 46→36, row gap
+  5→4, block padding 12/15→9/12, gap between blocks 12→8. No single change was
+  enough; the field heights alone were 60 of it.
+- **16px is the floor on any focusable input and the supplier field is now on
+  it** (17→16). Below 16px, iOS Safari zooms the page whenever a field takes
+  focus and the supervisor has to pinch back out. `adddefects.mjs` asserts it,
+  because it is the kind of limit that gets shaved off by accident later.
+- **The fit is asserted as "two blocks need ≤500px", not against the harness's
+  viewport.** A real phone carries ~120px more chrome above them — the Synced
+  bar and the notch inset — which the headless page has no way to render, so a
+  viewport-relative check would pass here and fail on site.
+- **Trade-off: a 32px row is well under the 44px iOS touch guideline.** The pin
+  and camera keep their own 34px targets through padding, so only the text
+  field is tight, and a text field is more forgiving than a button. One number
+  in `.defect-input-row input` puts it back.
+
 ## 2026-08-16 (n) — the supplier reads bold, the defects do not
 
 - **Spiro: "the text of the contractor and the defects to be Titillium Web…

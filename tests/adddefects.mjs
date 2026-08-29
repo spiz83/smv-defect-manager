@@ -214,8 +214,29 @@ console.log('\n--- E · three blocks of five, each row on ONE line ---');
   check('…and no way to add a 6th row to a block', !rows.addRowButton);
   // One line AND condensed. Wrapped it was ~60px+; before the padding came off
   // it was 40px, which fitted only three rows on a phone with the keyboard up.
-  check('every row is ONE line high and condensed', rows.geo.every(g => g.rowH <= 36),
+  check('every row is ONE line high and condensed', rows.geo.every(g => g.rowH <= 34),
     JSON.stringify(rows.geo.map(g => g.rowH)));
+
+  // The requirement Spiro actually stated (2026-08-16): TWO whole supplier
+  // blocks — ten defect rows and both name fields — visible at once on a phone.
+  // Measured as the height the two blocks need, not against this harness's
+  // viewport: a real phone carries ~120px more chrome above them (the Synced
+  // bar and the notch inset), which this headless page has no way to render.
+  const twoBlocks = await page.evaluate(() => {
+    const blk = i => document.getElementById(`add-contractor-${i}-input`)
+      .closest('div[style*="border-radius: 10px"]').getBoundingClientRect();
+    const b1 = blk(1), b2 = blk(2);
+    return { need: Math.round(b2.bottom - b1.top), blockH: Math.round(b1.height),
+      contractorH: Math.round(document.getElementById('add-contractor-1-input').getBoundingClientRect().height) };
+  });
+  console.log('two supplier blocks:', JSON.stringify(twoBlocks));
+  check('two whole supplier blocks fit in 500px', twoBlocks.need <= 500, `${twoBlocks.need}px`);
+  // 16px is the floor on any focusable input: below it iOS Safari zooms the
+  // page when the field takes focus, and the supervisor has to pinch back out.
+  const fs = await page.evaluate(() => [...document.querySelectorAll('.add-contractor-input, .defect-input-row input')]
+    .map(i => parseFloat(getComputedStyle(i).fontSize)));
+  check('no input is under 16px, which would make iOS zoom on focus',
+    fs.every(v => v >= 16), JSON.stringify([...new Set(fs)]));
   check('pin sits left of the description, camera right of it',
     rows.geo.every(g => g.pinLeft && g.camRight));
   check('all three are on the same line, vertically centred',

@@ -792,7 +792,7 @@
             flex-wrap: nowrap;
             align-items: center;
             gap: 4px;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
         }
 
         /* Direct children only — the legacy form's "*" marker. Scoped with ">"
@@ -812,7 +812,7 @@
                condensed"). Horizontal padding is untouched — that is reading
                room, not dead space. Declared here rather than inline on each
                input so one number governs every defect row in the app. */
-            padding: 6px 10px;
+            padding: 5px 10px;
             line-height: 1.25;
             font-weight: 400;
         }
@@ -3179,15 +3179,15 @@
                 let rows = '';
                 for (let r = 0; r < ADD_DEFECT_ROWS; r++) rows += addDefectRowHtml('add-defect-' + i);
                 out += `
-                        <div style="margin-bottom: 12px; padding: 12px 15px; background: var(--bg-primary); border-radius: 10px; border: 1px solid var(--border-color);">
-                            <div class="autocomplete-container" style="position: relative; margin-bottom: 8px;">
+                        <div style="margin-bottom: 8px; padding: 9px 12px; background: var(--bg-primary); border-radius: 10px; border: 1px solid var(--border-color);">
+                            <div class="autocomplete-container" style="position: relative; margin-bottom: 5px;">
                                 <input type="text"
                                        id="add-contractor-${i}-input"
                                        class="add-contractor-input"
                                        placeholder="Contractor ${i} \u2014 start typing name\u2026"
                                        oninput="handleAddDefectsContractorAutocomplete(this, ${i})"
                                        onfocus="handleAddDefectsContractorAutocomplete(this, ${i})"
-                                       style="width: 100%; padding: 12px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 17px;">
+                                       style="width: 100%; padding: 7px 10px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 16px; line-height: 1.25;">
                                 <div id="add-contractor-${i}-dropdown" class="autocomplete-dropdown"></div>
                             </div>
                             ${rows}
@@ -3222,11 +3222,11 @@
                         <div class="lot-title" onclick="leaveAddDefects(() => viewDefectsForAddress(${addressId}))" style="cursor: pointer;" title="${formatAddress(address)} — tap to view this job's defects">${lotTitleHtml(address, '›')}</div>
                     </div>
 
-                    <div style="padding: 0 14px;">
-                        <div onclick="openAddContractor('')" style="display:inline-flex;align-items:center;gap:6px;margin:4px 0;padding:8px 12px;border:1px dashed var(--border-color,#ccc);border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--blue,#2563eb);">👤＋ Contractor missing? Add one</div>
+                    <div style="padding: 0 12px;">
+                        <div onclick="openAddContractor('')" style="display:inline-flex;align-items:center;gap:6px;margin:2px 0;padding:6px 10px;border:1px dashed var(--border-color,#ccc);border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--blue,#2563eb);">👤＋ Contractor missing? Add one</div>
                     </div>
 
-                    <div style="padding: 14px;">
+                    <div style="padding: 10px 12px;">
                         ${addDefectBlocksHtml()}
                     </div>
                 </div>
