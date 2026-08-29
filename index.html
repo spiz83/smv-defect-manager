@@ -2898,7 +2898,7 @@
                             ${statusFilterButton()}
                             ${previewToggle()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email Defect List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email this list with the PDF ATTACHED — opens the share sheet, pick Mail">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorId: ${contractorId}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="openAddDefectsForContractor(${contractorId})" title="Add">✚</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
@@ -3007,7 +3007,7 @@
                         <div class="toolbar">
                             ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorIds: ${jsAttr(contractorIds)}, label: ${jsAttr(tradeName)}, tradeName: ${jsAttr(tradeName)}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email this list with the PDF ATTACHED — opens the share sheet, pick Mail">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorIds: ${jsAttr(contractorIds)}, label: ${jsAttr(tradeName)}, tradeName: ${jsAttr(tradeName)}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
@@ -3341,7 +3341,7 @@
                         <div class="toolbar">
                             ${statusFilterButton()}
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorIds: ${jsAttr(contractorIds)}, label: ${jsAttr(contractorNames)}})" title="Generate PDF Report">📑</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email this list with the PDF ATTACHED — opens the share sheet, pick Mail">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="generateContextReport({contractorIds: ${jsAttr(contractorIds)}, label: ${jsAttr(contractorNames)}})" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
@@ -3458,7 +3458,7 @@
                             <button class="icon-btn" onclick="toggleShowCompleted()" title="${state.showCompleted ? 'Hide completed' : 'Show completed'}" style="${state.showCompleted ? 'background: var(--blue); color: #fff;' : ''}">👁️</button>
                             <button class="icon-btn" onclick="openReportBuilder()" title="Generate PDF Report">📑</button>
                             <button class="icon-btn" onclick="copyDefectsToClipboard()" title="Copy to Clipboard">📋</button>
-                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email List">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
+                            <button class="icon-btn" onclick="emailDefectList(true)" title="Email this list with the PDF ATTACHED — opens the share sheet, pick Mail">📧</button><button class="icon-btn" onclick="emailDefectList(true, true)" title="Email a link to the PDF — fills the subject in every mail app">🔗</button>                            <button class="icon-btn" onclick="refreshDefects()" title="Refresh">🔄</button>
                         </div>
                     </div>
 
@@ -6969,10 +6969,11 @@
                 const shared = await sharePdfOnTap(
                     scopedPdf,
                     'Attach to email',
-                    `Tap below, then pick <b>Mail</b>. The PDF attaches to the message.<br><br>`
-                    + `<span style="opacity:.75">You'll need to add <b>${String(c.email || 'the supplier').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</b> and the subject yourself — `
-                    + `iOS won't accept a subject line alongside an attachment. Use ✉️ instead for a ready-to-send `
-                    + `email with a link.</span>`,
+                    `Tap below, then pick <b>Mail</b>. The defect list and photos attach as one PDF.<br><br>`
+                    + `<span style="opacity:.75">The subject is copied to your clipboard on the way — paste it into the `
+                    + `Subject field. iOS won't accept a subject alongside an attachment, and won't let a web page `
+                    + `set the recipient either; start typing the supplier and Mail will finish it.</span>`,
+                    { subject, email: c.email || '' },
                 );
                 if (shared) { markEmailedPending(); return; }
             }
@@ -7095,8 +7096,12 @@
         // files — so it gets BOTH; Apple Mail attaches the files and shows that line
         // at the top of the body (iOS won't let it set a Subject with attachments).
         // withPhotos is kept as a param for the mailto fallback path only.
+        // 📧 attaches the PDF through the share sheet; 🔗 sends a mailto with a
+        // tap-to-open link. `asLink` used to sit in this signature UNREAD, so the
+        // two buttons ran identical code and produced identical emails — which is
+        // exactly how it looked on site (Spiro 2026-08-16: "the email function is
+        // practically the same as the share a link function").
         async function emailDefectList(withPhotos = true, asLink = false) {
-            const textContent = generateDefectText();
             let subject = 'Defect List';
             let recipient = '';
             let singleAddressId = null;
@@ -7154,8 +7159,27 @@
             // defect list + photos ride as a tap-to-open PDF link hosted in the
             // cloud, so nothing is attached (= no blob, and the Subject sticks).
             showToast('Building email…');
+            let scopedPdf = null;
+            if (scoped) { try { scopedPdf = await buildScopedPdf(); } catch (e) { console.error('email PDF', e); } }
+
+            // ATTACH MODE (📧) — hand Mail the real file. Tried first, and the
+            // PDF is reused by the link path below if the share is declined, so
+            // a refusal never costs a second build or a second upload.
+            if (!asLink && scopedPdf) {
+                const shared = await sharePdfOnTap(
+                    scopedPdf,
+                    'Attach to email',
+                    `Tap below, then pick <b>Mail</b>. The defect list and photos attach as one PDF.<br><br>`
+                    + `<span style="opacity:.75">The subject is copied to your clipboard on the way — paste it into the `
+                    + `Subject field. iOS won't accept a subject alongside an attachment, and won't let a web page `
+                    + `set the recipient either; start typing the supplier and Mail will finish it.</span>`,
+                    { subject, email: recipient || '' },
+                );
+                if (shared) return;
+            }
+
             let url = null;
-            try { const pdf = scoped ? await buildScopedPdf() : null; if (pdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(pdf, pdf.name); }
+            try { if (scopedPdf && window.CloudShare) url = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name); }
             catch (e) { console.error('email PDF link', e); }
             const reTarget = subject.replace(/^Defects - /, '');
             let body = 'RE: ' + reTarget + '\n\n'
@@ -9303,7 +9327,12 @@
         // So the work happens first, then this asks for one more tap, and THAT
         // tap calls share() with the gesture still alive. Resolves true if the
         // sheet opened, false if it couldn't be used at all (caller falls back).
-        function sharePdfOnTap(file, headline, note) {
+        // `copy` is { subject, email } — what iOS won't let the share sheet fill
+        // in. The subject goes onto the clipboard in the SAME tap that opens the
+        // sheet, so it is ready to paste into the Subject field; both are also
+        // offered as tap-to-copy rows, because the clipboard only holds one
+        // thing and which one you want next depends on the mail app.
+        function sharePdfOnTap(file, headline, note, copy) {
             return new Promise((resolve) => {
                 // canShare() only shipped in Safari 16.4. Requiring it meant that on
                 // an older iPhone the check failed, this returned false, no overlay
@@ -9320,17 +9349,36 @@
                     showToast('This device can\u2019t attach files from the browser \u2014 sending a link instead', true);
                     resolve(false); return;
                 }
+                const cp = copy || {};
+                const chipStyle = 'width:100%;margin-bottom:8px;text-align:left;'
+                    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+                const chip = (k, label, val) => val
+                    ? `<button class="imp-btn sh-copy" data-k="${k}" style="${chipStyle}">📋 ${label} <span style="opacity:.65">${_escHtml(val)}</span></button>`
+                    : '';
                 impOverlay(`
                     <div id="imp-head"><strong>📎 ${headline}</strong><button id="imp-close">✕</button></div>
                     <div id="imp-body">
                         <div style="font-size:14px;line-height:1.5;margin-bottom:14px">${note}</div>
+                        ${chip('subject', 'Subject —', cp.subject)}
+                        ${chip('email', 'Send to —', cp.email)}
                         <button class="imp-btn" id="sh-go" style="width:100%">📎 Attach ${file.name}</button>
                     </div>`);
+                document.querySelectorAll('#imp-ov .sh-copy').forEach(b => {
+                    b.onclick = () => {
+                        const k = b.getAttribute('data-k');
+                        writeToClipboard(cp[k], k === 'email' ? '📋 Email address copied' : '📋 Subject copied');
+                    };
+                });
                 let done = false;
                 const finish = (v) => { if (done) return; done = true; impClose(); resolve(v); };
                 const x = document.getElementById('imp-close');
                 if (x) x.onclick = () => finish(false);
                 document.getElementById('sh-go').onclick = async () => {
+                    // Copy BEFORE share, in this same tap. share() consumes the
+                    // transient activation; a clipboard write does not, so this
+                    // order works and the reverse is a coin toss. If it ever
+                    // fails, the rows above are the manual way out.
+                    if (cp.subject) { try { writeToClipboard(cp.subject, '📋 Subject copied — paste it into Subject'); } catch (e) {} }
                     try { await navigator.share({ files: [file] }); finish(true); }
                     catch (e) {
                         if (e && e.name === 'AbortError') { finish(true); return; }  // user closed the sheet
@@ -13008,7 +13056,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16o';
+        const APP_VERSION = '2026-08-16p';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13082,7 +13130,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16o"></script>
+    <script src="cloud-sync.js?v=2026-08-16p"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

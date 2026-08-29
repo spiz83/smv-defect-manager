@@ -2,6 +2,44 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (p) — 📧 attaches for real, and the subject goes on the clipboard
+
+- **Spiro circled the 📧 and said it was "practically the same as the share a
+  link function". It was, literally.** `emailDefectList(withPhotos, asLink)`
+  carried `asLink` in its signature and NEVER READ IT, so 📧 and 🔗 ran the same
+  code and produced the same email. `asLink` is now honoured: 📧 attaches the
+  PDF through the share sheet, 🔗 keeps the mailto + hosted link.
+- **The iOS wall, stated once so it stops being re-litigated:** `mailto:` can
+  set recipient, subject and body but can never carry a file — the URL scheme
+  has nowhere to put one. The share sheet can carry files but cannot set a
+  subject or a recipient, and passing `text` alongside `files` makes iOS inject
+  the `blob:` URL into the body. You get one or the other, never both.
+- **So the subject rides the clipboard.** `sharePdfOnTap` copies it in the SAME
+  tap that opens the sheet — copy first, share second: `share()` consumes the
+  transient activation and a clipboard write does not, so the reverse order is
+  a coin toss. Both the subject and the supplier's address are also offered as
+  tap-to-copy rows, because the clipboard holds one thing and which one you
+  want next depends on the mail app.
+- **The recipient is left to Mail's autocomplete.** Spiro: "most of the email
+  addresses are saved in the email client for each supervisor" — typing two
+  letters beats anything the app can do from a web page.
+- **Rejected: the server-side send** (`CloudMail.sendSupplierDefects` → the
+  `email-supplier-defects` Edge Function). It does all four properly and needs
+  no clipboard, but it is blocked on a verified Resend domain AND on a real
+  bug — the function validates `pdfKey` with a regex that forbids the `/` that
+  `CloudShare.uploadTempPdf` now puts in every key, so it has been returning
+  400 and falling through silently since the foldered path landed.
+  `NEXT_STEPS.md` predicted that exact failure. Fix lives in the CH Tracker
+  repo, which this session cannot reach.
+- **`tests/emailattach.mjs` is a new suite (28 now).** It asserts the two
+  buttons DIVERGE, that the share carries the file with no `text` beside it,
+  and that the subject reaches the clipboard without eating the tap that opens
+  the sheet. Two harness traps worth remembering: `page.evaluate` awaits the
+  promise it is handed, and `sharePdfOnTap`'s only settles on a tap — so
+  returning it deadlocks the run; and `navigator.clipboard` is a read-only
+  accessor, so a plain assignment stubs nothing and the test reads null while
+  the app is copying perfectly well.
+
 ## 2026-08-16 (o) — two whole supplier blocks on one screen
 
 - **Spiro: "reduce the height of the input fields so that I can see all five
