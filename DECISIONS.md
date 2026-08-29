@@ -2,6 +2,39 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (y) — sheet names come off the title block, learned not guessed
+
+Spiro sent a real 23-sheet Creation Homes set (job 306363) "to help you with
+formatting". It rewrote the labelling, twice.
+
+- **The keyword scan was useless on real plans.** Every sheet opens with the
+  same boilerplate — the copyright block, the revision table, the house type,
+  "CONSTRUCTION DRAWINGS". Scanning the page text matches that on every sheet
+  and tells you nothing about which one you are looking at.
+- **The real name is IN THE TITLE BLOCK**, drawn in the same spot on every
+  sheet: "GROUND FLOOR PLAN", "ELEVATIONS 01", "WINDOW & DOOR SCHEDULE". That
+  is the name to show, verbatim — better than any keyword could be.
+- **Guessing WHERE the title block is scored 21 of 23.** "Largest text in the
+  bottom-right corner" called sheet 6 "HIGH LEVEL ROOF VENT PITCHED ROOF" (a
+  callout drawn into the corner) and sheet 21 "1:50" (a scale note).
+- **So the field is LEARNED from the document**: the one position that appears
+  on nearly every sheet and says something DIFFERENT on each. Constants — job
+  number, client name, house type — repeat one value and are rejected. The
+  sheet number varies too, but is short and numeric, which the score discounts.
+  **23 of 23, exactly as drawn.** It also needs no per-office tuning: a
+  different drafting office's title block is learned the same way.
+- **Names are extracted before thumbnails.** Text needs no rendering, so all 23
+  labels land in well under a second while the pictures are still arriving.
+- **The keyword scan survives as the fallback** for a set with no usable field —
+  a scan with no text layer, or a single sheet.
+- **The real set is NOT in the repo** (`.gitignore`d). It carries a client's
+  name and address in the title block, and everything here deploys to the live
+  site. `tests/jobplans.mjs` section H runs against it only when it happens to
+  be present locally; what the gates run instead is a synthetic fixture built to
+  reproduce the TRAPS it exposed — constant fields, a numeric sheet-number
+  field, a corner callout larger than the title, a bare scale note. Encode the
+  lesson, not the customer's data.
+
 ## 2026-08-15 (x) — a plan set is ~15 sheets, not a floor plan
 
 - **Spiro:** "plans are typically about 15 pages and it has everything from

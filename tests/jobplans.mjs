@@ -58,18 +58,47 @@ const SHEET_TITLES = [
   'SLAB AND FOOTING PLAN', 'ROOF PLAN', 'BRACING PLAN', 'TIE DOWN PLAN',
   'WINDOW SCHEDULE', 'DOOR SCHEDULE', 'ELECTRICAL PLAN', 'CONSTRUCTION DETAILS',
 ];
+// Built to reproduce the TRAPS a real Creation Homes set exposed, not just to
+// have several pages. Positions mirror a real title block, scaled to A3:
+//
+//   sheet name  bottom-right, 10pt   ← varies per sheet: the thing to find
+//   client      left of it,   10pt   ← constant, must be rejected
+//   house type  further left, 10pt   ← constant
+//   job number  above it,      8pt   ← constant
+//   sheet no    far right,     8pt   ← varies, but short and numeric
+//   scale       mid-right,     8pt   ← nearly constant
+//
+// …plus, on the sheets that broke the first two attempts: a big CALLOUT drawn
+// into the bottom-right corner, larger than the title (this is what made a
+// "largest text in the corner" rule call sheet 6 "HIGH LEVEL ROOF VENT PITCHED
+// ROOF"), and a bare scale note ("1:50") that won the same way on sheet 21.
 function multiPagePdf(titles) {
   const objs = ['<< /Type /Catalog /Pages 2 0 R >>', null];
-  const kids = [], contents = [];
+  const kids = [];
+  const fontObj = 3 + titles.length * 2;
   titles.forEach((t, i) => {
     const pageObj = 3 + i * 2, contObj = pageObj + 1;
     kids.push(`${pageObj} 0 R`);
-    objs[pageObj - 1] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 ${3 + titles.length * 2} 0 R >> >> /Contents ${contObj} 0 R >>`;
-    const g = `BT /F1 26 Tf 60 500 Td (${t}) Tj ET\nBT /F1 12 Tf 60 470 Td (SHEET ${i + 1} OF ${titles.length} - JOB 306648) Tj ET\n60 100 700 340 re S`;
+    objs[pageObj - 1] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 ${fontObj} 0 R >> >> /Contents ${contObj} 0 R >>`;
+    const T = (size, x, y, str) => `BT /F1 ${size} Tf ${x} ${y} Td (${str}) Tj ET\n`;
+    let g = '0.7 w\n60 120 700 330 re S\n';
+    g += T(20, 70, 470, 'DRAWING AREA');
+    // The title block.
+    g += T(10, 652, 20, t);                                   // sheet name — varies
+    g += T(10, 523, 20, 'A CLIENT NAME');                     // constant
+    g += T(10, 421, 46, 'Mia 14 - Acacia');                   // constant
+    g += T(8, 652, 41, '306363');                             // constant
+    g += T(8, 821, 42, String(i + 1).padStart(2, '0'));       // varies, numeric
+    g += T(8, 738, 41, '1:100@A3');                           // near-constant
+    g += T(8, 421, 33, 'CONSTRUCTION DRAWINGS');              // constant
+    // The decoys, on the sheets whose equivalents broke the earlier rules.
+    if (i === 5) g += T(12, 700, 100, 'HIGH LEVEL ROOF VENT PITCHED ROOF');
+    if (i === 10) g += T(12, 760, 95, '1:50');
+    if (i === 12) g += T(14, 690, 110, 'TYP. LINEN');
     objs[contObj - 1] = `<< /Length ${g.length} >>\nstream\n${g}\nendstream`;
   });
   objs[1] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${titles.length} >>`;
-  objs[3 + titles.length * 2 - 1] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+  objs[fontObj - 1] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
   let out = '%PDF-1.4\n'; const offs = [];
   objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
   const xref = out.length;
@@ -89,6 +118,15 @@ const server = http.createServer((q, r) => {
   if (u === '/signed-set.pdf') {
     r.writeHead(200, { 'Content-Type': 'application/pdf' });
     return r.end(PLAN_SET);
+  }
+  // Spiro's real 23-sheet Creation Homes set (job 306363). Synthetic fixtures
+  // cannot tell you whether the sheet names come out right on a real title
+  // block; this one can, and did — it is why the naming was rebuilt.
+  if (u === '/signed-real.pdf') {
+    const f2 = path.join(__here, 'fixtures-plan-306363.pdf');
+    if (!fs.existsSync(f2)) { r.writeHead(404); return r.end('x'); }
+    r.writeHead(200, { 'Content-Type': 'application/pdf' });
+    return r.end(fs.readFileSync(f2));
   }
   const f = path.join(ROOT, u === '/' ? 'index.html' : u);
   if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); return r.end('x'); }
@@ -153,7 +191,7 @@ const installPlans = (mode) => page.evaluate(({ mode, port }) => {
       if (mode === 'no-bucket') return { error: 'Plans are not set up yet — migration 101 has not been applied in Supabase.' };
       if (mode === 'absent') return { error: 'No plan has been uploaded for this job yet. Attach it in CH Tracker.' };
       if (mode === 'no-plan') return { error: 'No plan.' };
-      const res = await fetch(`http://localhost:${port}/` + (mode === 'set' ? 'signed-set.pdf' : 'signed-plan.pdf'));
+      const res = await fetch(`http://localhost:${port}/` + (mode === 'real' ? 'signed-real.pdf' : mode === 'set' ? 'signed-set.pdf' : 'signed-plan.pdf'));
       return { buf: await res.arrayBuffer() };
     },
     async forget() {},
@@ -491,6 +529,21 @@ console.log('\n--- G · a 15-sheet plan set ---');
   await page.waitForFunction(() => document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
   check('all 15 sheets are there', await page.evaluate(() => _planState.pdf.numPages === 15),
     String(await page.evaluate(() => _planState.pdf.numPages)));
+  // The naming is the whole point of the index on a set this size, and it is
+  // what the real 23-sheet set proved twice wrong before this.
+  const names = await page.evaluate(() => _planSheetNames(_planState.pdf));
+  console.log('  names:', JSON.stringify(names));
+  check('every sheet is named exactly as its title block draws it',
+    JSON.stringify(names) === JSON.stringify(SHEET_TITLES), JSON.stringify(names));
+  check('…a big callout drawn into the corner does not win over the title',
+    names[5] === 'ELEVATIONS EAST WEST', names[5]);
+  check('…nor does a bare scale note', names[10] === 'TIE DOWN PLAN', names[10]);
+  check('…nor a detail label larger than the title', names[12] === 'DOOR SCHEDULE', names[12]);
+  check('…and the constant fields (job number, client, house type) are not mistaken for it',
+    !names.some(t => /306363|CLIENT NAME|Acacia|CONSTRUCTION DRAWINGS/.test(t)), JSON.stringify(names));
+  check('…nor the sheet number, which varies but says nothing',
+    !names.some(t => /^\d{2}$/.test(t)), JSON.stringify(names));
+
   check('the header shows which sheet you are on, and offers the rest',
     await page.evaluate(() => { const b = document.getElementById('plan-sheetbtn'); return !!b && /1 \/ 15/.test(b.textContent); }),
     await page.evaluate(() => (document.getElementById('plan-sheetbtn') || {}).textContent));
@@ -506,11 +559,10 @@ console.log('\n--- G · a 15-sheet plan set ---');
   const sheets = await page.evaluate(() => [...document.querySelectorAll('#plan-sheet-grid > div')].map(d => d.innerText.replace(/\n/g, ' ').trim()));
   console.log('  index:', JSON.stringify(sheets));
   check('every sheet is listed', sheets.length === 15, String(sheets.length));
-  check('…labelled from the sheet\'s own text, not just numbered',
-    sheets.filter(t => /ELEVATION|FLOOR|SCHEDULE|SECTION|DETAIL|BRACING|SITE PLAN|ROOF|SLAB|ELECTRICAL/i.test(t)).length >= 12,
-    JSON.stringify(sheets.slice(0, 4)));
+  check('…labelled with the sheet\'s real name, not just numbered',
+    SHEET_TITLES.every((t, i) => sheets[i].indexOf(t) >= 0), JSON.stringify(sheets.slice(0, 4)));
   check('…so "where are the elevations" is answerable at a glance',
-    sheets.some(t => /^5\b.*ELEVATION/i.test(t)), JSON.stringify(sheets.filter(t => /ELEVATION/i.test(t))));
+    sheets.some(t => /^5\b.*ELEVATIONS NORTH SOUTH/.test(t)), JSON.stringify(sheets.filter(t => /ELEVATION/i.test(t))));
   check('…and each has a thumbnail, not an empty box',
     await page.evaluate(() => [...document.querySelectorAll('#plan-sheet-grid canvas')].filter(c => c.width > 20).length === 15),
     String(await page.evaluate(() => document.querySelectorAll('#plan-sheet-grid canvas').length)));
@@ -555,6 +607,65 @@ console.log('\n--- G · a 15-sheet plan set ---');
   await page.evaluate(() => closeJobPlan());
   check('closing the plan takes the sheet index with it',
     await page.evaluate(() => !document.getElementById('plan-sheets') && !document.getElementById('plan-ov')));
+}
+
+// ===========================================================================
+//  H. A REAL Creation Homes plan set — 23 sheets, real title blocks.
+// ===========================================================================
+// Spiro sent one so the naming could be checked against the real thing rather
+// than a fixture I wrote to suit myself. It is the whole reason the labelling
+// was rebuilt: guessing at the title block's position scored 21/23, calling
+// sheet 6 "HIGH LEVEL ROOF VENT PITCHED ROOF" (a callout drawn into the
+// corner) and sheet 21 "1:50" (a scale note). Learning WHICH FIELD varies
+// per sheet gets all 23, verbatim.
+console.log('\n--- H · a real 23-sheet Creation Homes set ---');
+if (!fs.existsSync(join(__here, 'fixtures-plan-306363.pdf'))) {
+  console.log('SKIP  (fixtures-plan-306363.pdf not present)');
+} else {
+  await installPlans('real');
+  await page.evaluate(() => { db.data.defects = [{ id: 12, addressId: 1, contractorId: 1, description: 'Align door with jamb.', location: 'Ensuite', status: 'open', completed: false }]; db.save(); });
+  await page.evaluate(() => { viewDefectsForAddress(1); openJobPlan(1); });
+  await page.waitForSelector('#plan-canvas', { timeout: 20000 });
+  await page.waitForFunction(() => document.getElementById('plan-canvas').width > 10, { timeout: 20000 });
+  check('all 23 sheets load', await page.evaluate(() => _planState.pdf.numPages === 23),
+    String(await page.evaluate(() => _planState.pdf.numPages)));
+
+  const names = await page.evaluate(() => _planSheetNames(_planState.pdf));
+  console.log('  sheet names read off the title blocks:');
+  names.forEach((t, i) => console.log(`    ${String(i + 1).padStart(2)}  ${t}`));
+  const WANT = ['COVER SHEET', 'SITE PLAN', 'DRAINAGE PLAN', 'SLAB SETOUT', 'GROUND FLOOR PLAN',
+    'ROOF PLAN', 'ELEVATIONS 01', 'ELEVATIONS 02', 'WINDOW & DOOR SCHEDULE', 'ELECTRICAL PLANS',
+    'SECTIONS', 'PORCH DETAILS', 'INTERNAL DOOR DETAILS', 'GARAGE AND POST DETAILS',
+    'BRICK VENEER DETAILS', 'LIGHTWEIGHT CLADDING DETAILS', 'BATH & WC NOGGING DETAILS',
+    'WALL TYPE SCHEDULE', 'WATERPROOFING DETAILS', 'INTERNALS 01', 'INTERNALS 02', 'INTERNALS 03',
+    'LANDSCAPE PLAN'];
+  const wrong = WANT.map((w, i) => names[i] === w ? null : `${i + 1}: got "${names[i]}" want "${w}"`).filter(Boolean);
+  check('every sheet is named exactly as the title block draws it', wrong.length === 0, JSON.stringify(wrong));
+
+  // The names are the point: they are what makes a 23-sheet set navigable.
+  check('…so the elevations are findable by name',
+    names.filter(t => /^ELEVATIONS/.test(t)).length === 2, JSON.stringify(names.filter(t => /ELEVATION/i.test(t))));
+  check('…and so is the window schedule', names.includes('WINDOW & DOOR SCHEDULE'));
+  check('…and no sheet is left unnamed', names.every(t => t && t.length > 2), JSON.stringify(names.filter(t => !t || t.length <= 2)));
+
+  // End to end through the index, on the real set.
+  await page.evaluate(() => planSheets());
+  await page.waitForSelector('#plan-sheet-grid');
+  await page.waitForFunction(() => {
+    const c = document.querySelectorAll('#plan-sheet-grid .lbl');
+    return c.length === 23 && [...c].every(e => e.textContent !== '…');
+  }, { timeout: 60000 });
+  const shown = await page.evaluate(() => [...document.querySelectorAll('#plan-sheet-grid .lbl')].map(e => e.textContent));
+  check('the index shows those names', shown[6] === 'ELEVATIONS 01' && shown[22] === 'LANDSCAPE PLAN',
+    JSON.stringify([shown[6], shown[22]]));
+  await page.evaluate(() => planGoToSheet(7));
+  await page.waitForFunction(() => !document.getElementById('plan-sheets'), { timeout: 5000 });
+  await page.waitForTimeout(700);
+  check('tapping the elevations opens sheet 7 of the real set',
+    await page.evaluate(() => _planState.page === 7 && /7 \/ 23/.test((document.getElementById('plan-sheetbtn') || {}).textContent || '')),
+    await page.evaluate(() => (document.getElementById('plan-sheetbtn') || {}).textContent));
+  check('…and it renders', await page.evaluate(() => document.getElementById('plan-canvas').width > 100));
+  await page.evaluate(() => closeJobPlan());
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]|pdf/i.test(e));

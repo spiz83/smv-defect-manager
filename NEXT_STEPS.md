@@ -18,9 +18,16 @@ After running it, check on a phone: Settings → Defect wordings → open a trad
 A real set is ~15 sheets. Two ways through it: the sheet index (tap the page
 counter) and a swipe. What will bite a later change:
 
-- **Sheet labels come from `getTextContent()` matched against
-  `PLAN_SHEET_WORDS`.** Extend that list rather than reaching for anything
-  cleverer — it is a keyword scan on purpose, and it degrades to "Sheet N".
+- **Sheet names come from `_planSheetNames()`, which LEARNS the title block's
+  sheet-name field** — the one position that appears on nearly every sheet with
+  a different value each time. Do not replace it with a fixed position or a
+  keyword list; both were tried against the real 23-sheet set and both were
+  wrong (21/23 and worse). `PLAN_SHEET_WORDS` remains only as the fallback for
+  a set with no text layer.
+- **To check a change against a real set:** drop it in as
+  `tests/fixtures-plan-*.pdf` and `tests/jobplans.mjs` section H picks it up.
+  Those files are gitignored on purpose — a title block carries a client's name
+  and address, and this repo deploys to the live site.
 - **Swipe is suppressed while zoomed** (`scale > 1.01`). Do not remove that: a
   sideways drag on a zoomed sheet has to pan it.
 - **Do not turn this into a continuous-scroll PDF viewer.** Fifteen A3 sheets in

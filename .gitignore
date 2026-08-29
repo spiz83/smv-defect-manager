@@ -13,3 +13,9 @@ _check.js
 .env
 .env.*
 tests/artifacts/
+
+# Real customer plan sets used to check sheet naming — never committed:
+# they carry a client name and address in the title block, and everything in
+# this repo is deployed to the live site. tests/jobplans.mjs section H runs
+# only if one happens to be present locally.
+tests/fixtures-plan-*.pdf

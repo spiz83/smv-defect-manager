@@ -10697,6 +10697,65 @@
         // The index is thumbnails PLUS a label read off each sheet's own text.
         // A grid of 15 grey rectangles all look alike on a phone; "3 ELEVATIONS"
         // does not. pdf.js already gives the text, so this costs one pass.
+        // Every sheet in a real set carries its name in the title block, drawn
+        // in the same spot on every page — "GROUND FLOOR PLAN", "ELEVATIONS 01",
+        // "WINDOW & DOOR SCHEDULE". That is the name to show, verbatim.
+        //
+        // Rather than assume where the title block is (it moves between drafting
+        // offices, and a detail drawn into the corner beats a fixed guess — that
+        // rule got 21 of 23 on Spiro's real set, calling sheet 6 "HIGH LEVEL ROOF
+        // VENT PITCHED ROOF" and sheet 21 "1:50"), LEARN the field from the
+        // document: the one spot that appears on nearly every sheet and says
+        // something DIFFERENT on each. Constants — job number, client, house type
+        // — repeat one value and are rejected. The sheet number varies too but is
+        // short and numeric, which the score discounts.
+        //
+        // On the 23-sheet set that is 23 of 23, exactly as drawn.
+        async function _planSheetNames(pdf) {
+            const n = pdf.numPages;
+            const pages = [];
+            for (let i = 1; i <= n; i++) {
+                try {
+                    const pg = await pdf.getPage(i);
+                    const vp = pg.getViewport({ scale: 1 });
+                    const tc = await pg.getTextContent();
+                    pages.push({ W: vp.width, H: vp.height, items: (tc.items || [])
+                        .filter(x => x.str && x.str.trim())
+                        .map(x => ({ s: x.str.trim().replace(/\s+/g, ' '),
+                                     h: Math.hypot(x.transform[2], x.transform[3]),
+                                     x: x.transform[4], y: x.transform[5] })) });
+                } catch (e) { pages.push({ W: 1, H: 1, items: [] }); }
+            }
+            const TOL = 8, buckets = new Map();
+            pages.forEach((pg, pi) => pg.items.forEach(t => {
+                // Title blocks live along the bottom and to the right. Generous,
+                // because the learning does the discriminating, not the box.
+                if (t.y > pg.H * 0.22 || t.x < pg.W * 0.50 || t.s.length < 3) return;
+                const k = Math.round(t.x / TOL) + ':' + Math.round(t.y / TOL);
+                let b = buckets.get(k);
+                if (!b) buckets.set(k, b = { pages: new Map(), h: 0 });
+                if (!b.pages.has(pi)) b.pages.set(pi, t.s);
+                b.h = Math.max(b.h, t.h);
+            }));
+            let best = null;
+            buckets.forEach((b) => {
+                const seen = b.pages.size;
+                if (seen < n * 0.6) return;                       // not on most sheets
+                const vals = new Set(b.pages.values());
+                const varies = vals.size / seen;
+                if (varies < 0.5) return;                         // a constant, not a field
+                const list = [...b.pages.values()];
+                const avgLen = list.reduce((a, x) => a + x.length, 0) / seen;
+                const alpha = list.filter(x => /[A-Za-z]{3}/.test(x)).length / seen;
+                const score = varies * 2 + alpha * 3 + Math.min(avgLen, 30) / 30 + b.h / 20;
+                if (!best || score > best.score) best = { b, score };
+            });
+            const out = [];
+            for (let i = 0; i < n; i++) out.push((best && best.b.pages.get(i)) || '');
+            return out;
+        }
+        // Fallback for a set with no usable title-block field — a scan with no
+        // text layer, or a one-off sheet. Keyword-matches whatever text there is.
         const PLAN_SHEET_WORDS = [
             'SITE PLAN', 'GROUND FLOOR', 'FIRST FLOOR', 'UPPER FLOOR', 'FLOOR PLAN',
             'ELEVATION', 'SECTION', 'DETAIL', 'BRACING', 'TIE DOWN', 'TIE-DOWN',
@@ -10714,7 +10773,7 @@
                     if (txt.indexOf(w) >= 0 && !hits.some(h => h.indexOf(w) >= 0 || w.indexOf(h) >= 0)) hits.push(w);
                     if (hits.length === 2) break;
                 }
-                return hits.join(' · ') || '';
+                return hits.join(' · ');
             } catch (e) { return ''; }
         }
         async function planSheets() {
@@ -10746,7 +10805,20 @@
                         <span class="lbl" style="color:var(--text-primary);font-weight:600;">…</span></div>`;
                 grid.appendChild(cell);
             }
-            // Thumbnails and labels one sheet at a time, so a 15-page set paints
+            // Names first — text extraction needs no rendering, so all 23 labels
+            // land in well under a second and the list is usable while the
+            // pictures are still arriving.
+            if (!st.sheetNames) {
+                try { st.sheetNames = await _planSheetNames(st.pdf); } catch (e) { st.sheetNames = null; }
+            }
+            if (!document.getElementById('plan-sheets')) return;
+            if (st.sheetNames) {
+                for (let i = 1; i <= n; i++) {
+                    const el = grid.children[i - 1].querySelector('.lbl');
+                    if (el && st.sheetNames[i - 1]) el.textContent = st.sheetNames[i - 1];
+                }
+            }
+            // Thumbnails one sheet at a time, so a 15-page set paints
             // progressively instead of freezing the phone for a second and a half.
             for (let i = 1; i <= n; i++) {
                 if (!document.getElementById('plan-sheets')) return;      // closed mid-build
@@ -10763,9 +10835,11 @@
                     const holder = cell.querySelector('.thumb');
                     holder.innerHTML = ''; holder.appendChild(c);
                 } catch (e) {}
-                const lbl = await _planSheetLabel(st.pdf, i);
+                // Only where the title block gave nothing.
                 const el = cell.querySelector('.lbl');
-                if (el) el.textContent = lbl || 'Sheet ' + i;
+                if (el && (!st.sheetNames || !st.sheetNames[i - 1])) {
+                    el.textContent = (await _planSheetLabel(st.pdf, i)) || 'Sheet ' + i;
+                }
             }
         }
         function planCloseSheets() { const o = document.getElementById('plan-sheets'); if (o) o.remove(); }
@@ -12668,7 +12742,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15x';
+        const APP_VERSION = '2026-08-15y';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12742,7 +12816,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15x"></script>
+    <script src="cloud-sync.js?v=2026-08-15y"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
