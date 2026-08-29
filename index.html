@@ -10344,14 +10344,29 @@
                     <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${_escHtml((d.location ? d.location + ' · ' : '') + ((c && c.name) || 'Unassigned'))}</div>
                 </div>`;
             }).join('');
+            // The plan viewer sits at z-index 100004, ABOVE the shared modal
+            // (100001) — so the picker opened behind it and the screen looked
+            // frozen after the drawing. Step out of the way while it is asked;
+            // cancelling puts the plan back where it was.
+            const planOv = document.getElementById('plan-ov');
+            if (planOv) planOv.style.display = 'none';
             impOverlay(`<div id="imp-head"><strong>📐 Attach to which defect?</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <input id="plan-defect-search" type="text" placeholder="Search this job's defects…" oninput="planFilterDefects(this.value)"
                         style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;margin-bottom:10px;">
                     <div id="plan-defect-list">${rows}</div>
                 </div>`);
+            const back = () => {
+                _planPending = null; impClose();
+                const ov = document.getElementById('plan-ov');
+                if (ov) ov.style.display = 'flex';
+            };
             const x = document.getElementById('imp-close');
-            if (x) x.onclick = () => { _planPending = null; impClose(); };
+            if (x) x.onclick = back;
+            // Tapping the backdrop dismisses the shared overlay too — the plan
+            // has to come back from that route as well, or the screen goes blank.
+            const ov = document.getElementById('imp-ov');
+            if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) back(); });
         }
         let _planPending = null;
         function planFilterDefects(q) {
@@ -10525,7 +10540,7 @@
             if (got.error) { _planOverlay('<div class="plan-msg">' + _escHtml(got.error) + '</div>'); return; }
             try {
                 const pdf = await window.pdfjsLib.getDocument({ data: got.buf }).promise;
-                _planState = { jobNumber: jn, addressId, pdf, page: 1, scale: 1, fit: 1 };
+                _planState = { jobNumber: jn, addressId, pdf, page: 1, scale: 1, fit: 1, rot: 0 };
                 _planRenderShell();
                 await _planDraw();
             } catch (e) {
@@ -10558,19 +10573,17 @@
                 <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);border-bottom:1px solid var(--border-color);flex:0 0 auto;">
                     <button onclick="closeJobPlan()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Back</button>
                     <div style="font-weight:700;font-size:16px;color:var(--text-primary);">📐 Job ${_escHtml(st.jobNumber)}</div>
-                    <span id="plan-pageinfo" style="margin-left:auto;font-size:13px;color:var(--text-secondary);"></span>
+                    <span id="plan-pagenav" style="margin-left:auto;display:flex;align-items:center;gap:4px;"></span>
                 </div>
                 <div id="plan-scroll" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:#5a5a5a;text-align:center;">
                     <canvas id="plan-canvas" style="display:block;margin:0 auto;"></canvas>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--bg-primary);border-top:1px solid var(--border-color);flex:0 0 auto;">
-                    <button onclick="planPage(-1)" id="plan-prev" style="flex:0 0 auto;padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">‹</button>
-                    <button onclick="planPage(1)" id="plan-next" style="flex:0 0 auto;padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">›</button>
-                    <button onclick="planMarkup()" id="plan-markup" style="flex:0 0 auto;margin-left:8px;padding:11px 14px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">✏️ Mark up</button>
-                    <span style="flex:1 1 auto;"></span>
-                    <button onclick="planZoom(-1)" style="padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">−</button>
-                    <button onclick="planZoom(0)" id="plan-zoomlbl" style="padding:11px 12px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;min-width:56px;">Fit</button>
-                    <button onclick="planZoom(1)" style="padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">+</button>
+                <div style="display:flex;align-items:center;gap:7px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--bg-primary);border-top:1px solid var(--border-color);flex:0 0 auto;">
+                    <button onclick="planRotate()" id="plan-rot" title="Turn the sheet 90°" style="flex:0 0 auto;padding:11px 13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;cursor:pointer;">⟳</button>
+                    <button onclick="planMarkup()" id="plan-markup" style="flex:1 1 auto;min-width:0;padding:11px 10px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;">✏️ Mark up</button>
+                    <button onclick="planZoom(-1)" style="flex:0 0 auto;padding:11px 13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">−</button>
+                    <button onclick="planZoom(0)" id="plan-zoomlbl" style="flex:0 0 auto;padding:11px 8px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;min-width:50px;">Fit</button>
+                    <button onclick="planZoom(1)" style="flex:0 0 auto;padding:11px 13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">+</button>
                 </div>`;
         }
         // Draw the current page at the current zoom. Scale 1 = fit the page
@@ -10591,23 +10604,32 @@
             const token = (st.token = (st.token || 0) + 1);
             const page = await st.pdf.getPage(st.page);
             if (!_planState || _planState !== st || st.token !== token) return;
-            const base = page.getViewport({ scale: 1 });
+            // Construction plans are landscape sheets and a phone is portrait, so
+            // fitting the width leaves the sheet a strip across the top with most
+            // of the screen empty. Turning it 90° uses the screen — the same
+            // thing you do with a paper plan. Offered, not forced: which way is
+            // better depends on the sheet.
+            const base = page.getViewport({ scale: 1, rotation: st.rot });
             st.fit = Math.max(0.1, (box.clientWidth - 8) / base.width);
             // Cap the backing store so a big plan at high zoom cannot blow up
             // the canvas on a phone (iOS kills a canvas over ~16M pixels).
             const dpr = Math.min(window.devicePixelRatio || 1, 2);
             let scale = st.fit * st.scale;
-            const vp = page.getViewport({ scale: scale * dpr });
+            const vp = page.getViewport({ scale: scale * dpr, rotation: st.rot });
             const MAX_PX = 12e6;
             // A shade under the ceiling, and rounded DOWN: sqrt() lands exactly
             // on the limit, and then rounding both dimensions up puts it back
             // over — which on iOS is a blank canvas, not an error.
             const shrink = (vp.width * vp.height) > MAX_PX ? Math.sqrt(MAX_PX / (vp.width * vp.height)) * 0.99 : 1;
-            const viewport = page.getViewport({ scale: scale * dpr * shrink });
+            const viewport = page.getViewport({ scale: scale * dpr * shrink, rotation: st.rot });
             canvas.width = Math.floor(viewport.width);
             canvas.height = Math.floor(viewport.height);
-            canvas.style.width = Math.round(base.width * scale) + 'px';
-            canvas.style.height = Math.round(base.height * scale) + 'px';
+            const cssW = Math.round(base.width * scale), cssH = Math.round(base.height * scale);
+            canvas.style.width = cssW + 'px';
+            canvas.style.height = cssH + 'px';
+            // Sit it in the middle of the empty space rather than pinned to the
+            // top with a grey field underneath.
+            canvas.style.marginTop = cssH < box.clientHeight ? Math.round((box.clientHeight - cssH) / 2) + 'px' : '0';
             st.task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
             try {
                 await st.task.promise;
@@ -10620,8 +10642,16 @@
                 if (_planState === st && st.token === token) st.task = null;
             }
             if (!_planState || _planState !== st || st.token !== token) return;
-            const info = document.getElementById('plan-pageinfo');
-            if (info) info.textContent = 'Page ' + st.page + ' of ' + st.pdf.numPages;
+            const nav = document.getElementById('plan-pagenav');
+            if (nav) {
+                const n = st.pdf.numPages;
+                const bs = 'padding:5px 10px;border:1px solid var(--border-color,#ccc);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);font-size:15px;font-weight:700;cursor:pointer;';
+                nav.innerHTML = n > 1
+                    ? `<button id="plan-prev" onclick="planPage(-1)" style="${bs}">‹</button>
+                       <span style="font-size:13px;color:var(--text-secondary);min-width:52px;text-align:center;">${st.page} / ${n}</span>
+                       <button id="plan-next" onclick="planPage(1)" style="${bs}">›</button>`
+                    : `<span style="font-size:13px;color:var(--text-secondary);">Page 1 of 1</span>`;
+            }
             const lbl = document.getElementById('plan-zoomlbl');
             if (lbl) lbl.textContent = st.scale === 1 ? 'Fit' : Math.round(st.scale * 100) + '%';
             const prev = document.getElementById('plan-prev'), next = document.getElementById('plan-next');
@@ -10636,6 +10666,15 @@
             st.page = n;
             const box = document.getElementById('plan-scroll');
             if (box) box.scrollTop = 0;
+            _planDraw();
+        }
+        function planRotate() {
+            const st = _planState;
+            if (!st) return;
+            st.rot = (st.rot + 90) % 360;
+            st.scale = 1;
+            const box = document.getElementById('plan-scroll');
+            if (box) { box.scrollTop = 0; box.scrollLeft = 0; }
             _planDraw();
         }
         function planZoom(dir) {
@@ -12518,7 +12557,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15v';
+        const APP_VERSION = '2026-08-15w';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12592,7 +12631,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15v"></script>
+    <script src="cloud-sync.js?v=2026-08-15w"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

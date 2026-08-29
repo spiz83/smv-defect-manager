@@ -2,6 +2,30 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (w) — three things only a screenshot showed
+
+Taking pictures of the finished plan viewer to show the site found three
+things twenty-six green suites had not. All were about what is ON SCREEN,
+which is exactly what an assertion against the DOM cannot see.
+
+- **The picker opened BEHIND the plan viewer.** `#plan-ov` is z-index 100004,
+  the shared modal is 100001 — so after drawing, the "Attach to which defect?"
+  question was underneath and the screen looked frozen. The viewer now steps
+  aside while the question is asked, and comes back if you back out. The test
+  asked `querySelector` and was satisfied; it now uses `elementFromPoint`.
+- **A landscape sheet used a third of the screen.** Plans are landscape and
+  phones are portrait, so fitting the width left the sheet as a strip across
+  the top with a grey field under it. `⟳` turns it 90° — 37% of the view to
+  74%, measured — and a page shorter than the view is now centred in it rather
+  than pinned to the top.
+- **The toolbar overflowed at 390px and cut the `+` off.** Six controls plus a
+  labelled button do not fit. Page navigation moved up beside the page count,
+  where it belongs anyway, and only appears on a multi-page sheet.
+
+The lesson is the one this project keeps relearning (Bulk Import, three
+builds): a check that queries the DOM proves the element EXISTS. Only geometry
+— or a picture — proves it can be seen.
+
 ## 2026-08-15 (u) — 📐 the job's plan, one tap from the job
 
 - **Spiro:** "I would use CH tracker to upload the floor plan… and then… I can

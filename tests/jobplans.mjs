@@ -172,6 +172,19 @@ console.log('\n--- B · the plan opens ---');
   check('…fitted to the screen width so it opens readable',
     parseFloat(c.cssW) > 300 && parseFloat(c.cssW) <= 390, c.cssW);
   check('…with the page count shown', /Page 1 of 1/.test(await ovText()), (await ovText() || '').split('\n')[0]);
+  // Six controls plus a labelled button did not fit 390px and cut the + off the
+  // right edge. Page nav moved to the header; this is what keeps it honest.
+  const bar = await page.evaluate(() => {
+    const row = document.getElementById('plan-markup').parentElement;
+    const kids = [...row.children];
+    const mid = el => Math.round((el.getBoundingClientRect().top + el.getBoundingClientRect().bottom) / 2);
+    return { rows: new Set(kids.map(mid)).size, n: kids.length,
+             overflow: Math.round(Math.max(...kids.map(k => k.getBoundingClientRect().right)) - row.getBoundingClientRect().right),
+             clipped: Math.round(row.getBoundingClientRect().left - Math.min(...kids.map(k => k.getBoundingClientRect().left))) };
+  });
+  console.log('  toolbar:', JSON.stringify(bar));
+  check('every control on the plan toolbar fits on one line',
+    bar.rows === 1 && bar.overflow <= 0 && bar.clipped <= 0, JSON.stringify(bar));
   check('…and the job number in the header', /306648/.test(await ovText()));
 }
 
@@ -204,6 +217,36 @@ console.log('\n--- C · zoom ---');
       return el.width * el.height <= 12e6 + 1;
     }));
   await page.evaluate(() => planZoom(0));
+
+  // A landscape sheet on a portrait phone is a strip across the top. Turning it
+  // uses the screen, the same as turning a paper plan.
+  const before = await page.evaluate(() => {
+    const c = document.getElementById('plan-canvas');
+    return { w: parseFloat(c.style.width), h: parseFloat(c.style.height) };
+  });
+  await page.evaluate(() => planRotate());
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => {
+    const c = document.getElementById('plan-canvas'), b = document.getElementById('plan-scroll');
+    return { w: parseFloat(c.style.width), h: parseFloat(c.style.height), box: b.clientHeight };
+  });
+  console.log(`  ${before.w}x${before.h} -> rotated ${after.w}x${after.h} in a ${after.box}px-tall view`);
+  check('⟳ turns the sheet 90°', after.h > before.h && after.w <= before.w + 1, JSON.stringify({ before, after }));
+  check('…and a landscape sheet then uses far more of the screen',
+    (after.h / after.box) > (before.h / after.box) * 1.5, `${Math.round(before.h / after.box * 100)}% -> ${Math.round(after.h / after.box * 100)}% of the view`);
+  await page.evaluate(() => { planRotate(); planRotate(); planRotate(); });
+  await page.waitForTimeout(400);
+  check('…and four turns come back to where it started',
+    Math.abs((await page.evaluate(() => parseFloat(document.getElementById('plan-canvas').style.width))) - before.w) < 2);
+
+  // No grey field under a short page.
+  const centred = await page.evaluate(() => {
+    const c = document.getElementById('plan-canvas'), b = document.getElementById('plan-scroll');
+    const h = parseFloat(c.style.height), mt = parseFloat(c.style.marginTop) || 0;
+    return { fits: h < b.clientHeight, mt, want: Math.round((b.clientHeight - h) / 2) };
+  });
+  check('a page shorter than the view is centred, not pinned to the top',
+    !centred.fits || Math.abs(centred.mt - centred.want) <= 1, JSON.stringify(centred));
 }
 
 // ===========================================================================
@@ -322,6 +365,17 @@ console.log('\n--- F · markup ---');
 
   // Then: which defect?
   await page.waitForSelector('#plan-defect-list', { timeout: 8000 });
+  // In the DOM is not the same as ON SCREEN. The plan viewer sits above the
+  // shared modal layer, so the picker opened BEHIND it and the screen looked
+  // frozen after the drawing — a screenshot caught what a querySelector did not.
+  const visible = await page.evaluate(() => {
+    const el = document.getElementById('plan-defect-list');
+    const r = el.getBoundingClientRect();
+    const mid = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + 20));
+    return { onTop: !!(mid && el.contains(mid)), planHidden: (document.getElementById('plan-ov') || {}).style.display === 'none' };
+  });
+  check('the picker is actually ON SCREEN, not behind the plan viewer',
+    visible.onTop && visible.planHidden, JSON.stringify(visible));
   const listed = await page.evaluate(() => [...document.querySelectorAll('#plan-defect-list > div')].map(e => e.innerText.replace(/\n/g, ' | ')));
   console.log('  offered:', JSON.stringify(listed));
   check('it asks which defect, listing this job\'s defects', listed.length === 2, JSON.stringify(listed));
@@ -332,6 +386,17 @@ console.log('\n--- F · markup ---');
   const shown = await page.evaluate(() => [...document.querySelectorAll('#plan-defect-list > div')].filter(e => e.style.display !== 'none').map(e => e.innerText.split('\n')[0]));
   check('…and it can be searched on a job with a long list', shown.length === 1 && /Align door/.test(shown[0]), JSON.stringify(shown));
   await page.evaluate(() => planFilterDefects(''));
+
+  // Backing out of the picker has to put the plan back, not leave a blank screen.
+  await page.evaluate(() => document.getElementById('imp-close').click());
+  const backOut = await page.evaluate(() => ({
+    picker: !!document.getElementById('imp-ov'),
+    plan: (document.getElementById('plan-ov') || {}).style.display,
+  }));
+  check('backing out of the picker returns to the plan, not a blank screen',
+    !backOut.picker && backOut.plan === 'flex', JSON.stringify(backOut));
+  await page.evaluate(() => planMarkup());
+  await page.waitForSelector('#plan-defect-list', { timeout: 8000 });
 
   await page.evaluate(() => planAttachTo(12));
   await page.waitForFunction(() => (window.__saved || []).length > 0, { timeout: 8000 });
