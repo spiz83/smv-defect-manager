@@ -1666,8 +1666,14 @@
             position: relative; box-sizing: border-box;
             display: inline-flex; align-items: center; justify-content: center;
         }
+        /* height:100% so that ONCE the slot has a locked height (set on the first
+           photo's load) every later photo is contained inside the same box
+           instead of resizing it. Before that lock the parent height is
+           indefinite, so 100% resolves to auto and the first photo still sets
+           its own natural shape. object-fit:contain means a differently shaped
+           photo is letterboxed, never cropped. */
         .pv-photo img {
-            width: 100%; height: auto; max-height: 60vh;
+            width: 100%; height: 100%; max-height: 60vh;
             object-fit: contain; display: block;
         }
         /* Holds the card's height while the photo loads, so the list doesn't
@@ -6396,7 +6402,7 @@
                 <div class="pv-in">
                     <div class="pv-meta">${refLbl ? `<span class="pv-ref">${refLbl}</span>` : ''}${loc}</div>
                     <div class="pv-desc">${_pvEsc(body)}</div>
-                    ${n > 0 ? `<div class="pv-photo" data-pvphoto="${defect.id}"${_pvHeights[defect.id] ? ` style="min-height:${_pvHeights[defect.id]}px"` : ''} onclick="event.stopPropagation(); CloudPhotos.openGallery(${defect.id})">
+                    ${n > 0 ? `<div class="pv-photo" data-pvphoto="${defect.id}"${_pvHeights[defect.id] ? ` style="height:${_pvHeights[defect.id]}px"` : ''} onclick="event.stopPropagation(); CloudPhotos.openGallery(${defect.id})">
                         <div class="pv-ph-wait">loading photo…</div>
                     </div>` : ''}
                     <div class="pv-act">
@@ -6616,22 +6622,29 @@
                 // Hold the height the slot has NOW (or had last time it painted)
                 // until the replacement has decoded, so nothing moves under a
                 // thumb mid-scroll.
-                const hold = slot.offsetHeight || _pvHeights[id] || 0;
-                if (hold) slot.style.minHeight = hold + 'px';
+                const hold = _pvHeights[id] || slot.offsetHeight || 0;
+                if (hold) slot.style.height = hold + 'px';
                 img.addEventListener('load', () => {
-                    // The slot only ever GROWS. Photos of one defect are all
-                    // different shapes, so letting each set its own height meant
-                    // paging from a portrait to a landscape shot yanked 300px out
-                    // of the page and everything below leapt up the screen — the
-                    // other half of what Spiro was seeing. Keeping the tallest
-                    // seen and letterboxing the rest (object-fit: contain, so
-                    // nothing is cropped) means nothing below a card ever moves
-                    // upward; the worst case is one downward nudge the first time
-                    // a taller photo appears, and it is settled after that.
+                    // LOCK the box on the first photo that paints, and never
+                    // touch it again. "Grow to the tallest seen" was the previous
+                    // attempt and it still moved: each new photo taller than the
+                    // last pushed the page down once, so paging 1→2→3 jittered
+                    // its way through a set (Spiro 2026-08-16: "when I press next
+                    // it automatically shifts up… it needs to stay in focus").
+                    // One fixed frame per defect, every photo contained inside
+                    // it, is the only version where nothing moves at all.
+                    if (_pvHeights[id]) { slot.style.height = _pvHeights[id] + 'px'; return; }
                     slot.style.minHeight = '';
-                    const h = Math.round(slot.getBoundingClientRect().height);
-                    const keep = Math.max(_pvHeights[id] || 0, h);
-                    if (keep) { _pvHeights[id] = keep; slot.style.minHeight = keep + 'px'; }
+                    slot.style.height = '';
+                    const nat = Math.round(slot.getBoundingClientRect().height);
+                    // The floor applies only where there is something to page
+                    // TO: it stops a very wide first photo leaving a letterbox
+                    // slit that every portrait after it has to squeeze into. A
+                    // defect with one photo has no such problem, and padding it
+                    // would just be grey bands around the only picture there is
+                    // — which is what tests/pvphoto.mjs caught.
+                    const h = urls.length > 1 ? Math.max(nat, 240) : nat;
+                    if (h) { _pvHeights[id] = h; slot.style.height = h + 'px'; }
                 }, { once: true });
                 img.setAttribute('src', urls[i]);
             }
@@ -13174,7 +13187,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16r';
+        const APP_VERSION = '2026-08-16s';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13248,7 +13261,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16r"></script>
+    <script src="cloud-sync.js?v=2026-08-16s"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

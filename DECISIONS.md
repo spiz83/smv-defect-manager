@@ -2,6 +2,33 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (s) — one fixed photo frame per defect
+
+- **Spiro, on (r): "photo one of five was the first photo and then when I press
+  next it automatically shifts up… it needs to stay in focus."** (r)'s
+  grow-to-the-tallest-seen held on the way DOWN and still shoved the page on the
+  way UP, so paging 1→2→3→4→5 jittered its way through the set — once per photo
+  taller than anything before it. Monotonic is not the same as still.
+- **The slot's height is now LOCKED on the first photo that paints and never
+  changes.** `.pv-photo img` went `height:auto` → `height:100%`, so once the box
+  is locked every later photo is contained INSIDE it rather than resizing it.
+  Before the lock the parent height is indefinite, so `100%` resolves to auto
+  and the first photo still sets its own natural shape — the existing behaviour
+  for a single-photo card is untouched.
+- **The 240px floor applies only to multi-photo defects.** It stops a very wide
+  first photo leaving a letterbox slit that every portrait after it squeezes
+  into. `tests/pvphoto.mjs` caught it being applied to single-photo cards too —
+  a landscape shot rendered at 1.256 against its natural 1.5, which is grey
+  bands around the only picture there is.
+- **Trade-off: within one defect, the first photo picks the frame.** A portrait
+  after a landscape is shown smaller than it could be. Accepted — every photo is
+  `contain`, so nothing is ever cropped, and the whole point of the change is
+  that the page does not move.
+- **`pvstable.mjs` section C now pages the WHOLE set** — tall → wide → square →
+  back — and asserts the box size, the slot's position and the card BELOW are
+  all identical at every step. Stepping once passed under (r); it was the second
+  and third steps that exposed it.
+
 ## 2026-08-16 (r) — preview mode holds still
 
 - **Spiro, scrolling a job on site: "the photos tend to kind of flicker a fair

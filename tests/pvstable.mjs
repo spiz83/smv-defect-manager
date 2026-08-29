@@ -184,27 +184,44 @@ console.log('\n--- C · ‹ › swaps the picture without shoving the list ---')
     img.dataset.paged = 'yes';
     const below = document.querySelector('[data-pv="5"]');
     return { y: Math.round(window.scrollY), slotTop: Math.round(s.getBoundingClientRect().top),
+      slotH: Math.round(s.getBoundingClientRect().height),
       belowTop: Math.round(below.getBoundingClientRect().top), src: img.getAttribute('src').slice(-40) };
   });
-  await page.evaluate(() => pvStepPhoto(3, 1));
-  await page.waitForTimeout(500);
-  const after = await page.evaluate(() => {
-    const s = document.querySelector('[data-pvphoto="3"]');
-    const img = s.querySelector('img');
-    const below = document.querySelector('[data-pv="5"]');
-    return { y: Math.round(window.scrollY), slotTop: Math.round(s.getBoundingClientRect().top),
-      belowTop: Math.round(below.getBoundingClientRect().top), src: img.getAttribute('src').slice(-40),
-      sameImg: img.dataset.paged === 'yes', count: (s.querySelector('.pv-pcount') || {}).textContent };
-  });
+  // Page the WHOLE set — tall → wide → square → back. Every shape change is a
+  // chance for the box to resize, and it is the SECOND and THIRD steps that
+  // caught the previous attempt out: "grow to the tallest seen" holds on the way
+  // down and still shoves the page on the way up.
+  const seen = [];
+  for (let n = 0; n < 3; n++) {
+    await page.evaluate(() => pvStepPhoto(3, 1));
+    await page.waitForTimeout(400);
+    seen.push(await page.evaluate(() => {
+      const s = document.querySelector('[data-pvphoto="3"]');
+      const img = s.querySelector('img');
+      const below = document.querySelector('[data-pv="5"]');
+      return { y: Math.round(window.scrollY), slotTop: Math.round(s.getBoundingClientRect().top),
+        slotH: Math.round(s.getBoundingClientRect().height),
+        belowTop: Math.round(below.getBoundingClientRect().top), src: img.getAttribute('src').slice(-40),
+        sameImg: img.dataset.paged === 'yes', count: (s.querySelector('.pv-pcount') || {}).textContent };
+    }));
+  }
   console.log('before:', JSON.stringify(before));
-  console.log('after: ', JSON.stringify(after));
-  check('the photo actually changed', before.src !== after.src);
-  check('…re-using the SAME <img>, not a new one', after.sameImg);
-  check('…the counter followed it', after.count === '2/3', String(after.count));
-  check('the page did not scroll', after.y === before.y, `${before.y} -> ${after.y}`);
-  check('…the slot did not move', Math.abs(after.slotTop - before.slotTop) <= 2, `${before.slotTop} -> ${after.slotTop}`);
-  check('…and the card BELOW did not jump', Math.abs(after.belowTop - before.belowTop) <= 2,
-    `${before.belowTop} -> ${after.belowTop}`);
+  seen.forEach((a, i) => console.log(`step ${i + 1}:`, JSON.stringify(a)));
+  check('the photo actually changed', before.src !== seen[0].src);
+  check('…re-using the SAME <img>, not a new one', seen.every(a => a.sameImg));
+  check('…the counter followed it', seen[0].count === '2/3', String(seen[0].count));
+  check('the page never scrolled', seen.every(a => a.y === before.y),
+    JSON.stringify([before.y].concat(seen.map(a => a.y))));
+  check('…the slot never moved', seen.every(a => Math.abs(a.slotTop - before.slotTop) <= 2),
+    JSON.stringify([before.slotTop].concat(seen.map(a => a.slotTop))));
+  check('…the box is one fixed size for the whole set',
+    seen.every(a => Math.abs(a.slotH - before.slotH) <= 2),
+    JSON.stringify([before.slotH].concat(seen.map(a => a.slotH))));
+  check('…and the card BELOW never moved, in either direction',
+    seen.every(a => Math.abs(a.belowTop - before.belowTop) <= 2),
+    JSON.stringify([before.belowTop].concat(seen.map(a => a.belowTop))));
+  check('…and the photo is contained, never cropped', await page.evaluate(() =>
+    getComputedStyle(document.querySelector('[data-pvphoto="3"] img')).objectFit === 'contain'));
 }
 
 // ================= D. navigation still starts at the top ===================
