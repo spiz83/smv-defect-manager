@@ -195,6 +195,13 @@ const installPlans = (mode) => page.evaluate(({ mode, port }) => {
       return { buf: await res.arrayBuffer() };
     },
     async forget() {},
+    canEdit: () => mode !== 'supervisor',
+    async upload(jn, file) {
+      window.__uploads = window.__uploads || [];
+      window.__uploads.push({ path: String(jn) + '.pdf', name: file.name, type: file.type, size: file.size });
+      if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') return { error: file.name + " isn't a PDF — construction plans have to be a PDF." };
+      return { ok: true };
+    },
   };
 }, { mode, port: PORT });
 
@@ -616,6 +623,9 @@ console.log('\n--- G · a 15-sheet plan set ---');
   }));
   check('every sheet name is visible inside its card, not clipped off',
     capped.length === 15 && capped.every(Boolean), `${capped.filter(Boolean).length}/${capped.length}`);
+  check('the sheet index pads for the notch as well',
+    await page.evaluate(() => /padding-top:\s*env\(safe-area-inset-top/.test(document.getElementById('plan-sheets').style.cssText)),
+    await page.evaluate(() => document.getElementById('plan-sheets').style.cssText.slice(-60)));
   check('…and each has a thumbnail, not an empty box',
     await page.evaluate(() => [...document.querySelectorAll('#plan-sheet-grid canvas')].filter(c => c.width > 20).length === 15),
     String(await page.evaluate(() => document.querySelectorAll('#plan-sheet-grid canvas').length)));
@@ -737,6 +747,93 @@ if (!fs.existsSync(join(__here, 'fixtures-plan-306363.pdf'))) {
     await page.evaluate(() => _planState.page === 7 && /7 \/ 23/.test((document.getElementById('plan-sheetbtn') || {}).textContent || '')),
     await page.evaluate(() => (document.getElementById('plan-sheetbtn') || {}).textContent));
   check('…and it renders', await page.evaluate(() => document.getElementById('plan-canvas').width > 100));
+  await page.evaluate(() => closeJobPlan());
+}
+
+// ===========================================================================
+//  I. Attaching a plan from here, and the notch.
+// ===========================================================================
+// Spiro, standing on a job with the PDF on his phone: "Create ability to drop
+// file in". Sending a manager to a desktop app to attach a file that is
+// already in their hand was the wrong answer. Same bucket either way, so there
+// is still one copy per job and one place it lives.
+console.log('\n--- I · attach a plan from the app ---');
+{
+  await installPlans('absent');
+  await page.evaluate(() => openJobPlan(1));
+  await page.waitForSelector('#plan-drop', { timeout: 8000 });
+  const d = await page.evaluate(() => {
+    const el = document.getElementById('plan-drop');
+    const r = el.getBoundingClientRect();
+    return { text: el.innerText.replace(/\n/g, ' | '), onScreen: r.top > 0 && r.bottom < window.innerHeight, hasInput: !!el.querySelector('input[type=file]') };
+  });
+  check('the "no plan" screen offers a way to attach one', /Attach the plan/.test(d.text), d.text);
+  check('…visible without scrolling', d.onScreen, JSON.stringify(d));
+  check('…with a real file picker behind it', d.hasInput);
+  check('…and it no longer says "attach it in CH Tracker" right above an Attach button',
+    !/Attach it in CH Tracker/.test(await ovText()), (await ovText() || '').replace(/\n/g, ' | ').slice(0, 140));
+
+  // The header must clear the notch — it was overlapping the clock and the
+  // Dynamic Island. This can only be asserted STRUCTURALLY: headless Chromium
+  // has no notch, so env(safe-area-inset-top) legitimately computes to 0 here
+  // and would on a notchless phone too. What matters is that the declaration is
+  // there and that the box sizes with it. (The page sets viewport-fit=cover, or
+  // iOS would report 0 regardless — the two go together.)
+  const hdr = await page.evaluate(() => {
+    const ov = document.getElementById('plan-ov');
+    return { css: ov.style.cssText, boxSizing: getComputedStyle(ov).boxSizing,
+             cover: (document.querySelector('meta[name=viewport]') || {}).content || '' };
+  });
+  check('the plan overlay pads for the status bar / Dynamic Island',
+    /padding-top:\s*env\(safe-area-inset-top/.test(hdr.css) && hdr.boxSizing === 'border-box', hdr.css.slice(-80));
+  check('…and viewport-fit=cover is set, or iOS reports no inset at all',
+    /viewport-fit\s*=\s*cover/.test(hdr.cover), hdr.cover);
+  // The state exists from the moment an open starts, before the PDF arrives —
+  // so every control that reaches into it has to survive being called then.
+  const early = await page.evaluate(async () => {
+    const before = document.body.innerHTML.length;
+    await planSheets(); planPage(1); planRotate(); planZoom(1); await planMarkup();
+    return { sheets: !!document.getElementById('plan-sheets'), grew: document.body.innerHTML.length !== before };
+  });
+  check('the viewer controls do nothing, rather than throw, before a plan is loaded',
+    !early.sheets, JSON.stringify(early));
+
+  // Attach a PDF.
+  const okUp = await page.evaluate(async () => {
+    window.__uploads = [];
+    const f = new File([new Uint8Array([37, 80, 68, 70])], 'Plans306363.pdf', { type: 'application/pdf' });
+    await _planDoUpload(1, f);
+    return window.__uploads;
+  });
+  console.log('  uploaded:', JSON.stringify(okUp));
+  check('picking a PDF sends it to the job\'s own storage path',
+    okUp.length === 1 && okUp[0].path === '306648.pdf', JSON.stringify(okUp));
+  check('…as a PDF', okUp[0] && okUp[0].type === 'application/pdf');
+
+  // A non-PDF is refused with a readable reason, and the attach screen stays up.
+  await installPlans('absent');
+  await page.evaluate(() => openJobPlan(1));
+  await page.waitForSelector('#plan-drop', { timeout: 8000 });
+  await page.evaluate(async () => {
+    window.__uploads = [];
+    await _planDoUpload(1, new File(['x'], 'site-photo.jpg', { type: 'image/jpeg' }));
+  });
+  await page.waitForFunction(() => /isn't a PDF/.test((document.getElementById('plan-ov') || {}).innerText || ''), { timeout: 5000 });
+  check('a photo instead of a plan is refused, in plain words', /isn't a PDF/.test(await ovText()), (await ovText() || '').split('\n')[2]);
+  check('…and you can try again rather than being dumped out',
+    await page.evaluate(() => !!document.getElementById('plan-drop')));
+  check('…with Back still there', await page.evaluate(() =>
+    [...document.getElementById('plan-ov').querySelectorAll('button')].some(x => /back/i.test(x.textContent))));
+
+  // A supervisor is told there is no plan, and is NOT offered the upload.
+  await installPlans('supervisor');
+  await page.evaluate(() => { window.CloudPlans.bytes = async () => ({ error: 'No plan has been uploaded for this job yet. Attach it in CH Tracker.' }); });
+  await page.evaluate(() => openJobPlan(1));
+  await page.waitForFunction(() => /No plan has been uploaded/.test((document.getElementById('plan-ov') || {}).innerText || ''), { timeout: 8000 });
+  check('a supervisor sees the message but is not offered the upload',
+    await page.evaluate(() => !document.getElementById('plan-drop')));
+  check('…and IS still told where it gets attached, since they cannot do it here',
+    /CH Tracker/.test(await ovText()), (await ovText() || '').replace(/\n/g, ' | ').slice(0, 140));
   await page.evaluate(() => closeJobPlan());
 }
 

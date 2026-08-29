@@ -2342,6 +2342,45 @@
         return { error: (e && e.message) || 'Could not download the plan.' };
       }
     },
+    // Attaching from HERE, not only from CH Tracker (Spiro 2026-08-16). The
+    // earlier decision was that CH Tracker owns plans and this app only reads —
+    // still true for who OWNS them, but a supervisor-manager standing on site
+    // with the PDF on their phone should not have to find a desktop. The bucket
+    // is the same one either way, so there is still one copy per job and one
+    // place it lives.
+    //
+    // Same rules as CH Tracker's uploadPlan: PDF only, 50MB (the free tier's
+    // project-wide cap — going higher swaps a readable message for an opaque
+    // 413), upsert so a re-attach replaces rather than erroring.
+    canEdit: () => (userRole || cachedIdentity.role) === 'manager',
+    MAX_PLAN_BYTES: 50 * 1024 * 1024,
+    async upload(jobNumber, file) {
+      const jn = String(jobNumber || '').trim();
+      if (!jn) return { error: 'This job has no job number, so there is nowhere to file a plan.' };
+      if (!sb) return { error: 'Not signed in.' };
+      if (!file) return { error: 'No file chosen.' };
+      if (!/\.pdf$/i.test(file.name || '') && file.type !== 'application/pdf') {
+        return { error: (file.name || 'That file') + " isn't a PDF — construction plans have to be a PDF." };
+      }
+      if (file.size > 50 * 1024 * 1024) {
+        return { error: Math.round(file.size / 1024 / 1024) + ' MB is over the 50 MB limit.' };
+      }
+      try {
+        const { error } = await sb.storage.from(PLANS_BUCKET)
+          .upload(planPath(jn), file, { contentType: 'application/pdf', upsert: true });
+        if (error) {
+          const m = error.message || '';
+          if (/bucket not found|does not exist/i.test(m)) return { error: 'Plans are not set up yet — migration 101 has not been applied in Supabase.' };
+          if (/row-level security|not authorized|permission/i.test(m)) return { error: 'Only a manager can attach plans.' };
+          return { error: m || 'Could not attach the plan.' };
+        }
+        // The old copy on this phone is now wrong.
+        try { const c = await caches.open(PLAN_CACHE); await c.delete('/plan/' + encodeURIComponent(jn)); } catch (e) {}
+        return { ok: true };
+      } catch (e) {
+        return { error: (e && e.message) || 'Could not attach the plan.' };
+      }
+    },
     // Drop a cached plan (the manager replaced it in CH Tracker).
     async forget(jobNumber) {
       try { const c = await caches.open(PLAN_CACHE); await c.delete('/plan/' + encodeURIComponent(String(jobNumber || '').trim())); } catch (e) {}

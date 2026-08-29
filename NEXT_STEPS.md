@@ -49,8 +49,9 @@ bite a later change:
   `{job_number}.pdf` in the `job-plans` bucket.** Rename any one of those three
   and every job silently reports "no plan". `tests/jobplans.mjs` pins the exact
   storage path asked for.
-- **This app must never WRITE to `job-plans`.** CH Tracker owns plans; its RLS
-  allows manager writes only, and two writers would be worse than one.
+- **A manager can attach a plan from EITHER app** (`CloudPlans.upload`, build
+  `2026-08-16c`) — same bucket, same path, same RLS, so still one copy per job.
+  Supervisors cannot, and the screen tells them where it gets attached instead.
 - **The bucket needs CH Tracker's migration 101 applied.** If it is missing the
   viewer says so by name rather than reporting "no plan" for every job.
 - **Cached plans live in the `dm-job-plans-v1` Cache API bucket**, keyed

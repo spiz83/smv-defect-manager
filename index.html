@@ -10313,7 +10313,7 @@
         }
         async function planMarkup() {
             const st = _planState;
-            if (!st) return;
+            if (!st || !st.pdf) return;
             const cp = window.CloudPhotos;
             if (!cp || !cp.savePhoto) { showToast('Photos need a cloud sign-in', true); return; }
             const defects = db.getDefects({ addressId: st.addressId }) || [];
@@ -10550,7 +10550,7 @@
             if (!alive()) return;
             const got = await window.CloudPlans.bytes(jn);
             if (!alive()) return;
-            if (got.error) { _planOverlay('<div class="plan-msg">' + _escHtml(got.error) + '</div>'); return; }
+            if (got.error) { _planNoPlan(addressId, got.error); return; }
             try {
                 const pdf = await window.pdfjsLib.getDocument({ data: got.buf }).promise;
                 if (!alive()) return;
@@ -10562,13 +10562,63 @@
                 _planOverlay('<div class="plan-msg">That plan could not be read as a PDF.</div>');
             }
         }
+
+        // The "no plan" screen is where a manager most wants to fix it, so the
+        // fix is on it (Spiro 2026-08-16: "Create ability to drop file in").
+        // Sending them to a desktop app to attach a PDF that is already on the
+        // phone in their hand was the wrong answer.
+        function _planNoPlan(addressId, msg) {
+            const canAdd = !!(window.CloudPlans && window.CloudPlans.canEdit && window.CloudPlans.canEdit());
+            // "Attach it in CH Tracker" directly above an Attach button is a
+            // contradiction. Drop that sentence when we are offering to do it
+            // here; a supervisor, who cannot, still needs to be told where.
+            if (canAdd) msg = String(msg).replace(/\s*Attach it in CH Tracker\.?\s*$/i, '');
+            _planOverlay('<div class="plan-msg">' + _escHtml(msg) + '</div>' + (canAdd ? `
+                <div id="plan-drop" style="margin-top:22px;padding:22px 18px;border:2px dashed var(--border-color,#ccc);border-radius:14px;cursor:pointer;">
+                    <div style="font-weight:700;font-size:15px;color:var(--blue,#2563eb);">📎 Attach the plan</div>
+                    <div style="font-size:13px;color:var(--text-secondary);margin-top:5px;line-height:1.45;">Pick the PDF, or drag one in. It goes to CH Tracker, so everyone on this job gets it.</div>
+                </div>` : ''));
+            if (!canAdd) return;
+            const drop = document.getElementById('plan-drop');
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = 'application/pdf,.pdf';
+            input.style.display = 'none';
+            drop.appendChild(input);
+            input.onchange = () => { if (input.files && input.files[0]) _planDoUpload(addressId, input.files[0]); };
+            drop.onclick = () => input.click();
+            // Drag-and-drop for a desktop; the picker is the whole story on a phone.
+            ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => {
+                e.preventDefault(); drop.style.borderColor = 'var(--blue,#2563eb)';
+            }));
+            ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, (e) => {
+                e.preventDefault(); drop.style.borderColor = 'var(--border-color,#ccc)';
+            }));
+            drop.addEventListener('drop', (e) => {
+                const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                if (f) _planDoUpload(addressId, f);
+            });
+        }
+        async function _planDoUpload(addressId, file) {
+            const jn = jobPlanNumber(addressId);
+            const mb = (file.size / 1024 / 1024).toFixed(1);
+            _planOverlay('<div class="plan-msg">Attaching ' + _escHtml(file.name) + ' (' + mb + ' MB)…</div>');
+            const res = await window.CloudPlans.upload(jn, file);
+            if (res && res.error) { _planNoPlan(addressId, res.error); return; }
+            showToast('Plan attached');
+            closeJobPlan();
+            openJobPlan(addressId);
+        }
+
         function _planOverlay(inner) {
             let ov = document.getElementById('plan-ov');
             if (!ov) {
                 ov = document.createElement('div');
                 ov.id = 'plan-ov';
+                // padding-top for the notch: inset:0 puts the header UNDER the
+                // status bar and the Dynamic Island, which had Back overlapping
+                // the clock (Spiro 2026-08-16). Bulk Import already does this.
                 ov.style.cssText = 'position:fixed;inset:0;z-index:100004;background:var(--bg-secondary,#1b1b1b);' +
-                    'display:flex;flex-direction:column;';
+                    'display:flex;flex-direction:column;box-sizing:border-box;padding-top:env(safe-area-inset-top,24px);';
                 document.body.appendChild(ov);
             }
             // ALWAYS a header with Back. This is a full-screen, fixed overlay: a
@@ -10645,7 +10695,7 @@
         // arbitrary PDF point size.
         async function _planDraw() {
             const st = _planState;
-            if (!st) return;
+            if (!st || !st.pdf) return;
             const canvas = document.getElementById('plan-canvas');
             const box = document.getElementById('plan-scroll');
             if (!canvas || !box) return;
@@ -10714,7 +10764,7 @@
         }
         function planPage(delta) {
             const st = _planState;
-            if (!st) return;
+            if (!st || !st.pdf) return;
             const n = Math.min(st.pdf.numPages, Math.max(1, st.page + delta));
             if (n === st.page) return;
             st.page = n;
@@ -10811,11 +10861,11 @@
         }
         async function planSheets() {
             const st = _planState;
-            if (!st) return;
+            if (!st || !st.pdf) return;      // an open still in flight has no pdf yet
             const n = st.pdf.numPages;
             const ov = document.createElement('div');
             ov.id = 'plan-sheets';
-            ov.style.cssText = 'position:fixed;inset:0;z-index:100005;background:var(--bg-secondary,#1b1b1b);display:flex;flex-direction:column;';
+            ov.style.cssText = 'position:fixed;inset:0;z-index:100005;background:var(--bg-secondary,#1b1b1b);display:flex;flex-direction:column;box-sizing:border-box;padding-top:env(safe-area-inset-top,24px);';
             ov.innerHTML = `
                 <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);border-bottom:1px solid var(--border-color);flex:0 0 auto;">
                     <button onclick="planCloseSheets()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Plan</button>
@@ -10907,7 +10957,7 @@
         }
         function planRotate() {
             const st = _planState;
-            if (!st) return;
+            if (!st || !st.pdf) return;
             st.rot = (st.rot + 90) % 360;
             st.scale = 1;
             const box = document.getElementById('plan-scroll');
@@ -10916,7 +10966,7 @@
         }
         function planZoom(dir) {
             const st = _planState;
-            if (!st) return;
+            if (!st || !st.pdf) return;
             st.scale = dir === 0 ? 1 : Math.min(6, Math.max(1, st.scale * (dir > 0 ? 1.5 : 1 / 1.5)));
             _planDraw();
         }
@@ -12794,7 +12844,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16b';
+        const APP_VERSION = '2026-08-16c';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12868,7 +12918,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16b"></script>
+    <script src="cloud-sync.js?v=2026-08-16c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

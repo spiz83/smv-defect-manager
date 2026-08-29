@@ -2,6 +2,37 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (c) — attach a plan from the app, and clear the notch
+
+- **Spiro, standing on a job with the PDF on his phone: "Create ability to drop
+  file in".** Being told to find a desktop to attach a file already in your hand
+  is the wrong answer, twice over when the whole point of the feature is speed.
+- **This REVERSES part of build (u)'s decision.** That said this app would never
+  write to `job-plans` — CH Tracker owns plans, one owner beats two. CH Tracker
+  still owns them and it is still the same bucket, so there is still exactly one
+  copy per job in one place. What changed is that a manager can put it there
+  from either end. Recording the reversal rather than quietly overwriting it.
+- **Manager-only, mirroring the bucket's RLS** (`CloudPlans.canEdit`). A
+  supervisor sees "no plan" and is told where it gets attached; a manager gets
+  the picker, and drag-and-drop on a desktop.
+- **Same rules as CH Tracker's `uploadPlan`** — PDF only, 50MB, `upsert`, and
+  the cached copy on this phone is dropped after a successful attach.
+- **"Attach it in CH Tracker" is stripped when the Attach button is shown.**
+  Telling someone to go elsewhere directly above the button that does it here is
+  a contradiction; the supervisor, who cannot, still gets the sentence.
+- **The overlay now pads for `env(safe-area-inset-top)`.** `inset:0` put the
+  header UNDER the status bar, with Back overlapping the clock and the Dynamic
+  Island. Bulk Import already did this; the plan viewer did not. The page sets
+  `viewport-fit=cover`, without which iOS reports no inset at all — the two go
+  together, and the test asserts both.
+- **This can only be checked STRUCTURALLY.** Headless Chromium has no notch, so
+  the computed padding is legitimately 0; the test asserts the declaration and
+  the meta tag, not a number.
+- **`_planState` now exists from the moment an open starts**, before the PDF has
+  arrived, so every control that reaches into `st.pdf` had to learn to do
+  nothing rather than throw. Found by a test calling the sheet index on a "no
+  plan" screen.
+
 ## 2026-08-16 (b) — the plan messages were a dead end
 
 - **Spiro, on a real phone: "Any issue you can see here LOL fix please."** The
