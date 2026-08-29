@@ -81,7 +81,9 @@ async function arm() {
     }
     window.CloudMail = undefined;
     navigator.canShare = () => true;
-    navigator.share = async (d) => { window.__shared = { files: (d.files || []).map(f => f.name), keys: Object.keys(d) }; };
+    navigator.share = async (d) => {
+      window.__shared = { files: (d.files || []).map(f => f.name), keys: Object.keys(d), text: d.text || null };
+    };
     // The app's one clipboard path funnels through here. defineProperty, not
     // assignment: navigator.clipboard is a read-only accessor on the prototype,
     // so `navigator.clipboard = …` silently does nothing and the real (blocked)
@@ -116,8 +118,14 @@ console.log('\n--- A · 📧 attaches, 🔗 links ---');
   const shared = await page.evaluate(() => window.__shared);
   console.log('shared:', JSON.stringify(shared));
   check('…and the file actually reaches navigator.share', shared && shared.files.length === 1, JSON.stringify(shared));
-  check('…with NO text alongside it — that is what leaks a blob: URL into the body',
-    shared && !shared.keys.includes('text') && !shared.keys.includes('url'), JSON.stringify(shared && shared.keys));
+  check('…and the defect list rides with it as the message body',
+    shared && shared.keys.includes('text') && /Downpipe missing/.test(shared.text || ''),
+    JSON.stringify(shared && shared.keys));
+  check('…whose first line is the subject, so Outlook lifts it into the Subject field',
+    shared && /^Defects - /.test(String(shared.text || '').split('\n')[0]),
+    JSON.stringify(String((shared && shared.text) || '').split('\n')[0]));
+  // A `url` alongside files is the thing that puts a blob: link in the body.
+  check('…with no url in the payload', shared && !shared.keys.includes('url'), JSON.stringify(shared && shared.keys));
   const uploaded = await page.evaluate(() => window.__uploaded);
   check('…and nothing is uploaded, because the file itself went', uploaded === 0, `${uploaded} upload(s)`);
 
@@ -154,8 +162,10 @@ console.log('\n--- B · the subject lands on the clipboard ---');
   check('…and the share still happened — copying did not eat the tap', after.shared);
 }
 
-// ================= C. the manual way out, for the other field ===============
-console.log('\n--- C · tap-to-copy rows for subject AND recipient ---');
+// ================= C. the subject row, and ONLY the subject row =============
+// Spiro 2026-08-16: "you don't have to create a copy for the email. The copy
+// can just be for the subject." The recipient comes from Mail's own contacts.
+console.log('\n--- C · one tap-to-copy row, for the subject ---');
 {
   await arm();
   await page.evaluate(() => { emailDefectList(true); });
@@ -163,12 +173,29 @@ console.log('\n--- C · tap-to-copy rows for subject AND recipient ---');
   const rows = await page.evaluate(() => [...document.querySelectorAll('#imp-ov .sh-copy')].map(b => b.getAttribute('data-k')));
   console.log('copy rows:', JSON.stringify(rows));
   check('there is a row for the subject', rows.includes('subject'), JSON.stringify(rows));
-  check('…and one for the address, which the sheet cannot set either', rows.includes('email'), JSON.stringify(rows));
-  await page.evaluate(() => document.querySelector('#imp-ov .sh-copy[data-k="email"]').click());
+  check('…and NO row for the email address', !rows.includes('email'), JSON.stringify(rows));
+  await page.evaluate(() => document.querySelector('#imp-ov .sh-copy[data-k="subject"]').click());
   await page.waitForTimeout(200);
   const clip = await page.evaluate(() => window.__clip);
-  check('tapping the address row copies the supplier email',
-    /costasplumbing/.test(String(clip)), String(clip));
+  check('tapping it copies the subject', /^Defects - /.test(String(clip)), String(clip));
+}
+
+// ================= D. a browser that refuses the pair ======================
+// canShare says no to files+text on some builds. The attachment matters more
+// than the body, so the file must still go rather than the share failing.
+console.log('\n--- D · files+text refused → the file still goes ---');
+{
+  await arm();
+  await page.evaluate(() => { navigator.canShare = (d) => !(d && d.text); });
+  await page.evaluate(() => { emailDefectList(true); });
+  await page.waitForSelector('#sh-go', { timeout: 4000 });
+  await page.evaluate(() => document.getElementById('sh-go').click());
+  await page.waitForTimeout(300);
+  const shared = await page.evaluate(() => window.__shared);
+  console.log('degraded share:', JSON.stringify(shared && shared.keys));
+  check('the PDF is still attached', shared && shared.files.length === 1, JSON.stringify(shared));
+  check('…and the body is dropped rather than the whole share failing',
+    shared && !shared.keys.includes('text'), JSON.stringify(shared && shared.keys));
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

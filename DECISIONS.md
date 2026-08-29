@@ -2,6 +2,31 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (q) — the defect list goes in the message body
+
+- **Spiro: "the PDF is attached but there's nothing in the body."** Right — (p)
+  shared `{ files: [pdf] }` and nothing else, so the message arrived empty.
+- **The body now rides with the file: `navigator.share({ files, text })`.** Two
+  comments in this file disagreed about whether that is safe on iOS — one said
+  pairing text with a file "leaks a blob: link", the other (older, and written
+  from an actual device) said Apple Mail puts the text in the body and Outlook
+  lifts its first line into the Subject. Only the second describes passing
+  `text`; the blob complaint is about passing `url`. So `text` yes, `url` never.
+- **The first line of the body IS the subject**, which costs an Apple Mail user
+  one duplicated line and gets an Outlook user a filled-in Subject for free.
+- **`canShare({ files, text })` guards it.** If a browser won't take the pair,
+  the file goes alone rather than the whole share failing — the attachment
+  matters more than the body.
+- **The "copy the email address" row is gone.** Spiro: "you don't have to create
+  a copy for the email. The copy can just be for the subject." Supplier
+  addresses live in each supervisor's own mail client, so Mail's autocomplete
+  beats anything the app can offer.
+- **If a `blob:` line ever does appear in a real message, the fix is to drop
+  `text` from the payload** — one line in `sharePdfOnTap`. Recorded because the
+  only device that can settle it is a supervisor's phone, not this harness.
+- **`emailattach.mjs` grew a section D**: canShare refusing the pair must still
+  attach the PDF. That is the degraded path nobody would notice was broken.
+
 ## 2026-08-16 (p) — 📧 attaches for real, and the subject goes on the clipboard
 
 - **Spiro circled the 📧 and said it was "practically the same as the share a

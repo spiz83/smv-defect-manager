@@ -6966,14 +6966,23 @@
             // "better" path was quietly destroying the one that works. It moves
             // below, and only runs if sharing isn't possible at all.
             if (!asLink && scopedPdf) {
+                // The list goes in the MESSAGE as well as the PDF — a supplier
+                // reading on a phone shouldn't have to open an attachment to see
+                // what's being asked. First line is the subject, so Outlook lifts
+                // it up into the Subject field on its own.
+                const bodyLines = [subject, '', addr, ''];
+                if (booking) bodyLines.push('Attending: ' + fmtDateNice(booking), '');
+                defects.forEach((d, i) => bodyLines.push((i + 1) + '. ' + formatDefectEmailLine(d)));
+                bodyLines.push('', 'Please confirm booking.');
+
                 const shared = await sharePdfOnTap(
                     scopedPdf,
                     'Attach to email',
-                    `Tap below, then pick <b>Mail</b>. The defect list and photos attach as one PDF.<br><br>`
+                    `Tap below, then pick <b>Mail</b>. The defect list goes in the message and the PDF (list + photos) attaches.<br><br>`
                     + `<span style="opacity:.75">The subject is copied to your clipboard on the way — paste it into the `
                     + `Subject field. iOS won't accept a subject alongside an attachment, and won't let a web page `
                     + `set the recipient either; start typing the supplier and Mail will finish it.</span>`,
-                    { subject, email: c.email || '' },
+                    { subject, body: bodyLines.join('\n') },
                 );
                 if (shared) { markEmailedPending(); return; }
             }
@@ -7166,14 +7175,17 @@
             // PDF is reused by the link path below if the share is declined, so
             // a refusal never costs a second build or a second upload.
             if (!asLink && scopedPdf) {
+                // generateDefectText() is the same list the 📋 copy button
+                // produces, scoped to whatever view you are on. First line is the
+                // subject so Outlook can lift it into the Subject field.
                 const shared = await sharePdfOnTap(
                     scopedPdf,
                     'Attach to email',
-                    `Tap below, then pick <b>Mail</b>. The defect list and photos attach as one PDF.<br><br>`
+                    `Tap below, then pick <b>Mail</b>. The defect list goes in the message and the PDF (list + photos) attaches.<br><br>`
                     + `<span style="opacity:.75">The subject is copied to your clipboard on the way — paste it into the `
                     + `Subject field. iOS won't accept a subject alongside an attachment, and won't let a web page `
                     + `set the recipient either; start typing the supplier and Mail will finish it.</span>`,
-                    { subject, email: recipient || '' },
+                    { subject, body: subject + '\n\n' + generateDefectText() },
                 );
                 if (shared) return;
             }
@@ -9327,11 +9339,14 @@
         // So the work happens first, then this asks for one more tap, and THAT
         // tap calls share() with the gesture still alive. Resolves true if the
         // sheet opened, false if it couldn't be used at all (caller falls back).
-        // `copy` is { subject, email } — what iOS won't let the share sheet fill
-        // in. The subject goes onto the clipboard in the SAME tap that opens the
-        // sheet, so it is ready to paste into the Subject field; both are also
-        // offered as tap-to-copy rows, because the clipboard only holds one
-        // thing and which one you want next depends on the mail app.
+        // `copy` is { subject, body }. The SUBJECT is the one thing iOS refuses
+        // to set alongside an attachment, so it goes onto the clipboard in the
+        // same tap that opens the sheet, ready to paste. The BODY rides with the
+        // file in the share itself — Apple Mail drops it into the message and
+        // Outlook lifts its first line up into the Subject, so an Outlook user
+        // gets both for free. The recipient is left to Mail's autocomplete
+        // (Spiro 2026-08-16: "most of the email addresses are saved in the email
+        // client for each supervisor").
         function sharePdfOnTap(file, headline, note, copy) {
             return new Promise((resolve) => {
                 // canShare() only shipped in Safari 16.4. Requiring it meant that on
@@ -9352,21 +9367,17 @@
                 const cp = copy || {};
                 const chipStyle = 'width:100%;margin-bottom:8px;text-align:left;'
                     + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-                const chip = (k, label, val) => val
-                    ? `<button class="imp-btn sh-copy" data-k="${k}" style="${chipStyle}">📋 ${label} <span style="opacity:.65">${_escHtml(val)}</span></button>`
-                    : '';
                 impOverlay(`
                     <div id="imp-head"><strong>📎 ${headline}</strong><button id="imp-close">✕</button></div>
                     <div id="imp-body">
                         <div style="font-size:14px;line-height:1.5;margin-bottom:14px">${note}</div>
-                        ${chip('subject', 'Subject —', cp.subject)}
-                        ${chip('email', 'Send to —', cp.email)}
+                        ${cp.subject ? `<button class="imp-btn sh-copy" data-k="subject" style="${chipStyle}">📋 Subject — <span style="opacity:.65">${_escHtml(cp.subject)}</span></button>` : ''}
                         <button class="imp-btn" id="sh-go" style="width:100%">📎 Attach ${file.name}</button>
                     </div>`);
                 document.querySelectorAll('#imp-ov .sh-copy').forEach(b => {
                     b.onclick = () => {
                         const k = b.getAttribute('data-k');
-                        writeToClipboard(cp[k], k === 'email' ? '📋 Email address copied' : '📋 Subject copied');
+                        writeToClipboard(cp[k], '📋 Subject copied');
                     };
                 });
                 let done = false;
@@ -9379,7 +9390,16 @@
                     // order works and the reverse is a coin toss. If it ever
                     // fails, the rows above are the manual way out.
                     if (cp.subject) { try { writeToClipboard(cp.subject, '📋 Subject copied — paste it into Subject'); } catch (e) {} }
-                    try { await navigator.share({ files: [file] }); finish(true); }
+                    // Text alongside the file, so the message is not empty.
+                    // canShare-guarded: a browser that won't take both should
+                    // still get the attachment rather than nothing at all.
+                    const payload = { files: [file] };
+                    if (cp.body) {
+                        try {
+                            if (!navigator.canShare || navigator.canShare({ files: [file], text: cp.body })) payload.text = cp.body;
+                        } catch (e) {}
+                    }
+                    try { await navigator.share(payload); finish(true); }
                     catch (e) {
                         if (e && e.name === 'AbortError') { finish(true); return; }  // user closed the sheet
                         console.error('sharePdfOnTap', e);
@@ -13056,7 +13076,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16p';
+        const APP_VERSION = '2026-08-16q';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13130,7 +13150,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16p"></script>
+    <script src="cloud-sync.js?v=2026-08-16q"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
