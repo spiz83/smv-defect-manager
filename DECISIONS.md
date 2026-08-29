@@ -2,6 +2,51 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (l) — Add Defects: three suppliers, five defects, one line each
+
+- **Spiro: "three contractors and five defects per contractor"**, down from
+  five blocks of three. Same fifteen rows either way, but a supervisor walking
+  a job almost always has several items for ONE trade and rarely five different
+  trades in a single visit, so the rows belong under the supplier.
+- **The fifteen blocks are now GENERATED** (`addDefectBlocksHtml`), not fifteen
+  copies of the same markup. `ADD_DEFECT_BLOCKS` / `ADD_DEFECT_ROWS` are the
+  only place the numbers live, and `saveAddDefectsAddress` reads the same
+  constant instead of a hard-coded `i <= 5`.
+- **The row is one line again: pin — description — camera.** It was already one
+  `.defect-input-row` in the markup, but the CSS said `flex-wrap: wrap` with
+  the input at `flex: 1 1 100%`, so the description always dropped to a line of
+  its own below the icons. `nowrap` plus `flex: 1 1 0%` puts it back on the
+  line, and the description now takes 83% of the row on an iPhone.
+- **The pin carries NO text at all — the colour is the whole signal.** Faded
+  means no location, full red means one is set, which is exactly how the camera
+  already worked (faded 📸 → full 📷 with a count). Spelling the location out
+  beside the pin was the first attempt and Spiro rejected it: it cost the row
+  60-80px and left the rows ragged, since only some of them had one. The value
+  is still on the button's `title`, and tapping the pin reopens the picker with
+  it ticked, so nothing is lost but the width.
+- **Both icons sit in the card's own padding.** Each has 8px of vertical
+  padding for a finger-sized target and negative margins that stop that padding
+  from taking width off the description or height off the row, with a bigger
+  negative on the outer edge to slide the icon left/right into the card
+  padding. The description went from 232-275px to a flat 297px on an iPhone —
+  90% of the row, and now identical on every row whether a location is set or
+  not.
+- **`.defect-input-row span` became `.defect-input-row > span`.** At 0,0,1,1 it
+  out-specified the label class (0,0,1,0) and was rendering the chosen location
+  at 17px — half the reason the row had no room. The `>` scopes it back to the
+  legacy form's `*` marker, which is all it was ever for.
+- **Trade-off: the location is no longer readable at a glance.** A supervisor
+  reviewing five rows before saving can see WHICH rows have a location but not
+  WHAT it is without tapping the pin. Accepted deliberately — the width matters
+  more, and the picker opens with the current value ticked.
+- **`tests/adddefects.mjs` section E now checks GEOMETRY** — row height, which
+  side each icon is on, that all three are vertically centred on one line, that
+  the description keeps ≥85% of the row, and that setting a long location costs
+  the row no width. "The pin button exists" passed happily for weeks while the
+  row was wrapping. `locmodal.mjs` checks the pin lights up WITHOUT naming the
+  location, and that an empty pin is measurably fainter than a set one — the
+  colour is the only signal now, so it has to be a real difference.
+
 ## 2026-08-16 (k) — crop, in the one editor the whole app shares
 
 - **Spiro: "in the mark up mode add the ability to crop photo aswell… across

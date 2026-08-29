@@ -72,8 +72,8 @@ const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? ' 
 
 const reset = () => page.evaluate(() => { db.data.defects = []; db.save(); startDefectsForJob(1); });
 
-// Fill blocks the way the screen actually works: 3 defect rows per supplier
-// block, five blocks. `entries` is [[supplierName, [d1, d2, ...]], ...].
+// Fill blocks the way the screen actually works: 5 defect rows per supplier
+// block, three blocks. `entries` is [[supplierName, [d1, d2, ...]], ...].
 async function fillAndSave(entries) {
   await reset();
   await page.waitForTimeout(250);
@@ -116,12 +116,13 @@ const inList = () => page.evaluate(async () => {
 });
 
 // ================= A. five DISTINCT items, one supplier =====================
-// Only 3 rows exist per block, so five items for one trade means two blocks.
-console.log('\n--- A · five distinct items for ONE supplier (3 + 2 across two blocks) ---');
+// Five rows per block since 2026-08-16, so five items for one trade fit in ONE
+// block — the case that used to need two.
+console.log('\n--- A · five distinct items for ONE supplier, all in one block ---');
 {
   const { toasts, saved } = await fillAndSave([
-    ['COSTAS PLUMBING', ['Downpipe missing behind garage', 'Repair wall at cistern stop tap', 'Seal oversized hole at conduit']],
-    ['COSTAS PLUMBING', ['Rework downpipe', 'Punch in downpipe pins']],
+    ['COSTAS PLUMBING', ['Downpipe missing behind garage', 'Repair wall at cistern stop tap',
+                         'Seal oversized hole at conduit', 'Rework downpipe', 'Punch in downpipe pins']],
   ]);
   console.log('toast:', JSON.stringify(toasts));
   console.log('saved:', saved.length, JSON.stringify(saved));
@@ -133,14 +134,12 @@ console.log('\n--- A · five distinct items for ONE supplier (3 + 2 across two b
   check('all 5 appear in the report', pdf && pdf.length === 5, `${pdf && pdf.length} of 5`);
 }
 
-// ================= B. five items across five suppliers ======================
-console.log('\n--- B · five items, one per block, two suppliers repeated ---');
+// ================= B. five items spread across the three blocks =============
+console.log('\n--- B · five items across three blocks, one supplier repeated ---');
 {
   const { toasts, saved } = await fillAndSave([
-    ['COSTAS PLUMBING', ['Tap washer']],
-    ['AUZ PAINTING', ['Touch up hallway']],
-    ['COSTAS PLUMBING', ['Shower rose']],
-    ['AUZ PAINTING', ['Touch up bed 2']],
+    ['COSTAS PLUMBING', ['Tap washer', 'Shower rose']],
+    ['AUZ PAINTING', ['Touch up hallway', 'Touch up bed 2']],
     ['COSTAS PLUMBING', ['Gas fitting check']],
   ]);
   console.log('toast:', JSON.stringify(toasts));
@@ -178,20 +177,65 @@ console.log('\n--- D · same wording, different suppliers (must NOT be merged) -
     saved.length === 2, `${saved.length} of 2`);
 }
 
-// ================= E. more than three items in ONE block ====================
-console.log('\n--- E · can a supervisor even type 5 items for one supplier in one block? ---');
+// ================= E. the form's shape, and the row's geometry ==============
+// Three suppliers × five defects (Spiro 2026-08-16). The geometry checks are
+// the point: "the pin button exists" passed happily while the row was WRAPPING
+// and the description sat on a line of its own.
+console.log('\n--- E · three blocks of five, each row on ONE line ---');
 {
   await reset();
   await page.waitForTimeout(250);
-  const rows = await page.evaluate(() => ({
-    perBlock: document.querySelectorAll('.add-defect-1').length,
-    blocks: [1, 2, 3, 4, 5].filter(i => document.getElementById(`add-contractor-${i}-input`)).length,
-    addRowButton: !!document.querySelector('[onclick*="addDefectRow"], .add-row, [title*="Add row" i]'),
-  }));
-  console.log('form shape:', JSON.stringify(rows));
-  check('there are only 3 rows per supplier block', rows.perBlock === 3, String(rows.perBlock));
-  check('…and no way to add a 4th row to a block', !rows.addRowButton);
-  console.log(`  >> a supervisor wanting 5 items for one supplier MUST use a second block`);
+  const rows = await page.evaluate(() => {
+    const geo = [...document.querySelectorAll('.add-defect-1')].map(inp => {
+      const row = inp.closest('.defect-input-row');
+      const rb = row.getBoundingClientRect();
+      const i = inp.getBoundingClientRect();
+      const pin = row.querySelector('.row-loc-btn').getBoundingClientRect();
+      const cam = row.querySelector('.row-photo-btn').getBoundingClientRect();
+      const mid = b => b.top + b.height / 2;
+      return {
+        rowH: Math.round(rb.height),
+        share: i.width / rb.width,
+        pinLeft: pin.right <= i.left + 1,
+        camRight: cam.left >= i.right - 1,
+        level: Math.abs(mid(pin) - mid(i)) < 4 && Math.abs(mid(cam) - mid(i)) < 4,
+      };
+    });
+    return {
+      perBlock: document.querySelectorAll('.add-defect-1').length,
+      blocks: [1, 2, 3, 4, 5].filter(i => document.getElementById(`add-contractor-${i}-input`)).length,
+      addRowButton: !!document.querySelector('[onclick*="addDefectRow"], .add-row, [title*="Add row" i]'),
+      geo,
+    };
+  });
+  console.log('form shape:', JSON.stringify({ ...rows, geo: rows.geo[0] }));
+  check('there are 5 rows per supplier block', rows.perBlock === 5, String(rows.perBlock));
+  check('there are 3 supplier blocks', rows.blocks === 3, String(rows.blocks));
+  check('…and no way to add a 6th row to a block', !rows.addRowButton);
+  // One line = the row is no taller than a single input. Wrapped it was ~60px+.
+  check('every row is ONE line high', rows.geo.every(g => g.rowH <= 46),
+    JSON.stringify(rows.geo.map(g => g.rowH)));
+  check('pin sits left of the description, camera right of it',
+    rows.geo.every(g => g.pinLeft && g.camRight));
+  check('all three are on the same line, vertically centred',
+    rows.geo.every(g => g.level));
+  check('the description keeps at least 85% of the row',
+    rows.geo.every(g => g.share >= 0.85),
+    JSON.stringify(rows.geo.map(g => Math.round(g.share * 100) + '%')));
+  // Setting a location must not cost the row any width — the pin says it with
+  // colour, not words, so every row stays exactly as wide as every other.
+  const widths = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.add-defect-1')];
+    pickRowLocation(rows[0].closest('.defect-input-row').querySelector('.row-loc-btn'));
+    const opt = [...document.querySelectorAll('#imp-ov .loc-opt')]
+      .find(b => (b.getAttribute('data-val') || '').length > 8);   // a LONG one
+    const label = opt.getAttribute('data-val');
+    opt.click();
+    return { label, w: rows.map(r => Math.round(r.getBoundingClientRect().width)) };   // the INPUT's width, not the row's
+  });
+  console.log('after setting a long location:', JSON.stringify(widths));
+  check('a row with a location set is no narrower than the rest',
+    new Set(widths.w).size === 1, JSON.stringify(widths));
 }
 
 // ================= F. the report's own status filter =========================

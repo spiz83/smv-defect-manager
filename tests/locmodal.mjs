@@ -207,11 +207,32 @@ console.log('\n--- D · still behaves like a modal ---');
     const b = [...document.querySelectorAll('#imp-ov .loc-opt')].find(x => x.textContent.trim() && !/none/i.test(x.textContent));
     const label = b.textContent.trim();
     b.click();
-    return { label, closed: !document.getElementById('imp-ov'),
-             onRow: (document.querySelector('.row-loc-btn') || {}).textContent };
+    const pin = document.querySelector('.row-loc-btn');
+    return {
+      label, closed: !document.getElementById('imp-ov'),
+      stored: pin.closest('.defect-input-row')._location,
+      lit: pin.classList.contains('has-loc'),
+      title: pin.title,
+      // The pin carries NO text since 2026-08-16 — colour is the whole signal.
+      text: pin.textContent.trim(),
+      opacity: getComputedStyle(pin).opacity,
+    };
   });
   check('picking a location still sets it on the row and closes',
-    picked.closed && picked.onRow.includes(picked.label), JSON.stringify(picked));
+    picked.closed && picked.stored === picked.label, JSON.stringify(picked));
+  check('…and the pin lights up rather than spelling the location out',
+    picked.lit && picked.text === '\u{1F4CD}' && !picked.text.includes(picked.label),
+    JSON.stringify(picked));
+  check('…with the location still on the title, for a long-press',
+    picked.title.includes(picked.label), picked.title);
+  // An empty pin must look different from a set one, or the colour says nothing.
+  const emptyPin = await page.evaluate(() => {
+    const p = [...document.querySelectorAll('.row-loc-btn')].find(b => !b.classList.contains('has-loc'));
+    return p ? getComputedStyle(p).opacity : null;
+  });
+  check('…and a pin with no location is visibly fainter',
+    emptyPin !== null && parseFloat(emptyPin) < parseFloat(picked.opacity) - 0.15,
+    `set ${picked.opacity} vs empty ${emptyPin}`);
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));
