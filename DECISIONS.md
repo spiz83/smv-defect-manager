@@ -2,6 +2,28 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (g) — replace and remove a plan, from a ⋯ menu
+
+- **Spiro: "Ability to remove plan or re-upload/edit."** Three actions on the
+  same file, so one menu rather than three more buttons in a footer that is
+  already full — and the `↻` reload folds in with them, since it belongs to the
+  same group.
+- **Drawn INSIDE the plan overlay, not through `impOverlay`.** The shared modal
+  is `z-index:100001` and this viewer is `100004`. That has now bitten three
+  times in this feature (the defect picker, the photo editor, toasts), so the
+  menu is a CHILD of the overlay: it cannot be behind something it is inside.
+- **Replace goes through the same `_planDoUpload` as a first attach**, so the
+  two cannot drift apart — one path, one set of rules (PDF only, 50MB, upsert),
+  one cache invalidation.
+- **Remove asks first**, in the job's own words, and says the plan comes off for
+  everyone. Afterwards the viewer closes and the job is back to the attach
+  screen, not an error.
+- **Manager-only, both.** A supervisor's menu has the reload and nothing else —
+  the same split the bucket's RLS enforces anyway.
+- **The suite had no `dialog` handler**, so Playwright was silently DISMISSING
+  the confirm and the remove never ran. The check failed for the right reason by
+  accident; it now accepts the dialog and asserts the storage path.
+
 ## 2026-08-16 (f) — the ✕ stops floating and sits on its field
 
 - **Spiro: "the red little cross… needs to be on the top corner of the input

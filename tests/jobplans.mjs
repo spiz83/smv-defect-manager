@@ -167,6 +167,7 @@ await ctx.route('**', route => {
 const errs = [];
 page.on('pageerror', e => errs.push('pageerror: ' + String(e).slice(0, 220)));
 page.on('console', m => { if (m.type() === 'error' && !/supabase-js|Failed to load resource/.test(m.text())) errs.push('console: ' + m.text().slice(0, 200)); });
+page.on('dialog', d => d.accept());     // "Remove the plan from job …?"
 await page.addInitScript(seed => {
   localStorage.setItem('defectTrackerDB', JSON.stringify(seed));
   localStorage.setItem('dm_preview', '0');
@@ -196,6 +197,7 @@ const installPlans = (mode) => page.evaluate(({ mode, port }) => {
     },
     async forget() {},
     canEdit: () => mode !== 'supervisor',
+    async remove(jn) { window.__removed = window.__removed || []; window.__removed.push(String(jn) + '.pdf'); return { ok: true }; },
     async upload(jn, file) {
       window.__uploads = window.__uploads || [];
       window.__uploads.push({ path: String(jn) + '.pdf', name: file.name, type: file.type, size: file.size });
@@ -701,11 +703,16 @@ console.log('\n--- G · a 15-sheet plan set ---');
     window.__forgot = [];
     const prev = window.CloudPlans.forget;
     window.CloudPlans.forget = async (jn) => { window.__forgot.push(jn); return prev && prev(jn); };
-    const hasBtn = !!document.querySelector('[onclick="planReload()"]');
+    // The reload lives in the ⋯ menu now, with replace and remove.
+    const hasBtn = !!document.querySelector('[onclick="planMenu()"]');
+    planMenu();
+    const inMenu = [...document.querySelectorAll('#plan-menu div[onclick]')].some(d => /Reload/.test(d.innerText));
+    planMenuClose();
     await planReload();
-    return { hasBtn, forgot: window.__forgot };
+    return { hasBtn, inMenu, forgot: window.__forgot };
   });
-  check('the viewer offers a reload for a plan replaced in CH Tracker', reloaded.hasBtn);
+  check('the viewer offers a reload for a plan replaced in CH Tracker',
+    reloaded.hasBtn && reloaded.inMenu, JSON.stringify({ menu: reloaded.hasBtn, reload: reloaded.inMenu }));
   check('…which drops the cached copy for THIS job before fetching again',
     reloaded.forgot.length === 1 && reloaded.forgot[0] === '306648', JSON.stringify(reloaded.forgot));
   await page.waitForSelector('#plan-canvas', { timeout: 15000 });
@@ -969,6 +976,84 @@ console.log('\n--- J · pinch, and Mark up opening ---');
     await page.evaluate(() => _planState.page) === pageBefore,
     `${pageBefore} -> ${await page.evaluate(() => _planState.page)}`);
   await page.evaluate(() => { planZoom(0); closeJobPlan(); });
+}
+
+// ===========================================================================
+//  K. Replace and remove a plan.
+// ===========================================================================
+// Spiro 2026-08-16: "Ability to remove plan or re-upload/edit". Three actions
+// on the same file, so one ⋯ menu rather than three more buttons in a footer
+// that is already full — and the reload folds in with them.
+console.log('\n--- K · replace and remove ---');
+{
+  await installPlans('set');
+  await page.evaluate(() => { db.data.defects = []; db.save(); window.__removed = []; });
+  await page.evaluate(() => { viewDefectsForAddress(1); openJobPlan(1); });
+  await page.waitForSelector('#plan-canvas', { timeout: 15000 });
+  await page.waitForFunction(() => document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+
+  await page.evaluate(() => planMenu());
+  await page.waitForSelector('#plan-menu', { timeout: 5000 });
+  const opts = await page.evaluate(() => [...document.querySelectorAll('#plan-menu div[onclick]')].map(d => d.innerText.trim()));
+  console.log('  menu:', JSON.stringify(opts));
+  check('the ⋯ menu offers reload, replace and remove',
+    opts.some(t => /Reload/.test(t)) && opts.some(t => /Replace/.test(t)) && opts.some(t => /Remove/.test(t)), JSON.stringify(opts));
+  check('…and a way to back out of it', opts.some(t => /Cancel/.test(t)));
+
+  // Drawn INSIDE the plan overlay — the shared modal is 100001 and this viewer
+  // is 100004, which has already bitten three times.
+  const inside = await page.evaluate(() => {
+    const m = document.getElementById('plan-menu');
+    const r = m.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.bottom - 40));
+    return { child: m.parentElement === document.getElementById('plan-ov'), onTop: !!(hit && m.contains(hit)) };
+  });
+  check('…and it is ON SCREEN, not behind the viewer', inside.child && inside.onTop, JSON.stringify(inside));
+
+  await page.evaluate(() => planMenuClose());
+  check('tapping cancel closes it', await page.evaluate(() => !document.getElementById('plan-menu')));
+
+  // --- Remove ---
+  const removed = await page.evaluate(async () => {
+    window.__removed = [];
+    await planRemove();                       // the confirm() is auto-accepted
+    return { asked: window.__removed, viewerGone: !document.getElementById('plan-ov') };
+  });
+  console.log('  removed:', JSON.stringify(removed));
+  check('removing takes the plan off THIS job', removed.asked.length === 1 && removed.asked[0] === '306648.pdf', JSON.stringify(removed));
+  check('…and closes the viewer, since there is nothing left to look at', removed.viewerGone);
+
+  // Afterwards the job is back to "no plan", with the attach box.
+  await page.evaluate(() => { window.CloudPlans.bytes = async () => ({ error: 'No plan has been uploaded for this job yet. Attach it in CH Tracker.' }); });
+  await page.evaluate(() => openJobPlan(1));
+  await page.waitForSelector('#plan-drop', { timeout: 8000 });
+  check('…and the job goes back to offering an attach, not an error',
+    await page.evaluate(() => !!document.getElementById('plan-drop')));
+  await page.evaluate(() => closeJobPlan());
+
+  // --- Replace goes through the SAME upload path as a first attach ---
+  await installPlans('set');
+  await page.evaluate(() => { viewDefectsForAddress(1); openJobPlan(1); });
+  await page.waitForFunction(() => document.getElementById('plan-canvas') && document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+  const rep = await page.evaluate(async () => {
+    window.__uploads = [];
+    await _planDoUpload(1, new File([new Uint8Array([37, 80, 68, 70])], 'Plans-rev-D.pdf', { type: 'application/pdf' }));
+    return window.__uploads;
+  });
+  check('replacing uploads to the same path, so there is still one plan per job',
+    rep.length === 1 && rep[0].path === '306648.pdf', JSON.stringify(rep));
+
+  // --- A supervisor gets the reload only ---
+  await installPlans('supervisor');
+  await page.evaluate(() => { viewDefectsForAddress(1); openJobPlan(1); });
+  await page.waitForFunction(() => document.getElementById('plan-canvas') && document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+  await page.evaluate(() => planMenu());
+  await page.waitForSelector('#plan-menu', { timeout: 5000 });
+  const supOpts = await page.evaluate(() => [...document.querySelectorAll('#plan-menu div[onclick]')].map(d => d.innerText.trim()));
+  console.log('  supervisor menu:', JSON.stringify(supOpts));
+  check('a supervisor can reload but not replace or remove',
+    supOpts.some(t => /Reload/.test(t)) && !supOpts.some(t => /Replace|Remove/.test(t)), JSON.stringify(supOpts));
+  await page.evaluate(() => { planMenuClose(); closeJobPlan(); });
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]|pdf/i.test(e));

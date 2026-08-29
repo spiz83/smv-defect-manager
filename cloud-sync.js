@@ -2381,6 +2381,25 @@
         return { error: (e && e.message) || 'Could not attach the plan.' };
       }
     },
+    // Take the plan off the job entirely. Manager-only by RLS; CH Tracker does
+    // the same thing when a job is marked Handover Complete.
+    async remove(jobNumber) {
+      const jn = String(jobNumber || '').trim();
+      if (!jn) return { error: 'This job has no job number.' };
+      if (!sb) return { error: 'Not signed in.' };
+      try {
+        const { error } = await sb.storage.from(PLANS_BUCKET).remove([planPath(jn)]);
+        if (error) {
+          const m = error.message || '';
+          if (/row-level security|not authorized|permission/i.test(m)) return { error: 'Only a manager can remove plans.' };
+          return { error: m || 'Could not remove the plan.' };
+        }
+        try { const c = await caches.open(PLAN_CACHE); await c.delete('/plan/' + encodeURIComponent(jn)); } catch (e) {}
+        return { ok: true };
+      } catch (e) {
+        return { error: (e && e.message) || 'Could not remove the plan.' };
+      }
+    },
     // Drop a cached plan (the manager replaced it in CH Tracker).
     async forget(jobNumber) {
       try { const c = await caches.open(PLAN_CACHE); await c.delete('/plan/' + encodeURIComponent(String(jobNumber || '').trim())); } catch (e) {}
