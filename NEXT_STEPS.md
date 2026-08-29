@@ -15,6 +15,12 @@ After running it, check on a phone: Settings → Defect wordings → open a trad
 
 ## 📐 Job plans read straight from CH Tracker (2026-08-16) — build `2026-08-16b`
 
+**The plan viewer is `z-index:100004`. Anything opened FROM it must be checked
+against that** — the photo editor (100000), the shared modal (100001) and
+toasts (was 2000) all opened behind it at some point, each looking like "the
+button does nothing". The viewer hides itself for the editor and the defect
+picker; toasts were raised to 100010.
+
 **Every plan control lives at the BOTTOM of the screen** — Back, the job, the
 page counter, zoom, Mark up. Do not move any of them back to a top bar: iOS
 draws the clock and the Dynamic Island there, and padding for

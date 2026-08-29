@@ -2,6 +2,33 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (e) — pinch to zoom; and Mark up was opening behind the plan
+
+- **"When I press on markup, it doesn't allow me to do anything."** Two silent
+  failures stacked. The photo editor is `z-index:100000`, the plan viewer is
+  `100004` — so Mark up opened the editor BEHIND the plan. And the toast that
+  would have explained anything was `z-index:2000`, behind everything, so even
+  "Add a defect on this job first" was invisible.
+- **The plan viewer now steps aside for the editor** and comes back if you
+  cancel — the same fix the defect picker needed. **THIRD time this z-order trap
+  has bitten in this feature.** The rule: anything opened from a screen at
+  100004 has to be checked against it, and a full-screen overlay hides more
+  than it looks like it does.
+- **Toasts moved to 100010.** A toast that cannot be seen is not a message; it
+  is silence with extra steps.
+- **Pinch to zoom** (Spiro: "similar to how you would in native iPhone"). The
+  buttons stay — better with gloves and one hand full — but nobody should have
+  to reach for them.
+- **CSS-scale during the gesture, re-render once at the end.** Re-rendering a
+  12-megapixel canvas on every `touchmove` turns a smooth pinch into a
+  slideshow; scaling the existing bitmap is instant and the single redraw
+  afterwards makes it sharp.
+- **The point under the fingers stays put.** Anchored on the sheet, not the
+  screen, so pinching the ensuite does not walk off to the garage.
+- **Clamped to Fit at the bottom and the 12MP canvas ceiling at the top**, and
+  a two-finger gesture must not also register as a page swipe — all three
+  pinned by tests.
+
 ## 2026-08-16 (d) — all the plan controls moved to the BOTTOM
 
 - **Spiro, after (c) shipped: "Needs to be at the bottom as the time on the

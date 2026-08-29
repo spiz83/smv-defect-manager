@@ -864,6 +864,113 @@ console.log('\n--- I · attach a plan from the app ---');
   await page.evaluate(() => closeJobPlan());
 }
 
+// ===========================================================================
+//  J. Pinch to zoom, and Mark up actually opening.
+// ===========================================================================
+// Spiro 2026-08-16, on a real 21-sheet set: "create the ability to zoom in zoom
+// out by using two fingers… similar to how you would in native iPhone", and
+// "when I press on markup, it doesn't allow me to do anything".
+//
+// The second was z-order, again: the photo editor is 100000 and this viewer is
+// 100004, so Mark up opened the editor BEHIND the plan. The toast that would
+// have explained it was 2000 — behind everything. Two silent failures stacked.
+console.log('\n--- J · pinch, and Mark up opening ---');
+{
+  await installPlans('set');
+  await page.evaluate(() => {
+    db.data.defects = [{ id: 12, addressId: 1, contractorId: 1, description: 'Align door with jamb.', location: 'Ensuite', status: 'open', completed: false }];
+    db.save();
+    window.__edited = [];
+    window.CloudPhotos = {
+      count: () => 0, pendingCount: () => 0, refreshCounts: () => {},
+      async editPhoto(f) {
+        // Record whether the plan was out of the way WHILE the editor was up —
+        // that is the whole bug.
+        window.__edited.push({ name: f.name, planHidden: (document.getElementById('plan-ov') || {}).style.display === 'none' });
+        return f;
+      },
+      async savePhoto() {},
+    };
+  });
+  await page.evaluate(() => { viewDefectsForAddress(1); openJobPlan(1); });
+  await page.waitForSelector('#plan-canvas', { timeout: 15000 });
+  await page.waitForFunction(() => document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+
+  // --- Mark up has to be visible when it opens ---
+  await page.evaluate(() => planMarkup());
+  await page.waitForFunction(() => (window.__edited || []).length > 0, { timeout: 8000 });
+  const ed = await page.evaluate(() => window.__edited[0]);
+  check('Mark up steps the plan out of the way, so the editor is not behind it',
+    ed.planHidden, JSON.stringify(ed));
+  await page.waitForSelector('#plan-defect-list', { timeout: 8000 });
+  await page.evaluate(() => { document.getElementById('imp-close').click(); });
+  await page.waitForTimeout(200);
+  check('…and cancelling brings the plan back', await page.evaluate(() =>
+    (document.getElementById('plan-ov') || {}).style.display === 'flex'));
+
+  // A toast behind a full-screen overlay is silence — that is how "nothing
+  // happens" happened twice over.
+  const toastZ = await page.evaluate(() => {
+    const d = document.createElement('div'); d.className = 'toast'; document.body.appendChild(d);
+    const z = getComputedStyle(d).zIndex; d.remove();
+    const ov = getComputedStyle(document.getElementById('plan-ov')).zIndex;
+    return { toast: Number(z), plan: Number(ov) };
+  });
+  check('a toast shows ABOVE the plan viewer, or its warnings are invisible',
+    toastZ.toast > toastZ.plan, JSON.stringify(toastZ));
+
+  // --- Pinch ---
+  const pinch = async (from, to) => page.evaluate(({ from, to }) => {
+    const box = document.getElementById('plan-scroll');
+    const T = (x1, x2) => [
+      new Touch({ identifier: 1, target: box, clientX: x1, clientY: 400 }),
+      new Touch({ identifier: 2, target: box, clientX: x2, clientY: 400 }),
+    ];
+    const mid = 195;
+    box.dispatchEvent(new TouchEvent('touchstart', { touches: T(mid - from / 2, mid + from / 2), bubbles: true, cancelable: true }));
+    box.dispatchEvent(new TouchEvent('touchmove', { touches: T(mid - to / 2, mid + to / 2), bubbles: true, cancelable: true }));
+    box.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: T(mid - to / 2, mid + to / 2), bubbles: true, cancelable: true }));
+  }, { from, to });
+
+  const w0 = await page.evaluate(() => parseFloat(document.getElementById('plan-canvas').style.width));
+  await pinch(100, 260);                       // fingers apart = zoom in
+  await page.waitForTimeout(600);
+  const w1 = await page.evaluate(() => parseFloat(document.getElementById('plan-canvas').style.width));
+  const s1 = await page.evaluate(() => _planState.scale);
+  console.log(`  pinch out: ${w0}px -> ${w1}px (scale ${s1.toFixed(2)})`);
+  check('spreading two fingers zooms in', w1 > w0 * 1.8, `${w0} -> ${w1}`);
+  check('…and it is a real re-render at the new scale, not a stretched bitmap',
+    await page.evaluate(() => { const c = document.getElementById('plan-canvas'); return c.width > parseFloat(c.style.width); }),
+    await page.evaluate(() => { const c = document.getElementById('plan-canvas'); return c.width + ' backing vs ' + c.style.width + ' css'; }));
+  check('…and the zoom label follows the fingers',
+    /2\d\d%|1\d\d%/.test(await page.evaluate(() => document.getElementById('plan-zoomlbl').textContent)),
+    await page.evaluate(() => document.getElementById('plan-zoomlbl').textContent));
+
+  await pinch(260, 100);                       // fingers together = zoom out
+  await page.waitForTimeout(600);
+  const w2 = await page.evaluate(() => parseFloat(document.getElementById('plan-canvas').style.width));
+  console.log(`  pinch in: ${w1}px -> ${w2}px`);
+  check('bringing them together zooms out', w2 < w1 * 0.7, `${w1} -> ${w2}`);
+
+  // Never smaller than Fit, never past the canvas ceiling.
+  await pinch(300, 40); await page.waitForTimeout(500);
+  check('…and it stops at Fit rather than shrinking to nothing',
+    await page.evaluate(() => _planState.scale >= 0.99 && _planState.scale <= 1.01),
+    String(await page.evaluate(() => _planState.scale)));
+  for (let i = 0; i < 4; i++) { await pinch(60, 300); await page.waitForTimeout(400); }
+  check('…and never past the canvas ceiling a phone can hold',
+    await page.evaluate(() => { const c = document.getElementById('plan-canvas'); return c.width * c.height <= 12e6 + 1; }),
+    await page.evaluate(() => { const c = document.getElementById('plan-canvas'); return (c.width * c.height / 1e6).toFixed(1) + 'MP'; }));
+
+  // A two-finger gesture must not also be read as a page swipe.
+  const pageBefore = await page.evaluate(() => _planState.page);
+  await pinch(80, 240); await page.waitForTimeout(500);
+  check('a pinch does not flip the sheet as well',
+    await page.evaluate(() => _planState.page) === pageBefore,
+    `${pageBefore} -> ${await page.evaluate(() => _planState.page)}`);
+  await page.evaluate(() => { planZoom(0); closeJobPlan(); });
+}
+
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]|pdf/i.test(e));
 console.log('\nerrors:', bad.length ? bad : 'none');
 if (bad.length) fail.push('page errors');
