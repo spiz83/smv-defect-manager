@@ -10518,32 +10518,47 @@
         // spot as long as the app has been online once, and the PDF itself is
         // cached after the first open.
         let _planState = null;   // { jobNumber, pdf, page, scale, canvas }
+        // Bumped on every open and every close. The open path awaits a font, a
+        // download and a parse; hitting Back part-way through has to actually
+        // leave, not have the fetch finish and re-open the screen on top of
+        // wherever the supervisor went next.
+        let _planOpenSeq = 0;
 
         function jobPlanNumber(addressId) {
             const a = db.getAddress(addressId);
             return (a && String(a.propertyNumber || '').trim()) || '';
         }
         async function openJobPlan(addressId) {
+            const seq = ++_planOpenSeq;
+            const alive = () => seq === _planOpenSeq;
             const jn = jobPlanNumber(addressId);
             if (!window.CloudPlans || !window.CloudPlans.available()) {
                 showToast('Plans need a cloud sign-in', true); return;
             }
             if (!jn) { showToast('This job has no job number, so no plan to look up', true); return; }
+            // Set the job first so every message below — including the failures —
+            // carries a header that says which job and offers a way back.
+            _planState = { jobNumber: jn, addressId, pdf: null, page: 1, scale: 1, fit: 1, rot: 0 };
             _planOverlay(`<div class="plan-msg">Opening plan for job ${_escHtml(jn)}…</div>`);
             try {
                 await ensurePdfJs();
             } catch (e) {
+                if (!alive()) return;
                 _planOverlay('<div class="plan-msg">The PDF reader could not be loaded. Open the app once with signal, then try again.</div>');
                 return;
             }
+            if (!alive()) return;
             const got = await window.CloudPlans.bytes(jn);
+            if (!alive()) return;
             if (got.error) { _planOverlay('<div class="plan-msg">' + _escHtml(got.error) + '</div>'); return; }
             try {
                 const pdf = await window.pdfjsLib.getDocument({ data: got.buf }).promise;
+                if (!alive()) return;
                 _planState = { jobNumber: jn, addressId, pdf, page: 1, scale: 1, fit: 1, rot: 0 };
                 _planRenderShell();
                 await _planDraw();
             } catch (e) {
+                if (!alive()) return;
                 _planOverlay('<div class="plan-msg">That plan could not be read as a PDF.</div>');
             }
         }
@@ -10556,11 +10571,28 @@
                     'display:flex;flex-direction:column;';
                 document.body.appendChild(ov);
             }
-            ov.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;flex:1;padding:24px;' +
-                'text-align:center;font-size:15px;color:var(--text-primary);line-height:1.5;">' + inner + '</div>';
+            // ALWAYS a header with Back. This is a full-screen, fixed overlay: a
+            // message with no header is a dead end — "No plan has been uploaded"
+            // filled the screen with no way off it but force-quitting the app
+            // (Spiro, 2026-08-16). Every state that can be reached must be
+            // leavable, including the ones that only happen when something is
+            // wrong, and including the loading state if the fetch hangs.
+            const jn = (_planState && _planState.jobNumber) || '';
+            ov.innerHTML =
+                '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);' +
+                'border-bottom:1px solid var(--border-color);flex:0 0 auto;">' +
+                '<button onclick="closeJobPlan()" style="background:none;border:none;font-size:17px;font-weight:600;' +
+                'color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Back</button>' +
+                '<div style="font-weight:700;font-size:16px;color:var(--text-primary);">📐 ' +
+                (jn ? 'Job ' + _escHtml(jn) : 'Plans') + '</div></div>' +
+                '<div style="flex:1;overflow:auto;padding:54px 26px 26px;text-align:center;' +
+                'font-size:16px;color:var(--text-primary);line-height:1.55;">' +
+                '<div style="font-size:44px;line-height:1;margin-bottom:14px;opacity:.5;">📐</div>' +
+                '<div style="max-width:320px;margin:0 auto;">' + inner + '</div></div>';
             return ov;
         }
         function closeJobPlan() {
+            _planOpenSeq++;                    // abandon any open still in flight
             planCloseSheets();
             if (_planState && _planState.task) { try { _planState.task.cancel(); } catch (e) {} }
             const ov = document.getElementById('plan-ov');
@@ -12762,7 +12794,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16a';
+        const APP_VERSION = '2026-08-16b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12836,7 +12868,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16a"></script>
+    <script src="cloud-sync.js?v=2026-08-16b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

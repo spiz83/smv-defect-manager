@@ -2,6 +2,29 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (b) — the plan messages were a dead end
+
+- **Spiro, on a real phone: "Any issue you can see here LOL fix please."** The
+  screen said "No plan has been uploaded for this job yet" — full screen, no
+  header, no Back, nothing. The only way off it was to force-quit the app.
+- **`_planOverlay` rendered the message and NOTHING else.** The header with Back
+  is built by `_planRenderShell`, which only runs on the success path. So every
+  state that means something went wrong — no plan, no bucket, unreadable PDF,
+  no PDF reader — and the loading state too, were all inescapable.
+- **The header is now part of `_planOverlay`**, so it exists on every state the
+  screen can be in. It also names the job, because "no plan" is more useful when
+  you can see WHICH job you are being told about.
+- **Leaving mid-load now actually leaves.** The open path awaits a font, a
+  download and a parse; a Back during that used to be undone when the fetch
+  finished and re-opened the viewer over wherever the supervisor had gone.
+  `_planOpenSeq` abandons an open that is no longer wanted.
+- **And the message moved up under the header.** Centring it in a full-height
+  overlay put it halfway down an empty screen — measured at y=470 of 844,
+  now 159.
+- **The lesson, again: an error path is a screen too.** Twenty-six suites and
+  six of my own screenshots went past this, because I only ever photographed
+  the state where everything worked.
+
 ## 2026-08-16 (a) — ↻ reload, for a plan replaced in CH Tracker
 
 - **The cache that makes plans work with no signal is exactly what makes a

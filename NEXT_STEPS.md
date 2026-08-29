@@ -13,6 +13,13 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
+## 📐 Job plans read straight from CH Tracker (2026-08-16) — build `2026-08-16b`
+
+**Every state of the plan viewer must have a Back button.** `_planOverlay`
+builds the header, so a message state is never a dead end — that shipped broken
+and a supervisor had to force-quit the app to get out. If you add a new message
+path, it gets the header for free; do not bypass `_planOverlay`.
+
 ## 📐 Job plans read straight from CH Tracker (2026-08-15) — build `2026-08-15x`
 
 A real set is ~15 sheets. Two ways through it: the sheet index (tap the page

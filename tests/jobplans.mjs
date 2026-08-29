@@ -337,14 +337,57 @@ console.log('\n--- D · the other outcomes ---');
   await page.waitForFunction(() => /uploaded|Attach/i.test((document.getElementById('plan-ov') || {}).innerText || ''), { timeout: 8000 });
   check('a job with no plan says so, and says where to attach one',
     /No plan has been uploaded/.test(await ovText()) && /CH Tracker/.test(await ovText()), await ovText());
-  await page.evaluate(() => closeJobPlan());
+  // This is a FULL-SCREEN fixed overlay. A message with no header is a dead end
+  // — force-quit the app or nothing (Spiro, 2026-08-16, on exactly this screen).
+  const wayOut = await page.evaluate(() => {
+    const ov = document.getElementById('plan-ov');
+    const b = [...ov.querySelectorAll('button')].find(x => /back/i.test(x.textContent));
+    if (!b) return { back: false };
+    const r = b.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+    return { back: true, tappable: !!(hit && (hit === b || b.contains(hit))), says: ov.innerText.split('\n')[0] };
+  });
+  check('…and there is a Back button on it, not a dead end', wayOut.back, JSON.stringify(wayOut));
+  check('…which is actually tappable, not covered', wayOut.tappable, JSON.stringify(wayOut));
+  // Centring the message in a full-height overlay put it halfway down an empty
+  // screen, well below where anyone looks. It belongs under the header.
+  const msgY = await page.evaluate(() => {
+    const ov = document.getElementById('plan-ov');
+    const el = [...ov.querySelectorAll('div')].find(d => /No plan has been uploaded/.test(d.textContent) && d.children.length === 0);
+    return el ? Math.round(el.getBoundingClientRect().top) : -1;
+  });
+  console.log('  message sits at y =', msgY, 'of 844');
+  check('…and the message is near the top, not stranded mid-screen', msgY > 0 && msgY < 300, String(msgY));
+  check('…with the job in the header so you know what you are looking at',
+    /306648/.test(await ovText()), (await ovText() || '').split('\n').slice(0, 2).join(' | '));
+  await page.evaluate(() => { const ov = document.getElementById('plan-ov'); [...ov.querySelectorAll('button')].find(x => /back/i.test(x.textContent)).click(); });
+  check('…and tapping it actually leaves', await page.evaluate(() => !document.getElementById('plan-ov')));
 
   await installPlans('no-bucket');
   await page.evaluate(() => openJobPlan(1));
   await page.waitForFunction(() => /migration/i.test((document.getElementById('plan-ov') || {}).innerText || ''), { timeout: 8000 });
   check('a missing bucket names the migration rather than looking like "no plan"',
     /migration 101/.test(await ovText()), await ovText());
+  check('…and that message has a way out too',
+    await page.evaluate(() => [...document.getElementById('plan-ov').querySelectorAll('button')].some(x => /back/i.test(x.textContent))));
   await page.evaluate(() => closeJobPlan());
+
+  // Leaving DURING the load must actually leave. The open path awaits a font, a
+  // download and a parse; without a guard the fetch finishes and re-opens the
+  // plan on top of wherever the supervisor went next.
+  await page.evaluate(() => {
+    window.CloudPlans.bytes = () => new Promise(res => { window.__release = res; });
+  });
+  page.evaluate(() => openJobPlan(1));
+  await page.waitForFunction(() => !!document.getElementById('plan-ov'), { timeout: 5000 });
+  check('the loading screen has a Back button as well',
+    await page.evaluate(() => [...document.getElementById('plan-ov').querySelectorAll('button')].some(x => /back/i.test(x.textContent))));
+  await page.evaluate(() => closeJobPlan());
+  await page.evaluate(() => { window.__release({ error: 'nope' }); });
+  await page.waitForTimeout(400);
+  check('…and leaving mid-load stays left, rather than the fetch re-opening it',
+    await page.evaluate(() => !document.getElementById('plan-ov')));
+  await installPlans('present');
 
   // A job with no job_number can never have a plan — say that, don't spin.
   await installPlans('present');
