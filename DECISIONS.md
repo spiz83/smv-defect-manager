@@ -2,7 +2,7 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
-## 2026-08-16 (pending) — two whole supplier blocks on one screen
+## 2026-08-16 (o) — two whole supplier blocks on one screen
 
 - **Spiro: "reduce the height of the input fields so that I can see all five
   defects of two contractors."** In `m` the fifth row of Contractor 2 sat about
