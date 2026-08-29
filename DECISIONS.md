@@ -2,6 +2,18 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (a) — ↻ reload, for a plan replaced in CH Tracker
+
+- **The cache that makes plans work with no signal is exactly what makes a
+  REPLACEMENT invisible.** A manager re-uploads in CH Tracker; the phone that
+  already opened that job keeps serving yesterday's sheets from the Cache API,
+  with nothing to say so. Nothing in this app can know the bucket changed.
+- **So the viewer header has `↻`**: drop the cached copy for this job
+  (`CloudPlans.forget`), then fetch and reopen. One tap, no settings screen.
+- **Found by thinking about the first real use** — attach a set, look at it,
+  fix the set, attach again — not by a test failing. It would have bitten
+  during exactly the testing this was built for.
+
 ## 2026-08-15 (z) — the sheet names were being clipped off the cards
 
 - **Screenshotting the real 23-sheet set showed the index with NO names on it**

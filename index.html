@@ -10592,7 +10592,8 @@
                 <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);border-bottom:1px solid var(--border-color);flex:0 0 auto;">
                     <button onclick="closeJobPlan()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Back</button>
                     <div style="font-weight:700;font-size:16px;color:var(--text-primary);">📐 Job ${_escHtml(st.jobNumber)}</div>
-                    <span id="plan-pagenav" style="margin-left:auto;display:flex;align-items:center;gap:4px;"></span>
+                    <button onclick="planReload()" title="Fetch the latest plan from CH Tracker" style="margin-left:auto;background:none;border:none;font-size:17px;cursor:pointer;padding:2px 6px;color:var(--text-secondary);">↻</button>
+                    <span id="plan-pagenav" style="display:flex;align-items:center;gap:4px;"></span>
                 </div>
                 <div id="plan-scroll" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:#5a5a5a;text-align:center;">
                     <canvas id="plan-canvas" style="display:block;margin:0 auto;"></canvas>
@@ -10846,6 +10847,20 @@
                     el.textContent = (await _planSheetLabel(st.pdf, i)) || 'Sheet ' + i;
                 }
             }
+        }
+        // The plan is cached after the first open so it works with no signal. That
+        // is right on site and wrong the moment a manager REPLACES the plan in CH
+        // Tracker — the phone would keep showing yesterday's sheets with no way
+        // to tell. Nothing in the app can know the bucket changed, so this is the
+        // out: drop the cached copy and fetch again.
+        async function planReload() {
+            const st = _planState;
+            if (!st) return;
+            const id = st.addressId, jn = st.jobNumber;
+            if (window.CloudPlans && window.CloudPlans.forget) await window.CloudPlans.forget(jn);
+            closeJobPlan();
+            showToast('Fetching the latest plan…');
+            openJobPlan(id);
         }
         function planCloseSheets() { const o = document.getElementById('plan-sheets'); if (o) o.remove(); }
         function planGoToSheet(n) {
@@ -12747,7 +12762,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15z';
+        const APP_VERSION = '2026-08-16a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12821,7 +12836,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15z"></script>
+    <script src="cloud-sync.js?v=2026-08-16a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

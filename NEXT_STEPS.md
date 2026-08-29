@@ -47,8 +47,9 @@ bite a later change:
 - **The bucket needs CH Tracker's migration 101 applied.** If it is missing the
   viewer says so by name rather than reporting "no plan" for every job.
 - **Cached plans live in the `dm-job-plans-v1` Cache API bucket**, keyed
-  `/plan/{job_number}`. `CloudPlans.forget(jobNumber)` clears one — needed if a
-  manager replaces a plan and a phone keeps showing the old one.
+  `/plan/{job_number}`. A phone that opened a job keeps serving that copy, so a
+  plan REPLACED in CH Tracker is invisible until the cache is dropped — that is
+  what `↻` in the viewer header does (`planReload` → `CloudPlans.forget`).
 - **Renders must stay serialised** (cancel + token in `_planDraw`). pdf.js
   throws on a second render against the same canvas, which two quick taps do.
 

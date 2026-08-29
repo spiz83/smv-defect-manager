@@ -614,6 +614,25 @@ console.log('\n--- G · a 15-sheet plan set ---');
   const name = await page.evaluate(() => window.__cap.name);
   check('a markup records which sheet it came off', /-p5\.jpg$/.test(name), name);
   await page.evaluate(() => { const b = document.getElementById('imp-close'); if (b) b.click(); });
+  // Replacing a plan in CH Tracker has to be reachable from here, or a phone
+  // shows yesterday's sheets forever — the cache that makes it work offline is
+  // exactly what makes a replacement invisible.
+  const reloaded = await page.evaluate(async () => {
+    window.__forgot = [];
+    const prev = window.CloudPlans.forget;
+    window.CloudPlans.forget = async (jn) => { window.__forgot.push(jn); return prev && prev(jn); };
+    const hasBtn = !!document.querySelector('[onclick="planReload()"]');
+    await planReload();
+    return { hasBtn, forgot: window.__forgot };
+  });
+  check('the viewer offers a reload for a plan replaced in CH Tracker', reloaded.hasBtn);
+  check('…which drops the cached copy for THIS job before fetching again',
+    reloaded.forgot.length === 1 && reloaded.forgot[0] === '306648', JSON.stringify(reloaded.forgot));
+  await page.waitForSelector('#plan-canvas', { timeout: 15000 });
+  await page.waitForFunction(() => document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+  check('…and the plan comes back up rather than closing on you',
+    await page.evaluate(() => !!_planState && _planState.pdf.numPages === 15));
+
   await page.evaluate(() => closeJobPlan());
   check('closing the plan takes the sheet index with it',
     await page.evaluate(() => !document.getElementById('plan-sheets') && !document.getElementById('plan-ov')));
