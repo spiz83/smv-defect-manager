@@ -10788,14 +10788,19 @@
                     <button onclick="planCloseSheets()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Plan</button>
                     <div style="font-weight:700;font-size:16px;color:var(--text-primary);">${n} sheet${n === 1 ? '' : 's'}</div>
                 </div>
-                <div id="plan-sheet-grid" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start;"></div>`;
+                <div id="plan-sheet-grid" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start;grid-auto-rows:max-content;align-items:start;"></div>`;
             document.body.appendChild(ov);
             const grid = ov.querySelector('#plan-sheet-grid');
             for (let i = 1; i <= n; i++) {
                 const cell = document.createElement('div');
                 cell.onclick = () => planGoToSheet(i);
+                // height:max-content as well as the grid's grid-auto-rows: the row
+                // track was sizing to a fraction of the container with 23 sheets,
+                // and because the card is overflow:hidden (for the rounded
+                // corners) it silently CLIPPED the caption off the bottom — the
+                // thumbnails looked fine and the names were simply gone.
                 cell.style.cssText = 'background:var(--bg-primary,#fff);border:' + (i === st.page ? '2px solid var(--blue,#2563eb)' : '1px solid var(--border-color,#ccc)') +
-                    ';border-radius:10px;overflow:hidden;cursor:pointer;';
+                    ';border-radius:10px;overflow:hidden;cursor:pointer;height:max-content;';
                 // The label is the point of this screen — a grid of fifteen grey
                 // rectangles all look the same on a phone, "5 ELEVATIONS" does
                 // not. So it reads like a caption, not a footnote.
@@ -12742,7 +12747,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15y';
+        const APP_VERSION = '2026-08-15z';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12816,7 +12821,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15y"></script>
+    <script src="cloud-sync.js?v=2026-08-15z"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

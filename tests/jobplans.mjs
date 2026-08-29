@@ -563,6 +563,16 @@ console.log('\n--- G · a 15-sheet plan set ---');
     SHEET_TITLES.every((t, i) => sheets[i].indexOf(t) >= 0), JSON.stringify(sheets.slice(0, 4)));
   check('…so "where are the elevations" is answerable at a glance',
     sheets.some(t => /^5\b.*ELEVATIONS NORTH SOUTH/.test(t)), JSON.stringify(sheets.filter(t => /ELEVATION/i.test(t))));
+  // In the DOM is not on screen: the card is overflow:hidden for its rounded
+  // corners, so a short row track clipped the caption off the bottom while the
+  // thumbnails looked perfect. Measure that the caption is INSIDE its card.
+  const capped = await page.evaluate(() => [...document.querySelectorAll('#plan-sheet-grid > div')].map(c => {
+    const row = c.querySelector('.lbl').parentElement;
+    const cr = c.getBoundingClientRect(), rr = row.getBoundingClientRect();
+    return rr.height > 8 && rr.bottom <= cr.bottom + 1 && rr.top >= cr.top - 1;
+  }));
+  check('every sheet name is visible inside its card, not clipped off',
+    capped.length === 15 && capped.every(Boolean), `${capped.filter(Boolean).length}/${capped.length}`);
   check('…and each has a thumbnail, not an empty box',
     await page.evaluate(() => [...document.querySelectorAll('#plan-sheet-grid canvas')].filter(c => c.width > 20).length === 15),
     String(await page.evaluate(() => document.querySelectorAll('#plan-sheet-grid canvas').length)));

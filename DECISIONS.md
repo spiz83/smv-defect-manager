@@ -2,6 +2,24 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (z) — the sheet names were being clipped off the cards
+
+- **Screenshotting the real 23-sheet set showed the index with NO names on it**
+  — thumbnails only. The names were correct, extracted, and set on the right
+  elements. They were being CLIPPED.
+- **The row track was sizing to a fraction of the container**, so with 23 sheets
+  each card box came out 55px tall while its contents were 156px. The card is
+  `overflow:hidden` for its rounded corners, so the caption below the thumbnail
+  was silently cut off. The thumbnails looked perfect, which is why nothing
+  looked wrong. Fixed with `grid-auto-rows:max-content`, `align-items:start`
+  and `height:max-content` on the card.
+- **The 15-sheet fixture did not catch it** because at 8 rows the tracks were
+  big enough. It only appeared at 12 rows — i.e. only on a real-sized set.
+- **The test now measures the caption's box against its card's box**, not just
+  its text. Third time this project has been caught by "in the DOM" not meaning
+  "on screen" — Bulk Import's chips, the defect picker behind the plan viewer,
+  and now this.
+
 ## 2026-08-15 (y) — sheet names come off the title block, learned not guessed
 
 Spiro sent a real 23-sheet Creation Homes set (job 306363) "to help you with
