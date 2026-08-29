@@ -2263,6 +2263,91 @@
   }
 
   // Public API used by the per-defect camera button in index.html
+  // ===========================================================================
+  //  Job construction plans (read-only gateway into CH Tracker)
+  // ===========================================================================
+  // Spiro 2026-08-15: "I would use CH tracker to upload the floor plan… and
+  // then… I can just click of a button bring up the plan using the defects app
+  // relative because the jobs are the same."
+  //
+  // No new schema and no new correlation is needed — the link already exists:
+  // CH Tracker stores ONE plan PDF per job in the private `job-plans` bucket,
+  // named `{job_number}.pdf` (its migration 101 / src/lib/jobPlans.ts), and this
+  // app already carries that same job_number on every address as
+  // `propertyNumber`. Same Supabase project, same auth. So this is a read.
+  //
+  // Its RLS lets ANY authenticated user select from the bucket; only managers
+  // may write. That is exactly right here: supervisors read plans, the manager
+  // uploads them in CH Tracker. Nothing in this app ever writes to the bucket.
+  const PLANS_BUCKET = 'job-plans';
+  const PLAN_CACHE = 'dm-job-plans-v1';
+  const planPath = (jobNumber) => String(jobNumber || '').trim() + '.pdf';
+
+  // A plan is 2-10 MB and a supervisor wants it in a driveway with one bar.
+  // Once fetched it is kept in the Cache API under a stable key, so opening it
+  // again — including with no signal at all — is instant and offline.
+  async function cachedPlan(jobNumber) {
+    try {
+      const c = await caches.open(PLAN_CACHE);
+      const hit = await c.match('/plan/' + encodeURIComponent(jobNumber));
+      return hit ? await hit.arrayBuffer() : null;
+    } catch (e) { return null; }
+  }
+  async function cachePlan(jobNumber, buf) {
+    try {
+      const c = await caches.open(PLAN_CACHE);
+      await c.put('/plan/' + encodeURIComponent(jobNumber),
+        new Response(buf, { headers: { 'Content-Type': 'application/pdf' } }));
+    } catch (e) {}
+  }
+
+  window.CloudPlans = {
+    // Is the feature even wired up on this build (cloud mode + signed in)?
+    available: () => !!(sb && userId),
+    // 'present' | 'absent' | 'no-bucket' | 'error'. Mirrors CH Tracker's
+    // planStatus so the two apps say the same thing about the same job — and
+    // "no-bucket" tells the site to apply migration 101 rather than leaving
+    // them guessing why every job says it has no plan.
+    async status(jobNumber) {
+      if (!sb || !String(jobNumber || '').trim()) return 'absent';
+      try {
+        const { data, error } = await sb.storage.from(PLANS_BUCKET)
+          .list('', { search: planPath(jobNumber), limit: 1 });
+        if (error) return /bucket not found|does not exist/i.test(error.message || '') ? 'no-bucket' : 'error';
+        return (data || []).some(o => o.name === planPath(jobNumber)) ? 'present' : 'absent';
+      } catch (e) { return 'error'; }
+    },
+    // The PDF bytes for pdf.js. Cache first so a plan opened once works with no
+    // signal; the network copy refreshes the cache for next time.
+    async bytes(jobNumber) {
+      const jn = String(jobNumber || '').trim();
+      if (!jn) return { error: 'This job has no job number, so there is no plan to look up.' };
+      const cached = await cachedPlan(jn);
+      if (cached && cached.byteLength) return { buf: cached, offline: true };
+      if (!sb) return { error: 'Not signed in.' };
+      try {
+        const { data, error } = await sb.storage.from(PLANS_BUCKET).createSignedUrl(planPath(jn), 3600);
+        if (error || !data || !data.signedUrl) {
+          const m = (error && error.message) || '';
+          if (/bucket not found|does not exist/i.test(m)) return { error: 'Plans are not set up yet — migration 101 has not been applied in Supabase.' };
+          if (/not found/i.test(m)) return { error: 'No plan has been uploaded for this job yet. Attach it in CH Tracker.' };
+          return { error: m || 'Could not open the plan.' };
+        }
+        const res = await fetch(data.signedUrl);
+        if (!res.ok) return { error: 'Could not download the plan (' + res.status + ').' };
+        const buf = await res.arrayBuffer();
+        cachePlan(jn, buf.slice(0));
+        return { buf };
+      } catch (e) {
+        return { error: (e && e.message) || 'Could not download the plan.' };
+      }
+    },
+    // Drop a cached plan (the manager replaced it in CH Tracker).
+    async forget(jobNumber) {
+      try { const c = await caches.open(PLAN_CACHE); await c.delete('/plan/' + encodeURIComponent(String(jobNumber || '').trim())); } catch (e) {}
+    },
+  };
+
   window.CloudPhotos = {
     // Badge = photos confirmed in the cloud + photos still waiting on this phone,
     // so a photo taken with no reception shows on the badge immediately and never

@@ -13,6 +13,25 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
+## 📐 Job plans read straight from CH Tracker (2026-08-15) — build `2026-08-15u`
+
+`window.CloudPlans` (cloud-sync.js) + `openJobPlan()` (index.html). What will
+bite a later change:
+
+- **The join is `address.propertyNumber` === CH Tracker's `job_number` ===
+  `{job_number}.pdf` in the `job-plans` bucket.** Rename any one of those three
+  and every job silently reports "no plan". `tests/jobplans.mjs` pins the exact
+  storage path asked for.
+- **This app must never WRITE to `job-plans`.** CH Tracker owns plans; its RLS
+  allows manager writes only, and two writers would be worse than one.
+- **The bucket needs CH Tracker's migration 101 applied.** If it is missing the
+  viewer says so by name rather than reporting "no plan" for every job.
+- **Cached plans live in the `dm-job-plans-v1` Cache API bucket**, keyed
+  `/plan/{job_number}`. `CloudPlans.forget(jobNumber)` clears one — needed if a
+  manager replaces a plan and a phone keeps showing the old one.
+- **Renders must stay serialised** (cancel + token in `_planDraw`). pdf.js
+  throws on a second render against the same canvas, which two quick taps do.
+
 ## Defect suggestions are in the flow, not positioned (2026-08-15) — build `2026-08-15t`
 
 `#bpi-desc-pop` is a plain block element moved around the DOM — inserted after

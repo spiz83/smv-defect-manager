@@ -1,6 +1,13 @@
 # Tasks
 
 ## Current sprint
+- [ ] **Decide where a plan MARKUP should go** (Spiro asked for "a very quick
+      markup on the plans to show a location"). The viewer shipped in
+      `2026-08-15u`; markup did not. The natural home is a photo attached to a
+      specific defect, so it reaches the trade in the contractor PDF.
+- [ ] **Confirm a plan actually opens on a phone for a job that has one.**
+      Needs CH Tracker migration 101 applied and a plan uploaded against that
+      job number.
 - [ ] **Check the live `dm_contractors` for damage from the id collision**
       (fixed in `2026-08-15p`). Two phones could allocate the same `legacy_id`,
       and the second push overwrote the first contractor's row. Look for

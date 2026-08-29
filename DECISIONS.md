@@ -2,6 +2,43 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (u) — 📐 the job's plan, one tap from the job
+
+- **Spiro:** "I would use CH tracker to upload the floor plan… and then… I can
+  just click of a button bring up the plan using the defects app relative
+  because the jobs are the same."
+- **THE GATEWAY ALREADY EXISTED. Nothing was built for it.** CH Tracker
+  (creation-homes-tracker, migration 101 + `src/lib/jobPlans.ts`) puts ONE plan
+  PDF per job in the private `job-plans` bucket, named `{job_number}.pdf`. This
+  app already carries that same `job_number` on every address as
+  `propertyNumber`, in the same Supabase project under the same auth. So the
+  feature is a read against a key that already lines up — no new table, no new
+  column, no sync, no correlation to invent.
+- **Its RLS is already the right split**: SELECT for any authenticated user,
+  writes for managers only. Supervisors read plans here; the manager uploads
+  them in CH Tracker. This app never writes to that bucket, deliberately —
+  CH Tracker owns plans, and one owner beats two.
+- **Rendered with pdf.js**, which this app already loads for report import and
+  the service worker already precaches — so no new dependency and it works in a
+  dead spot once the app has been online once.
+- **The PDF is cached in the Cache API after the first open.** A plan is 2-10MB
+  and the supervisor wanting it is in a driveway with one bar; a second open,
+  including with no signal at all, is instant and offline.
+- **Renders are serialised with a cancel + token.** Two quick taps on + or ›
+  otherwise start a second `page.render()` on the same canvas, which pdf.js
+  refuses outright — found by the suite, not on a phone.
+- **The canvas is capped at 12M pixels, rounded DOWN.** iOS silently gives a
+  blank canvas above roughly 16M, and `sqrt()` lands exactly on the limit so
+  rounding the dimensions up put it back over.
+- **The 📐 went in the top bar, not the toolbar.** Adding it to the View Defects
+  toolbar made an eighth control and wrapped to two lines at 320px —
+  `tests/shop.mjs` caught it. The plan is a job-level action anyway, which is
+  where Add Defects already had it.
+- **NOT built: markup.** Spiro asked to "do a very quick markup on the plans to
+  show a location". Where a marked-up plan should GO is a real decision (a photo
+  on a specific defect, so it reaches the trade in the contractor PDF, is the
+  only place this app has for one) — asked rather than guessed.
+
 ## 2026-08-15 (t) — the suggestion list stops chasing the field
 
 - **Spiro, after testing (s):** "As I scroll up and down the screen, it just

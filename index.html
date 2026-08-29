@@ -3050,7 +3050,7 @@
                     <div class="app-header">
                         <a href="#" class="back-link" onclick="event.preventDefault(); showHomeView()">Back</a>
                         <div class="header-title">View Defects</div>
-                        <div style="width: 60px;"></div>
+                        <button class="icon-btn" onclick="openJobPlan(${addressId})" title="Open this job's construction plan" style="width:60px;font-size:26px;padding:4px;line-height:1;">📐</button>
                     </div>
                     
                     <div class="defects-header hdr-inline">
@@ -3125,6 +3125,7 @@
                         <a href="#" class="back-link" onclick="event.preventDefault(); backFromAddDefects()">Back</a>
                         <div class="header-title">Add Defects</div>
                         <span style="display:inline-flex;gap:6px;">
+                            <button class="icon-btn" onclick="openJobPlan(${addressId})" title="Open this job's construction plan" style="font-size:30px;padding:8px 12px;line-height:1;">📐</button>
                             <button class="icon-btn" onclick="openBulkPhotoImport(${addressId})" title="Bulk import photos — pick lots of photos, fill in the details for each after" style="font-size:30px;padding:8px 12px;line-height:1;">🎞️</button>
                             <button class="icon-btn" onclick="saveAddDefectsAddress()" title="Save Defects" style="font-size:30px;padding:8px 12px;line-height:1;">💾</button>
                         </span>
@@ -10394,6 +10395,164 @@
             window.visualViewport.addEventListener('scroll', () => { if (_clrFor) _clrSync(); });
         }
 
+        // ===================================================================
+        //  📐 Plans — the job's construction plan, one tap from the job
+        // ===================================================================
+        // Spiro 2026-08-15: "if I need to quickly see an elevation of the plans
+        // or I need to work out what a certain room is called on the plans…
+        // it could act as a really good kind of quick trigger feature."
+        //
+        // The gateway needed no building: CH Tracker already puts one plan PDF
+        // per job in the `job-plans` bucket as {job_number}.pdf, and this app
+        // already carries that job_number on every address as `propertyNumber`.
+        // window.CloudPlans (cloud-sync.js) does the read. See DECISIONS.
+        //
+        // Rendered with pdf.js, which this app already loads for report import
+        // and the service worker already precaches — so a plan opens in a dead
+        // spot as long as the app has been online once, and the PDF itself is
+        // cached after the first open.
+        let _planState = null;   // { jobNumber, pdf, page, scale, canvas }
+
+        function jobPlanNumber(addressId) {
+            const a = db.getAddress(addressId);
+            return (a && String(a.propertyNumber || '').trim()) || '';
+        }
+        async function openJobPlan(addressId) {
+            const jn = jobPlanNumber(addressId);
+            if (!window.CloudPlans || !window.CloudPlans.available()) {
+                showToast('Plans need a cloud sign-in', true); return;
+            }
+            if (!jn) { showToast('This job has no job number, so no plan to look up', true); return; }
+            _planOverlay(`<div class="plan-msg">Opening plan for job ${_escHtml(jn)}…</div>`);
+            try {
+                await ensurePdfJs();
+            } catch (e) {
+                _planOverlay('<div class="plan-msg">The PDF reader could not be loaded. Open the app once with signal, then try again.</div>');
+                return;
+            }
+            const got = await window.CloudPlans.bytes(jn);
+            if (got.error) { _planOverlay('<div class="plan-msg">' + _escHtml(got.error) + '</div>'); return; }
+            try {
+                const pdf = await window.pdfjsLib.getDocument({ data: got.buf }).promise;
+                _planState = { jobNumber: jn, pdf, page: 1, scale: 1, fit: 1 };
+                _planRenderShell();
+                await _planDraw();
+            } catch (e) {
+                _planOverlay('<div class="plan-msg">That plan could not be read as a PDF.</div>');
+            }
+        }
+        function _planOverlay(inner) {
+            let ov = document.getElementById('plan-ov');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'plan-ov';
+                ov.style.cssText = 'position:fixed;inset:0;z-index:100004;background:var(--bg-secondary,#1b1b1b);' +
+                    'display:flex;flex-direction:column;';
+                document.body.appendChild(ov);
+            }
+            ov.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;flex:1;padding:24px;' +
+                'text-align:center;font-size:15px;color:var(--text-primary);line-height:1.5;">' + inner + '</div>';
+            return ov;
+        }
+        function closeJobPlan() {
+            if (_planState && _planState.task) { try { _planState.task.cancel(); } catch (e) {} }
+            const ov = document.getElementById('plan-ov');
+            if (ov) ov.remove();
+            _planState = null;
+        }
+        function _planRenderShell() {
+            const st = _planState;
+            const ov = _planOverlay('');
+            ov.innerHTML = `
+                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);border-bottom:1px solid var(--border-color);flex:0 0 auto;">
+                    <button onclick="closeJobPlan()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Back</button>
+                    <div style="font-weight:700;font-size:16px;color:var(--text-primary);">📐 Job ${_escHtml(st.jobNumber)}</div>
+                    <span id="plan-pageinfo" style="margin-left:auto;font-size:13px;color:var(--text-secondary);"></span>
+                </div>
+                <div id="plan-scroll" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:#5a5a5a;text-align:center;">
+                    <canvas id="plan-canvas" style="display:block;margin:0 auto;"></canvas>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--bg-primary);border-top:1px solid var(--border-color);flex:0 0 auto;">
+                    <button onclick="planPage(-1)" id="plan-prev" style="flex:0 0 auto;padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">‹</button>
+                    <button onclick="planPage(1)" id="plan-next" style="flex:0 0 auto;padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">›</button>
+                    <span style="flex:1 1 auto;"></span>
+                    <button onclick="planZoom(-1)" style="padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">−</button>
+                    <button onclick="planZoom(0)" id="plan-zoomlbl" style="padding:11px 12px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;min-width:56px;">Fit</button>
+                    <button onclick="planZoom(1)" style="padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">+</button>
+                </div>`;
+        }
+        // Draw the current page at the current zoom. Scale 1 = fit the page
+        // width to the screen, so a plan opens readable rather than at some
+        // arbitrary PDF point size.
+        async function _planDraw() {
+            const st = _planState;
+            if (!st) return;
+            const canvas = document.getElementById('plan-canvas');
+            const box = document.getElementById('plan-scroll');
+            if (!canvas || !box) return;
+            // pdf.js throws "Cannot use the same canvas during multiple render()
+            // operations" if a second render starts before the first finishes —
+            // which is exactly what two quick taps on + or › do. Cancel the one
+            // in flight, and carry a token so a slow render that was superseded
+            // cannot come back and paint the wrong page over the right one.
+            if (st.task) { try { st.task.cancel(); } catch (e) {} st.task = null; }
+            const token = (st.token = (st.token || 0) + 1);
+            const page = await st.pdf.getPage(st.page);
+            if (!_planState || _planState !== st || st.token !== token) return;
+            const base = page.getViewport({ scale: 1 });
+            st.fit = Math.max(0.1, (box.clientWidth - 8) / base.width);
+            // Cap the backing store so a big plan at high zoom cannot blow up
+            // the canvas on a phone (iOS kills a canvas over ~16M pixels).
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            let scale = st.fit * st.scale;
+            const vp = page.getViewport({ scale: scale * dpr });
+            const MAX_PX = 12e6;
+            // A shade under the ceiling, and rounded DOWN: sqrt() lands exactly
+            // on the limit, and then rounding both dimensions up puts it back
+            // over — which on iOS is a blank canvas, not an error.
+            const shrink = (vp.width * vp.height) > MAX_PX ? Math.sqrt(MAX_PX / (vp.width * vp.height)) * 0.99 : 1;
+            const viewport = page.getViewport({ scale: scale * dpr * shrink });
+            canvas.width = Math.floor(viewport.width);
+            canvas.height = Math.floor(viewport.height);
+            canvas.style.width = Math.round(base.width * scale) + 'px';
+            canvas.style.height = Math.round(base.height * scale) + 'px';
+            st.task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+            try {
+                await st.task.promise;
+            } catch (e) {
+                // A cancelled render is the normal outcome of tapping twice —
+                // not an error, and not something to report.
+                if (!/cancel/i.test(String((e && e.message) || e))) throw e;
+                return;
+            } finally {
+                if (_planState === st && st.token === token) st.task = null;
+            }
+            if (!_planState || _planState !== st || st.token !== token) return;
+            const info = document.getElementById('plan-pageinfo');
+            if (info) info.textContent = 'Page ' + st.page + ' of ' + st.pdf.numPages;
+            const lbl = document.getElementById('plan-zoomlbl');
+            if (lbl) lbl.textContent = st.scale === 1 ? 'Fit' : Math.round(st.scale * 100) + '%';
+            const prev = document.getElementById('plan-prev'), next = document.getElementById('plan-next');
+            if (prev) prev.style.opacity = st.page > 1 ? '1' : '.35';
+            if (next) next.style.opacity = st.page < st.pdf.numPages ? '1' : '.35';
+        }
+        function planPage(delta) {
+            const st = _planState;
+            if (!st) return;
+            const n = Math.min(st.pdf.numPages, Math.max(1, st.page + delta));
+            if (n === st.page) return;
+            st.page = n;
+            const box = document.getElementById('plan-scroll');
+            if (box) box.scrollTop = 0;
+            _planDraw();
+        }
+        function planZoom(dir) {
+            const st = _planState;
+            if (!st) return;
+            st.scale = dir === 0 ? 1 : Math.min(6, Math.max(1, st.scale * (dir > 0 ? 1.5 : 1 / 1.5)));
+            _planDraw();
+        }
+
         // ---- Add Defects screen: one shared list for all 15 defect rows ----
         // IN NORMAL FLOW, inserted directly after the row being typed in. Not
         // position:fixed, not absolute — no coordinates at all.
@@ -12267,7 +12426,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15t';
+        const APP_VERSION = '2026-08-15u';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12341,7 +12500,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15t"></script>
+    <script src="cloud-sync.js?v=2026-08-15u"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
