@@ -212,8 +212,9 @@ console.log('\n--- E · three blocks of five, each row on ONE line ---');
   check('there are 5 rows per supplier block', rows.perBlock === 5, String(rows.perBlock));
   check('there are 3 supplier blocks', rows.blocks === 3, String(rows.blocks));
   check('…and no way to add a 6th row to a block', !rows.addRowButton);
-  // One line = the row is no taller than a single input. Wrapped it was ~60px+.
-  check('every row is ONE line high', rows.geo.every(g => g.rowH <= 46),
+  // One line AND condensed. Wrapped it was ~60px+; before the padding came off
+  // it was 40px, which fitted only three rows on a phone with the keyboard up.
+  check('every row is ONE line high and condensed', rows.geo.every(g => g.rowH <= 36),
     JSON.stringify(rows.geo.map(g => g.rowH)));
   check('pin sits left of the description, camera right of it',
     rows.geo.every(g => g.pinLeft && g.camRight));

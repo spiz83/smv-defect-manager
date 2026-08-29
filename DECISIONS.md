@@ -2,6 +2,28 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (m) — the defect rows lose their padding
+
+- **Spiro, from a phone with the keyboard up: "too much space above and below
+  the text… reduce the heights of the text boxes so that those 5 defects are
+  more condensed."** Only three of the five rows fitted above the keyboard.
+- **Vertical padding 10px → 6px, row gap 8px → 5px.** Row pitch goes 48px → 39px:
+  the row itself is 40px → 34px, and five of them now cost 195px instead of 240.
+  Horizontal padding is untouched — that is reading room, not dead space.
+- **The padding moved OUT of the inline styles and into
+  `.defect-input-row input`.** It was written on each input, so the stylesheet
+  could never win without `!important`; one declaration now governs Add
+  Defects, the contractor screen and the Quick Add modal alike. The quick rows
+  had no padding of their own at all and were the odd ones out.
+- **`line-height: 1.25` is set explicitly**, so the row height doesn't drift
+  with whatever the browser's default for a text input happens to be.
+- **Trade-off: a 34px row is under the 44px iOS touch guideline.** Accepted —
+  it is a text field in a dense form, the pin and camera beside it keep their
+  own 34px targets through padding, and fitting all five rows on screen while
+  typing is worth more than the extra 10px.
+- **`adddefects.mjs` now asserts `rowH <= 36`**, not `<= 46`. The looser bound
+  was there to catch the wrap; this one also catches the padding creeping back.
+
 ## 2026-08-16 (l) — Add Defects: three suppliers, five defects, one line each
 
 - **Spiro: "three contractors and five defects per contractor"**, down from
