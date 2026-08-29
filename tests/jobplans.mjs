@@ -69,7 +69,11 @@ const SEED = {
     { id: 2, lot: '12', street: 'Lot 12, Band St', suburb: 'Craigieburn', propertyNumber: '', jobStatus: 'active', active: true },
   ],
   contractors: [{ id: 1, name: 'Carpenter', trades: 'Carpenter', tradeIds: [], isTradePlaceholder: true, isActive: true }],
-  trades: [], defects: [],
+  trades: [],
+  defects: [
+    { id: 11, addressId: 1, contractorId: 1, description: 'Adjust door margins to 3mm-4mm.', location: 'Bed 2', status: 'open', completed: false },
+    { id: 12, addressId: 1, contractorId: 1, description: 'Align door with jamb.', location: 'Ensuite', status: 'open', completed: false },
+  ],
 };
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
@@ -265,6 +269,102 @@ console.log('\n--- E · reachable from both job screens ---');
   check('…and it opens the same plan', /306648/.test(await ovText()));
   check('…over the top of the entry form, which is still there underneath',
     await page.evaluate(() => !!document.querySelector('.add-defect-1')));
+  await page.evaluate(() => closeJobPlan());
+}
+
+// ===========================================================================
+//  F. Mark up a plan, and it lands on a defect.
+// ===========================================================================
+// Spiro asked where a markup should go and chose a defect — so it travels to
+// the trade in the contractor PDF next to the wording, which is the only route
+// this app has to the person who has to act on it.
+console.log('\n--- F · markup ---');
+{
+  await installPlans('present');
+  // Stand in for the photo layer: record what gets drawn on and what it is
+  // attached to. editPhoto is the app's real markup editor; here it just hands
+  // the image straight back, as "use as-is" does.
+  await page.evaluate(() => {
+    window.__saved = [];
+    window.__edited = [];
+    window.CloudPhotos = {
+      count: () => 0, pendingCount: () => 0, refreshCounts: () => {},
+      async editPhoto(file) { window.__edited.push({ name: file.name, type: file.type, size: file.size }); return file; },
+      async savePhoto(defectId, blob) { window.__saved.push({ defectId, size: blob.size }); },
+    };
+  });
+  await page.evaluate(() => { viewDefectsForAddress(1); openJobPlan(1); });
+  await page.waitForSelector('#plan-canvas', { timeout: 15000 });
+  await page.waitForFunction(() => document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+
+  check('the viewer offers Mark up', await page.evaluate(() => !!document.getElementById('plan-markup')));
+
+  // Zoom in first: a markup is for pointing at one spot, so what gets captured
+  // has to be what is ON SCREEN, not the whole sheet.
+  await page.evaluate(() => planZoom(1));
+  await page.waitForTimeout(400);
+  const cap = await page.evaluate(async () => {
+    const r = _planVisibleRegion();
+    const c = document.getElementById('plan-canvas');
+    return { region: { w: Math.round(r.sw), h: Math.round(r.sh) }, whole: { w: c.width, h: c.height } };
+  });
+  console.log('  captured region', JSON.stringify(cap.region), 'of a canvas', JSON.stringify(cap.whole));
+  check('it captures the visible region, not the whole page',
+    cap.region.w < cap.whole.w, `${cap.region.w} of ${cap.whole.w} wide`);
+
+  await page.evaluate(() => planMarkup());
+  await page.waitForFunction(() => (window.__edited || []).length > 0, { timeout: 8000 });
+  const ed = await page.evaluate(() => window.__edited[0]);
+  console.log('  handed to the markup editor:', JSON.stringify(ed));
+  check('the capture goes through the app\'s existing photo markup editor', !!ed && ed.type === 'image/jpeg', JSON.stringify(ed));
+  check('…named so it is identifiable later', /plan-306648-p1\.jpg/.test(ed.name), ed.name);
+  check('…and it is a real image, not an empty file', ed.size > 500, String(ed.size));
+
+  // Then: which defect?
+  await page.waitForSelector('#plan-defect-list', { timeout: 8000 });
+  const listed = await page.evaluate(() => [...document.querySelectorAll('#plan-defect-list > div')].map(e => e.innerText.replace(/\n/g, ' | ')));
+  console.log('  offered:', JSON.stringify(listed));
+  check('it asks which defect, listing this job\'s defects', listed.length === 2, JSON.stringify(listed));
+  check('…with the location and trade, so they can be told apart',
+    listed.some(t => /Bed 2/.test(t) && /Carpenter/.test(t)), JSON.stringify(listed));
+
+  await page.evaluate(() => planFilterDefects('ensuite'));
+  const shown = await page.evaluate(() => [...document.querySelectorAll('#plan-defect-list > div')].filter(e => e.style.display !== 'none').map(e => e.innerText.split('\n')[0]));
+  check('…and it can be searched on a job with a long list', shown.length === 1 && /Align door/.test(shown[0]), JSON.stringify(shown));
+  await page.evaluate(() => planFilterDefects(''));
+
+  await page.evaluate(() => planAttachTo(12));
+  await page.waitForFunction(() => (window.__saved || []).length > 0, { timeout: 8000 });
+  const saved = await page.evaluate(() => window.__saved[0]);
+  console.log('  attached:', JSON.stringify(saved));
+  check('the markup is attached to the defect that was picked', saved.defectId === 12, JSON.stringify(saved));
+  check('…as a real image', saved.size > 500, String(saved.size));
+  check('…and the viewer closes, back to the job', await page.evaluate(() => !document.getElementById('plan-ov')));
+  check('…with the picker gone too', await page.evaluate(() => !document.getElementById('imp-ov')));
+
+  // Cancelling in the editor must attach nothing.
+  await page.evaluate(() => { window.CloudPhotos.editPhoto = async () => null; });
+  await page.evaluate(() => openJobPlan(1));
+  await page.waitForFunction(() => document.getElementById('plan-canvas') && document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+  await page.evaluate(() => planMarkup());
+  await page.waitForTimeout(400);
+  check('cancelling the markup attaches nothing and asks nothing',
+    await page.evaluate(() => window.__saved.length === 1 && !document.getElementById('plan-defect-list')));
+  await page.evaluate(() => closeJobPlan());
+
+  // A job with no defects has nowhere to put a markup — say so up front.
+  await page.evaluate(() => { window.CloudPhotos.editPhoto = async (f) => f; db.data.defects = []; db.save(); });
+  await page.evaluate(() => openJobPlan(1));
+  await page.waitForFunction(() => document.getElementById('plan-canvas') && document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+  const none = await page.evaluate(async () => {
+    window.__toasts = []; const orig = window.showToast;
+    window.showToast = (m) => { window.__toasts.push(m); };
+    await planMarkup();
+    window.showToast = orig;
+    return { toasts: window.__toasts, asked: !!document.getElementById('plan-defect-list') };
+  });
+  check('a job with no defects yet says to add one first, rather than a dead end',
+    !none.asked && none.toasts.some(t => /defect/i.test(t)), JSON.stringify(none));
   await page.evaluate(() => closeJobPlan());
 }
 

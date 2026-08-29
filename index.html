@@ -10286,6 +10286,97 @@
             return rows.slice(0, Math.max(1, limit || 8)).map(r => ({ text: r.text, trade: r.trade, n: r.n }));
         }
 
+
+        // ---- Mark up a plan and attach it to a defect ----
+        // Spiro 2026-08-15: "I can basically just do a very quick markup on the
+        // plans to show a location." Asked where one should end up, he chose a
+        // defect — so it travels to the trade in the contractor PDF next to the
+        // wording, which is the only route this app has to the person who has to
+        // act on it.
+        //
+        // Captures WHAT IS ON SCREEN, not the whole page. Zoomed in on a
+        // bedroom, the useful image is that bedroom; the full sheet would make
+        // the circle a speck. Then straight into the existing photo markup
+        // editor — the same one the camera and Bulk Import use — so there is one
+        // way to draw in this app, not two.
+        function _planVisibleRegion() {
+            const box = document.getElementById('plan-scroll');
+            const canvas = document.getElementById('plan-canvas');
+            if (!box || !canvas || !canvas.width) return null;
+            const b = box.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+            const left = Math.max(b.left, c.left), right = Math.min(b.right, c.right);
+            const top = Math.max(b.top, c.top), bottom = Math.min(b.bottom, c.bottom);
+            if (right - left < 8 || bottom - top < 8) return null;
+            const k = canvas.width / c.width;                 // CSS px -> canvas px
+            return { sx: (left - c.left) * k, sy: (top - c.top) * k,
+                     sw: (right - left) * k, sh: (bottom - top) * k, canvas };
+        }
+        async function planMarkup() {
+            const st = _planState;
+            if (!st) return;
+            const cp = window.CloudPhotos;
+            if (!cp || !cp.savePhoto) { showToast('Photos need a cloud sign-in', true); return; }
+            const defects = db.getDefects({ addressId: st.addressId }) || [];
+            if (!defects.length) {
+                showToast('Add a defect on this job first — a markup attaches to one', true);
+                return;
+            }
+            const r = _planVisibleRegion();
+            if (!r) { showToast('Nothing to mark up yet', true); return; }
+            const out = document.createElement('canvas');
+            out.width = Math.round(r.sw); out.height = Math.round(r.sh);
+            out.getContext('2d').drawImage(r.canvas, r.sx, r.sy, r.sw, r.sh, 0, 0, out.width, out.height);
+            const blob = await new Promise(res => out.toBlob(res, 'image/jpeg', 0.9));
+            if (!blob) { showToast('Could not capture the plan', true); return; }
+            const file = new File([blob], 'plan-' + st.jobNumber + '-p' + st.page + '.jpg', { type: 'image/jpeg' });
+            const edited = cp.editPhoto ? await cp.editPhoto(file) : file;
+            if (!edited) return;                               // cancelled in the editor
+            _planPickDefect(defects, edited);
+        }
+        // Which defect does this belong to? Asked AFTER the drawing, because you
+        // circle the spot and then say what it is for, not the other way round.
+        function _planPickDefect(defects, blob) {
+            _planPending = blob;
+            const rows = defects.map(d => {
+                const c = d.contractorId != null ? db.getContractor(d.contractorId) : null;
+                return `<div onclick="planAttachTo(${d.id})" class="rv-combo-item" style="border-bottom:1px solid var(--border-color,#eee);">
+                    <div style="font-weight:600;">${_escHtml(d.description || '(no description)')}</div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${_escHtml((d.location ? d.location + ' · ' : '') + ((c && c.name) || 'Unassigned'))}</div>
+                </div>`;
+            }).join('');
+            impOverlay(`<div id="imp-head"><strong>📐 Attach to which defect?</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <input id="plan-defect-search" type="text" placeholder="Search this job's defects…" oninput="planFilterDefects(this.value)"
+                        style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;margin-bottom:10px;">
+                    <div id="plan-defect-list">${rows}</div>
+                </div>`);
+            const x = document.getElementById('imp-close');
+            if (x) x.onclick = () => { _planPending = null; impClose(); };
+        }
+        let _planPending = null;
+        function planFilterDefects(q) {
+            const list = document.getElementById('plan-defect-list');
+            if (!list) return;
+            [...list.children].forEach(el => {
+                el.style.display = matchesSearch(el.textContent, q) ? '' : 'none';
+            });
+        }
+        async function planAttachTo(defectId) {
+            const blob = _planPending;
+            _planPending = null;
+            impClose();
+            if (!blob) return;
+            try {
+                await window.CloudPhotos.savePhoto(defectId, blob);
+                if (window.CloudPhotos.refreshCounts) window.CloudPhotos.refreshCounts();
+                showToast('Plan markup attached to the defect');
+                closeJobPlan();
+                render();
+            } catch (e) {
+                showToast('Could not attach: ' + ((e && e.message) || 'unknown error'), true);
+            }
+        }
+
         // ===================================================================
         //  Clear (✕) button for every text field
         // ===================================================================
@@ -10434,7 +10525,7 @@
             if (got.error) { _planOverlay('<div class="plan-msg">' + _escHtml(got.error) + '</div>'); return; }
             try {
                 const pdf = await window.pdfjsLib.getDocument({ data: got.buf }).promise;
-                _planState = { jobNumber: jn, pdf, page: 1, scale: 1, fit: 1 };
+                _planState = { jobNumber: jn, addressId, pdf, page: 1, scale: 1, fit: 1 };
                 _planRenderShell();
                 await _planDraw();
             } catch (e) {
@@ -10475,6 +10566,7 @@
                 <div style="display:flex;align-items:center;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--bg-primary);border-top:1px solid var(--border-color);flex:0 0 auto;">
                     <button onclick="planPage(-1)" id="plan-prev" style="flex:0 0 auto;padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">‹</button>
                     <button onclick="planPage(1)" id="plan-next" style="flex:0 0 auto;padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">›</button>
+                    <button onclick="planMarkup()" id="plan-markup" style="flex:0 0 auto;margin-left:8px;padding:11px 14px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">✏️ Mark up</button>
                     <span style="flex:1 1 auto;"></span>
                     <button onclick="planZoom(-1)" style="padding:11px 15px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">−</button>
                     <button onclick="planZoom(0)" id="plan-zoomlbl" style="padding:11px 12px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;min-width:56px;">Fit</button>
@@ -12426,7 +12518,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15u';
+        const APP_VERSION = '2026-08-15v';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12500,7 +12592,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15u"></script>
+    <script src="cloud-sync.js?v=2026-08-15v"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

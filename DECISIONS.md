@@ -34,10 +34,18 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   toolbar made an eighth control and wrapped to two lines at 320px —
   `tests/shop.mjs` caught it. The plan is a job-level action anyway, which is
   where Add Defects already had it.
-- **NOT built: markup.** Spiro asked to "do a very quick markup on the plans to
-  show a location". Where a marked-up plan should GO is a real decision (a photo
-  on a specific defect, so it reaches the trade in the contractor PDF, is the
-  only place this app has for one) — asked rather than guessed.
+- **Markup attaches to a DEFECT** (Spiro's choice when asked). That is the only
+  route this app has to the person who has to act on it: a photo on a defect
+  travels to the trade in the contractor PDF, next to the wording.
+- **It captures what is ON SCREEN, not the whole page.** Zoomed in on a bedroom,
+  the useful image is that bedroom; the full sheet would make the circle a
+  speck. The crop is the visible intersection of the canvas and the scroller.
+- **Straight into the EXISTING photo markup editor** (`CloudPhotos.editPhoto`,
+  the one the camera and Bulk Import already use) and out through
+  `CloudPhotos.savePhoto`. No second way to draw in this app.
+- **The defect is chosen AFTER the drawing**, because you circle the spot and
+  then say what it is for. A job with no defects yet says to add one first
+  rather than offering an empty picker.
 
 ## 2026-08-15 (t) — the suggestion list stops chasing the field
 

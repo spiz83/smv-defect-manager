@@ -1,10 +1,6 @@
 # Tasks
 
 ## Current sprint
-- [ ] **Decide where a plan MARKUP should go** (Spiro asked for "a very quick
-      markup on the plans to show a location"). The viewer shipped in
-      `2026-08-15u`; markup did not. The natural home is a photo attached to a
-      specific defect, so it reaches the trade in the contractor PDF.
 - [ ] **Confirm a plan actually opens on a phone for a job that has one.**
       Needs CH Tracker migration 101 applied and a plan uploaded against that
       job number.
