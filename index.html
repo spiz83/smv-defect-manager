@@ -3131,8 +3131,15 @@
                         </span>
                     </div>
 
-                    <div class="defects-header">
-                        <div class="lot-title" onclick="leaveAddDefects(() => viewDefectsForAddress(${addressId}))" style="cursor: pointer;" title="View this job's defects">${formatAddress(address)} ›</div>
+                    <!-- Same compact one-line address as View Defects (Spiro
+                         2026-08-16: "The address on one goes across two lines,
+                         whereas the other stays on one. I prefer it on the one
+                         just so it's more compact"). hdr-inline drops the suburb,
+                         keeps the job number un-ellipsised, and fitLotTitle()
+                         steps 17px→14px rather than wrapping — the wrap was
+                         costing a whole line of a header that never scrolls. -->
+                    <div class="defects-header hdr-inline">
+                        <div class="lot-title" onclick="leaveAddDefects(() => viewDefectsForAddress(${addressId}))" style="cursor: pointer;" title="${formatAddress(address)} — tap to view this job's defects">${lotTitleHtml(address, ' ›')}</div>
                     </div>
 
                     <div style="padding: 0 14px;">
@@ -12999,7 +13006,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16g';
+        const APP_VERSION = '2026-08-16h';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13073,7 +13080,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16g"></script>
+    <script src="cloud-sync.js?v=2026-08-16h"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

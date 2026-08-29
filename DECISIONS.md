@@ -2,6 +2,26 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (h) — Add Defects gets the same one-line address as View Defects
+
+- **Spiro, with the two screens side by side:** "The address on one goes across
+  two lines, whereas the other stays on one. I prefer it on the one just so
+  it's more compact."
+- **Add Defects was printing `formatAddress()` at 20px** — street + SUBURB +
+  job number — which wrapped. View Defects has used `hdr-inline` since
+  2026-08-02: it drops the suburb, keeps the job number un-ellipsised, and
+  `fitLotTitle()` steps 17px→14px rather than taking a second line.
+- **Add Defects now uses the same thing.** No new CSS and no new helper; it was
+  a one-line markup change to the class and the title builder. The suburb is
+  the part that goes, and it is the part you never need — you are standing at
+  the house.
+- **Measured on the real address that prompted it** ("Lot 218, (14) Red Fruit
+  Street, Clyde North - 305942"): two lines to one, both screens now identical
+  at 17px. A 47-character address steps to 14px and still holds one line.
+- **A header that never scrolls away pays for its height on every screen.**
+  That was the argument for hdr-inline in the first place; it applies at least
+  as much to the screen where you are typing.
+
 ## 2026-08-16 (g) — replace and remove a plan, from a ⋯ menu
 
 - **Spiro: "Ability to remove plan or re-upload/edit."** Three actions on the

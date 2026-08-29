@@ -266,6 +266,80 @@ console.log('\n--- G · trade placeholders sort ahead of named companies ---');
   check('…and resolves to its real contractor id, not a fake entry', picked.id === 5, JSON.stringify(picked));
 }
 
+// ===========================================================================
+//  H. The address header matches View Defects — one line, compact.
+// ===========================================================================
+// Spiro 2026-08-16, comparing the two screens side by side: "The address on one
+// goes across two lines, whereas the other stays on one. I prefer it on the one
+// just so it's more compact." Add Defects was printing the full
+// formatAddress() (street + SUBURB + number) at 20px, which wrapped; View
+// Defects uses hdr-inline, which drops the suburb, keeps the job number
+// un-ellipsised and steps the font 17px→14px rather than taking a second line
+// of a header that never scrolls away.
+console.log('\n--- H · the address header, one line like View Defects ---');
+{
+  // A long real address — the short seed one would fit either way and prove
+  // nothing. This is the shape of the job Spiro was looking at.
+  await page.evaluate(() => {
+    const a = db.getAddress(1);
+    a.street = 'Lot 218, (14) Red Fruit Street';
+    a.suburb = 'Clyde North';
+    a.propertyNumber = '305942';
+    db.save();
+  });
+
+  const readHead = () => page.evaluate(() => {
+    const h = document.querySelector('.defects-header');
+    const t = h && h.querySelector('.lot-title');
+    if (!t) return null;
+    const r = t.getBoundingClientRect();
+    const lh = parseFloat(getComputedStyle(t).lineHeight) || 24;
+    return {
+      inline: h.classList.contains('hdr-inline'),
+      lines: Math.max(1, Math.round(r.height / lh)),
+      height: Math.round(r.height),
+      px: Math.round(parseFloat(getComputedStyle(t).fontSize)),
+      text: t.innerText.replace(/\s+/g, ' ').trim(),
+      job: !!t.querySelector('.lot-job'),
+      jobClipped: (() => { const j = t.querySelector('.lot-job'); return !!j && j.scrollWidth > j.clientWidth + 1; })(),
+    };
+  });
+
+  await page.evaluate(() => startDefectsForJob(1));
+  await page.waitForSelector('#add-contractor-1-input');
+  const add = await readHead();
+  console.log('  Add Defects :', JSON.stringify(add));
+  check('Add Defects uses the compact inline header', add.inline, JSON.stringify(add));
+  check('…on ONE line, not two', add.lines === 1, `${add.lines} line(s), ${add.height}px`);
+  check('…and still shows the job number', /305942/.test(add.text), add.text);
+  check('…which is never the bit that gets cut', !add.jobClipped);
+  check('…dropping the suburb, which is what made it wrap', !/Clyde North/.test(add.text), add.text);
+
+  await page.evaluate(() => viewDefectsForAddress(1));
+  await page.waitForSelector('.defects-header.hdr-inline');
+  const view = await readHead();
+  console.log('  View Defects:', JSON.stringify(view));
+  check('View Defects is unchanged', view.inline && view.lines === 1, JSON.stringify(view));
+  check('the two screens now read the SAME', add.text === view.text.replace(/\s*›\s*$/, '').trim() || add.text.startsWith(view.text.replace(/📋/g, '').trim()),
+    JSON.stringify({ add: add.text, view: view.text }));
+  check('…at the same size', Math.abs(add.px - view.px) <= 1, `${add.px}px vs ${view.px}px`);
+
+  // A very long address must still hold one line — that is what the font
+  // stepping is for.
+  await page.evaluate(() => {
+    const a = db.getAddress(1);
+    a.street = 'Lot 1402, (168) Grand Boulevard Parade Extension';
+    db.save();
+    startDefectsForJob(1);
+  });
+  await page.waitForSelector('#add-contractor-1-input');
+  const long = await readHead();
+  console.log('  long address:', JSON.stringify(long));
+  check('a very long address still holds one line', long.lines === 1, `${long.lines} line(s) at ${long.px}px`);
+  check('…by stepping the font down, not by wrapping', long.px <= add.px, `${add.px}px -> ${long.px}px`);
+  check('…and the job number survives it', /305942/.test(long.text), long.text);
+}
+
 console.log('\nerrors:', errs.length ? errs : 'none');
 if (errs.length) fail.push('console/page errors');
 console.log(fail.length ? '\nFAILED: ' + fail.join(' | ') : '\nALL CHECKS PASSED');
