@@ -10561,10 +10561,29 @@
             return ov;
         }
         function closeJobPlan() {
+            planCloseSheets();
             if (_planState && _planState.task) { try { _planState.task.cancel(); } catch (e) {} }
             const ov = document.getElementById('plan-ov');
             if (ov) ov.remove();
             _planState = null;
+        }
+        // Swipe left/right for the next/previous sheet, the gesture already used
+        // for photos. Only when not zoomed in: zoomed, a horizontal drag is a pan
+        // across the sheet, and stealing that would make a big plan unusable.
+        function _planBindSwipe(box) {
+            let x0 = null, y0 = null;
+            box.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1 || (_planState && _planState.scale > 1.01)) { x0 = null; return; }
+                x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+            }, { passive: true });
+            box.addEventListener('touchend', (e) => {
+                if (x0 == null || !e.changedTouches.length) return;
+                const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+                x0 = null;
+                // Horizontal, decisive, and more sideways than up-and-down —
+                // otherwise a scroll down a tall sheet flips the page.
+                if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.6) planPage(dx < 0 ? 1 : -1);
+            }, { passive: true });
         }
         function _planRenderShell() {
             const st = _planState;
@@ -10585,6 +10604,8 @@
                     <button onclick="planZoom(0)" id="plan-zoomlbl" style="flex:0 0 auto;padding:11px 8px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px;font-weight:600;cursor:pointer;min-width:50px;">Fit</button>
                     <button onclick="planZoom(1)" style="flex:0 0 auto;padding:11px 13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">+</button>
                 </div>`;
+            const box = ov.querySelector('#plan-scroll');
+            if (box) _planBindSwipe(box);
         }
         // Draw the current page at the current zoom. Scale 1 = fit the page
         // width to the screen, so a plan opens readable rather than at some
@@ -10648,7 +10669,7 @@
                 const bs = 'padding:5px 10px;border:1px solid var(--border-color,#ccc);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);font-size:15px;font-weight:700;cursor:pointer;';
                 nav.innerHTML = n > 1
                     ? `<button id="plan-prev" onclick="planPage(-1)" style="${bs}">‹</button>
-                       <span style="font-size:13px;color:var(--text-secondary);min-width:52px;text-align:center;">${st.page} / ${n}</span>
+                       <button id="plan-sheetbtn" onclick="planSheets()" title="All sheets" style="${bs}font-weight:600;font-size:13px;min-width:62px;">${st.page} / ${n} ▾</button>
                        <button id="plan-next" onclick="planPage(1)" style="${bs}">›</button>`
                     : `<span style="font-size:13px;color:var(--text-secondary);">Page 1 of 1</span>`;
             }
@@ -10666,6 +10687,96 @@
             st.page = n;
             const box = document.getElementById('plan-scroll');
             if (box) box.scrollTop = 0;
+            _planDraw();
+        }
+        // A real plan set is ~15 sheets — floor plans, elevations, sections,
+        // details, schedules (Spiro 2026-08-15). Stepping ‹ › through them to
+        // find the elevations is useless, so there are two ways to move:
+        // a swipe, and this index.
+        //
+        // The index is thumbnails PLUS a label read off each sheet's own text.
+        // A grid of 15 grey rectangles all look alike on a phone; "3 ELEVATIONS"
+        // does not. pdf.js already gives the text, so this costs one pass.
+        const PLAN_SHEET_WORDS = [
+            'SITE PLAN', 'GROUND FLOOR', 'FIRST FLOOR', 'UPPER FLOOR', 'FLOOR PLAN',
+            'ELEVATION', 'SECTION', 'DETAIL', 'BRACING', 'TIE DOWN', 'TIE-DOWN',
+            'SLAB', 'FOOTING', 'ROOF PLAN', 'ROOF FRAMING', 'TRUSS',
+            'WINDOW SCHEDULE', 'DOOR SCHEDULE', 'SCHEDULE',
+            'ELECTRICAL', 'DRAINAGE', 'PLUMBING', 'ENERGY', 'LANDSCAP', 'FENC',
+            'JOINERY', 'KITCHEN', 'SPECIFICATION', 'NOTES', 'COVER',
+        ];
+        async function _planSheetLabel(pdf, n) {
+            try {
+                const tc = await (await pdf.getPage(n)).getTextContent();
+                const txt = (tc.items || []).map(i => i.str).join(' ').toUpperCase();
+                const hits = [];
+                for (const w of PLAN_SHEET_WORDS) {
+                    if (txt.indexOf(w) >= 0 && !hits.some(h => h.indexOf(w) >= 0 || w.indexOf(h) >= 0)) hits.push(w);
+                    if (hits.length === 2) break;
+                }
+                return hits.join(' · ') || '';
+            } catch (e) { return ''; }
+        }
+        async function planSheets() {
+            const st = _planState;
+            if (!st) return;
+            const n = st.pdf.numPages;
+            const ov = document.createElement('div');
+            ov.id = 'plan-sheets';
+            ov.style.cssText = 'position:fixed;inset:0;z-index:100005;background:var(--bg-secondary,#1b1b1b);display:flex;flex-direction:column;';
+            ov.innerHTML = `
+                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);border-bottom:1px solid var(--border-color);flex:0 0 auto;">
+                    <button onclick="planCloseSheets()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Plan</button>
+                    <div style="font-weight:700;font-size:16px;color:var(--text-primary);">${n} sheet${n === 1 ? '' : 's'}</div>
+                </div>
+                <div id="plan-sheet-grid" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start;"></div>`;
+            document.body.appendChild(ov);
+            const grid = ov.querySelector('#plan-sheet-grid');
+            for (let i = 1; i <= n; i++) {
+                const cell = document.createElement('div');
+                cell.onclick = () => planGoToSheet(i);
+                cell.style.cssText = 'background:var(--bg-primary,#fff);border:' + (i === st.page ? '2px solid var(--blue,#2563eb)' : '1px solid var(--border-color,#ccc)') +
+                    ';border-radius:10px;overflow:hidden;cursor:pointer;';
+                // The label is the point of this screen — a grid of fifteen grey
+                // rectangles all look the same on a phone, "5 ELEVATIONS" does
+                // not. So it reads like a caption, not a footnote.
+                cell.innerHTML = `<div class="thumb" style="background:#fff;min-height:90px;display:flex;align-items:center;justify-content:center;"></div>
+                    <div style="padding:8px 9px 9px;font-size:13px;line-height:1.25;border-top:1px solid var(--border-color,#eee);background:var(--bg-primary,#fff);">
+                        <span style="color:var(--blue,#2563eb);font-weight:800;">${i}</span>
+                        <span class="lbl" style="color:var(--text-primary);font-weight:600;">…</span></div>`;
+                grid.appendChild(cell);
+            }
+            // Thumbnails and labels one sheet at a time, so a 15-page set paints
+            // progressively instead of freezing the phone for a second and a half.
+            for (let i = 1; i <= n; i++) {
+                if (!document.getElementById('plan-sheets')) return;      // closed mid-build
+                const cell = grid.children[i - 1];
+                try {
+                    const page = await st.pdf.getPage(i);
+                    const base = page.getViewport({ scale: 1 });
+                    const w = Math.max(120, Math.floor((grid.clientWidth - 36) / 2));
+                    const vp = page.getViewport({ scale: w / base.width });
+                    const c = document.createElement('canvas');
+                    c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+                    c.style.cssText = 'width:100%;display:block;';
+                    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+                    const holder = cell.querySelector('.thumb');
+                    holder.innerHTML = ''; holder.appendChild(c);
+                } catch (e) {}
+                const lbl = await _planSheetLabel(st.pdf, i);
+                const el = cell.querySelector('.lbl');
+                if (el) el.textContent = lbl || 'Sheet ' + i;
+            }
+        }
+        function planCloseSheets() { const o = document.getElementById('plan-sheets'); if (o) o.remove(); }
+        function planGoToSheet(n) {
+            planCloseSheets();
+            const st = _planState;
+            if (!st) return;
+            st.page = Math.min(st.pdf.numPages, Math.max(1, n));
+            st.scale = 1;
+            const box = document.getElementById('plan-scroll');
+            if (box) { box.scrollTop = 0; box.scrollLeft = 0; }
             _planDraw();
         }
         function planRotate() {
@@ -12557,7 +12668,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-15w';
+        const APP_VERSION = '2026-08-15x';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12631,7 +12742,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-15w"></script>
+    <script src="cloud-sync.js?v=2026-08-15x"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

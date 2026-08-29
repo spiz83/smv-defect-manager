@@ -13,7 +13,20 @@ the meantime; nothing can be edited either.
 After running it, check on a phone: Settings → Defect wordings → open a trade →
 ✎ an item → Save. It should stick after a pull-to-refresh.
 
-## 📐 Job plans read straight from CH Tracker (2026-08-15) — build `2026-08-15u`
+## 📐 Job plans read straight from CH Tracker (2026-08-15) — build `2026-08-15x`
+
+A real set is ~15 sheets. Two ways through it: the sheet index (tap the page
+counter) and a swipe. What will bite a later change:
+
+- **Sheet labels come from `getTextContent()` matched against
+  `PLAN_SHEET_WORDS`.** Extend that list rather than reaching for anything
+  cleverer — it is a keyword scan on purpose, and it degrades to "Sheet N".
+- **Swipe is suppressed while zoomed** (`scale > 1.01`). Do not remove that: a
+  sideways drag on a zoomed sheet has to pan it.
+- **Do not turn this into a continuous-scroll PDF viewer.** Fifteen A3 sheets in
+  one scroller is a lot of canvas on a phone, scrolling is the slow way to reach
+  sheet 12, and markup would stop being tied to one sheet.
+
 
 `window.CloudPlans` (cloud-sync.js) + `openJobPlan()` (index.html). What will
 bite a later change:

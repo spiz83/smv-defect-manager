@@ -48,12 +48,47 @@ function tinyPdf(label) {
 }
 const PLAN_PDF = tinyPdf('LOT 905 GROUND FLOOR');
 
+// A real plan set is ~15 sheets and that is the case that matters: floor plans,
+// elevations, sections, details, schedules (Spiro 2026-08-15). Each page here
+// carries its own sheet title, the way a title block does, so the index has
+// something to read.
+const SHEET_TITLES = [
+  'COVER SHEET', 'SITE PLAN', 'GROUND FLOOR PLAN', 'FIRST FLOOR PLAN',
+  'ELEVATIONS NORTH SOUTH', 'ELEVATIONS EAST WEST', 'SECTION A-A',
+  'SLAB AND FOOTING PLAN', 'ROOF PLAN', 'BRACING PLAN', 'TIE DOWN PLAN',
+  'WINDOW SCHEDULE', 'DOOR SCHEDULE', 'ELECTRICAL PLAN', 'CONSTRUCTION DETAILS',
+];
+function multiPagePdf(titles) {
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', null];
+  const kids = [], contents = [];
+  titles.forEach((t, i) => {
+    const pageObj = 3 + i * 2, contObj = pageObj + 1;
+    kids.push(`${pageObj} 0 R`);
+    objs[pageObj - 1] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 ${3 + titles.length * 2} 0 R >> >> /Contents ${contObj} 0 R >>`;
+    const g = `BT /F1 26 Tf 60 500 Td (${t}) Tj ET\nBT /F1 12 Tf 60 470 Td (SHEET ${i + 1} OF ${titles.length} - JOB 306648) Tj ET\n60 100 700 340 re S`;
+    objs[contObj - 1] = `<< /Length ${g.length} >>\nstream\n${g}\nendstream`;
+  });
+  objs[1] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${titles.length} >>`;
+  objs[3 + titles.length * 2 - 1] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+  let out = '%PDF-1.4\n'; const offs = [];
+  objs.forEach((o, i) => { offs.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('');
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(out, 'latin1');
+}
+const PLAN_SET = multiPagePdf(SHEET_TITLES);
+
 const server = http.createServer((q, r) => {
   const u = q.url.split('?')[0];
   // Stand in for the signed storage URL the real bucket hands back.
   if (u === '/signed-plan.pdf') {
     r.writeHead(200, { 'Content-Type': 'application/pdf' });
     return r.end(PLAN_PDF);
+  }
+  if (u === '/signed-set.pdf') {
+    r.writeHead(200, { 'Content-Type': 'application/pdf' });
+    return r.end(PLAN_SET);
   }
   const f = path.join(ROOT, u === '/' ? 'index.html' : u);
   if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); return r.end('x'); }
@@ -77,7 +112,7 @@ const SEED = {
 };
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: 'block' });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, serviceWorkers: 'block', hasTouch: true });
 const page = await ctx.newPage();
 await ctx.route('**', route => {
   const u = route.request().url();
@@ -117,7 +152,8 @@ const installPlans = (mode) => page.evaluate(({ mode, port }) => {
       window.__planAsks.push(['bytes', String(jn) + '.pdf']);
       if (mode === 'no-bucket') return { error: 'Plans are not set up yet — migration 101 has not been applied in Supabase.' };
       if (mode === 'absent') return { error: 'No plan has been uploaded for this job yet. Attach it in CH Tracker.' };
-      const res = await fetch(`http://localhost:${port}/signed-plan.pdf`);
+      if (mode === 'no-plan') return { error: 'No plan.' };
+      const res = await fetch(`http://localhost:${port}/` + (mode === 'set' ? 'signed-set.pdf' : 'signed-plan.pdf'));
       return { buf: await res.arrayBuffer() };
     },
     async forget() {},
@@ -431,6 +467,94 @@ console.log('\n--- F · markup ---');
   check('a job with no defects yet says to add one first, rather than a dead end',
     !none.asked && none.toasts.some(t => /defect/i.test(t)), JSON.stringify(none));
   await page.evaluate(() => closeJobPlan());
+}
+
+// ===========================================================================
+//  G. A real set: 15 sheets, not one floor plan.
+// ===========================================================================
+// Spiro, 2026-08-15: "plans are typically about 15 pages and it has everything
+// from floor plan to elevations to details to a whole bunch of things." The
+// single-page case was the easy one; finding the elevations in a set of
+// fifteen, on a phone, is the actual job.
+console.log('\n--- G · a 15-sheet plan set ---');
+{
+  await installPlans('set');
+  // Section F emptied the job to check the no-defects case; a markup needs one.
+  await page.evaluate(() => {
+    window.__cap = null;
+    db.data.defects = [{ id: 12, addressId: 1, contractorId: 1, description: 'Align door with jamb.', location: 'Ensuite', status: 'open', completed: false }];
+    db.save();
+  });
+  await page.evaluate(() => { window.CloudPhotos = { count: () => 0, pendingCount: () => 0, refreshCounts: () => {}, async editPhoto(f) { window.__cap = f; return f; }, async savePhoto(d, b) { (window.__saved = window.__saved || []).push({ d, size: b.size }); } }; });
+  await page.evaluate(() => { viewDefectsForAddress(1); openJobPlan(1); });
+  await page.waitForSelector('#plan-canvas', { timeout: 15000 });
+  await page.waitForFunction(() => document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+  check('all 15 sheets are there', await page.evaluate(() => _planState.pdf.numPages === 15),
+    String(await page.evaluate(() => _planState.pdf.numPages)));
+  check('the header shows which sheet you are on, and offers the rest',
+    await page.evaluate(() => { const b = document.getElementById('plan-sheetbtn'); return !!b && /1 \/ 15/.test(b.textContent); }),
+    await page.evaluate(() => (document.getElementById('plan-sheetbtn') || {}).textContent));
+
+  // The index. Thumbnails alone are 15 grey rectangles on a phone; the labels
+  // are what make it possible to find the elevations without opening each one.
+  await page.evaluate(() => planSheets());
+  await page.waitForSelector('#plan-sheet-grid');
+  await page.waitForFunction(() => {
+    const c = document.querySelectorAll('#plan-sheet-grid .lbl');
+    return c.length === 15 && [...c].every(e => e.textContent !== '…');
+  }, { timeout: 30000 });
+  const sheets = await page.evaluate(() => [...document.querySelectorAll('#plan-sheet-grid > div')].map(d => d.innerText.replace(/\n/g, ' ').trim()));
+  console.log('  index:', JSON.stringify(sheets));
+  check('every sheet is listed', sheets.length === 15, String(sheets.length));
+  check('…labelled from the sheet\'s own text, not just numbered',
+    sheets.filter(t => /ELEVATION|FLOOR|SCHEDULE|SECTION|DETAIL|BRACING|SITE PLAN|ROOF|SLAB|ELECTRICAL/i.test(t)).length >= 12,
+    JSON.stringify(sheets.slice(0, 4)));
+  check('…so "where are the elevations" is answerable at a glance',
+    sheets.some(t => /^5\b.*ELEVATION/i.test(t)), JSON.stringify(sheets.filter(t => /ELEVATION/i.test(t))));
+  check('…and each has a thumbnail, not an empty box',
+    await page.evaluate(() => [...document.querySelectorAll('#plan-sheet-grid canvas')].filter(c => c.width > 20).length === 15),
+    String(await page.evaluate(() => document.querySelectorAll('#plan-sheet-grid canvas').length)));
+
+  // Jump straight to the elevations.
+  await page.evaluate(() => planGoToSheet(5));
+  await page.waitForFunction(() => !document.getElementById('plan-sheets'), { timeout: 5000 });
+  await page.waitForTimeout(500);
+  check('tapping a sheet jumps straight to it', await page.evaluate(() => _planState.page === 5), String(await page.evaluate(() => _planState.page)));
+  check('…and the header follows',
+    await page.evaluate(() => /5 \/ 15/.test((document.getElementById('plan-sheetbtn') || {}).textContent || '')));
+  check('…at Fit, not still zoomed in from the last sheet',
+    await page.evaluate(() => _planState.scale === 1));
+
+  // Swiping is the other way through — the gesture already used for photos.
+  const swipe = async (dx) => page.evaluate((dx) => {
+    const box = document.getElementById('plan-scroll');
+    const t = (x, y) => [new Touch({ identifier: 1, target: box, clientX: x, clientY: y })];
+    box.dispatchEvent(new TouchEvent('touchstart', { touches: t(200, 400), bubbles: true }));
+    box.dispatchEvent(new TouchEvent('touchend', { changedTouches: t(200 + dx, 410), bubbles: true }));
+  }, dx);
+  await swipe(-120); await page.waitForTimeout(400);
+  check('swiping left goes to the next sheet', await page.evaluate(() => _planState.page === 6), String(await page.evaluate(() => _planState.page)));
+  await swipe(120); await page.waitForTimeout(400);
+  check('…and swiping right goes back', await page.evaluate(() => _planState.page === 5), String(await page.evaluate(() => _planState.page)));
+
+  // Zoomed in, a sideways drag must PAN the sheet, not flip the page.
+  await page.evaluate(() => planZoom(1));
+  await page.waitForTimeout(400);
+  await swipe(-120); await page.waitForTimeout(300);
+  check('zoomed in, a sideways drag pans the sheet instead of flipping it',
+    await page.evaluate(() => _planState.page === 5), String(await page.evaluate(() => _planState.page)));
+  await page.evaluate(() => planZoom(0));
+  await page.waitForTimeout(300);
+
+  // And a markup taken on sheet 5 says sheet 5.
+  await page.evaluate(() => planMarkup());
+  await page.waitForFunction(() => !!window.__cap, { timeout: 8000 });
+  const name = await page.evaluate(() => window.__cap.name);
+  check('a markup records which sheet it came off', /-p5\.jpg$/.test(name), name);
+  await page.evaluate(() => { const b = document.getElementById('imp-close'); if (b) b.click(); });
+  await page.evaluate(() => closeJobPlan());
+  check('closing the plan takes the sheet index with it',
+    await page.evaluate(() => !document.getElementById('plan-sheets') && !document.getElementById('plan-ov')));
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]|pdf/i.test(e));

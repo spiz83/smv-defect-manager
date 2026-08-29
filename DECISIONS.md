@@ -2,6 +2,33 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-15 (x) — a plan set is ~15 sheets, not a floor plan
+
+- **Spiro:** "plans are typically about 15 pages and it has everything from
+  floor plan to elevations to details to a whole bunch of things… you focused
+  on plans. How does that even work?" Correct — the viewer handled the easy
+  case. Finding the elevations in a set of fifteen, on a phone, is the job.
+- **A SHEET INDEX, reached from the page counter.** Thumbnails of every sheet in
+  a two-column grid, tap to jump. The counter in the header became the button
+  (`5 / 15 ▾`), which is where you already look to know where you are.
+- **Each sheet is LABELLED from its own text**, not just numbered. Fifteen grey
+  rectangles all look alike on a phone; "5 ELEVATIONS" does not. pdf.js already
+  gives the text layer, so one `getTextContent()` pass per sheet matched against
+  a keyword list (ELEVATION, SECTION, BRACING, WINDOW SCHEDULE, …) names them.
+  On the 15-sheet fixture it labels 15 of 15 correctly.
+- **Thumbnails render one at a time**, so a 15-sheet set paints progressively
+  instead of freezing the phone while it does all of them.
+- **SWIPE left/right between sheets**, the gesture already used for photos —
+  but ONLY when not zoomed in. Zoomed, a sideways drag is a pan across the
+  sheet, and stealing that would make a big plan unusable. Pinned by a test.
+- **Deliberately NOT a continuously-scrolling PDF.** Fifteen A3 sheets rendered
+  into one scroller is a lot of canvas on a phone, and scrolling is the slow way
+  to reach sheet 12 anyway. One sheet at a time, with an index to jump and a
+  swipe to step, is faster on both counts — and it keeps markup unambiguous
+  about which sheet it came off.
+- **A markup records the sheet** (`plan-306648-p5.jpg`), so an elevation markup
+  is not mistaken for a floor-plan one later.
+
 ## 2026-08-15 (w) — three things only a screenshot showed
 
 Taking pictures of the finished plan viewer to show the site found three
