@@ -253,6 +253,20 @@ console.log('\n--- B · the plan opens ---');
   check('…fitted to the screen width so it opens readable',
     parseFloat(c.cssW) > 300 && parseFloat(c.cssW) <= 390, c.cssW);
   check('…with the page count shown', /Page 1 of 1/.test(await ovText()), (await ovText() || '').split('\n')[0]);
+  // Nothing tappable may sit in the top strip, where the clock and the island
+  // are. Everything the viewer offers lives at the bottom.
+  const chrome = await page.evaluate(() => {
+    const ov = document.getElementById('plan-ov');
+    const vh = window.innerHeight;
+    return [...ov.querySelectorAll('button')].map(b => {
+      const r = b.getBoundingClientRect();
+      return { t: b.textContent.trim().slice(0, 12), top: Math.round(r.top), frac: +(r.top / vh).toFixed(2) };
+    });
+  });
+  console.log('  controls:', JSON.stringify(chrome));
+  check('every control in the viewer is in the bottom third, clear of the status bar',
+    chrome.length > 0 && chrome.every(c => c.frac > 0.66), JSON.stringify(chrome.filter(c => c.frac <= 0.66)));
+  check('…including Back and the job number', /Job 306648/.test(await ovText()) && chrome.some(c => /Back/.test(c.t)));
   // Six controls plus a labelled button did not fit 390px and cut the + off the
   // right edge. Page nav moved to the header; this is what keeps it honest.
   const bar = await page.evaluate(() => {
@@ -352,10 +366,17 @@ console.log('\n--- D · the other outcomes ---');
     if (!b) return { back: false };
     const r = b.getBoundingClientRect();
     const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
-    return { back: true, tappable: !!(hit && (hit === b || b.contains(hit))), says: ov.innerText.split('\n')[0] };
+    return { back: true, tappable: !!(hit && (hit === b || b.contains(hit))),
+             top: Math.round(r.top), vh: window.innerHeight, says: ov.innerText.split('\n')[0] };
   });
   check('…and there is a Back button on it, not a dead end', wayOut.back, JSON.stringify(wayOut));
   check('…which is actually tappable, not covered', wayOut.tappable, JSON.stringify(wayOut));
+  // At the top it sat under the clock and the Dynamic Island — padding for
+  // env(safe-area-inset-top) was the textbook fix and still did not clear it on
+  // a real iPhone. The bottom has nothing to argue with, and is where the thumb
+  // already is (Spiro 2026-08-16).
+  check('…and it is at the BOTTOM, clear of the status bar',
+    wayOut.top > wayOut.vh * 0.75, `y ${wayOut.top} of ${wayOut.vh}`);
   // Centring the message in a full-height overlay put it halfway down an empty
   // screen, well below where anyone looks. It belongs under the header.
   const msgY = await page.evaluate(() => {
@@ -623,6 +644,12 @@ console.log('\n--- G · a 15-sheet plan set ---');
   }));
   check('every sheet name is visible inside its card, not clipped off',
     capped.length === 15 && capped.every(Boolean), `${capped.filter(Boolean).length}/${capped.length}`);
+  const idxChrome = await page.evaluate(() => {
+    const ov = document.getElementById('plan-sheets'), vh = window.innerHeight;
+    return [...ov.querySelectorAll('button')].map(b => +(b.getBoundingClientRect().top / vh).toFixed(2));
+  });
+  check('the sheet index keeps its controls at the bottom too',
+    idxChrome.length > 0 && idxChrome.every(f => f > 0.75), JSON.stringify(idxChrome));
   check('the sheet index pads for the notch as well',
     await page.evaluate(() => /padding-top:\s*env\(safe-area-inset-top/.test(document.getElementById('plan-sheets').style.cssText)),
     await page.evaluate(() => document.getElementById('plan-sheets').style.cssText.slice(-60)));

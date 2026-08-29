@@ -15,6 +15,12 @@ After running it, check on a phone: Settings → Defect wordings → open a trad
 
 ## 📐 Job plans read straight from CH Tracker (2026-08-16) — build `2026-08-16b`
 
+**Every plan control lives at the BOTTOM of the screen** — Back, the job, the
+page counter, zoom, Mark up. Do not move any of them back to a top bar: iOS
+draws the clock and the Dynamic Island there, and padding for
+`env(safe-area-inset-top)` did not clear it on a real phone. `jobplans.mjs`
+asserts every control sits below 66% of the viewport.
+
 **Every state of the plan viewer must have a Back button.** `_planOverlay`
 builds the header, so a message state is never a dead end — that shipped broken
 and a supervisor had to force-quit the app to get out. If you add a new message

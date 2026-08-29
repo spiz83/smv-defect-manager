@@ -10628,17 +10628,20 @@
             // leavable, including the ones that only happen when something is
             // wrong, and including the loading state if the fetch hangs.
             const jn = (_planState && _planState.jobNumber) || '';
+            // Back at the BOTTOM here too, for the same reason: at the top it
+            // sat under the clock and the Dynamic Island. Nothing this screen
+            // needs is out of thumb reach.
             ov.innerHTML =
-                '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);' +
-                'border-bottom:1px solid var(--border-color);flex:0 0 auto;">' +
-                '<button onclick="closeJobPlan()" style="background:none;border:none;font-size:17px;font-weight:600;' +
-                'color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Back</button>' +
-                '<div style="font-weight:700;font-size:16px;color:var(--text-primary);">📐 ' +
-                (jn ? 'Job ' + _escHtml(jn) : 'Plans') + '</div></div>' +
-                '<div style="flex:1;overflow:auto;padding:54px 26px 26px;text-align:center;' +
+                '<div style="flex:1;overflow:auto;padding:44px 26px 26px;text-align:center;' +
                 'font-size:16px;color:var(--text-primary);line-height:1.55;">' +
                 '<div style="font-size:44px;line-height:1;margin-bottom:14px;opacity:.5;">📐</div>' +
-                '<div style="max-width:320px;margin:0 auto;">' + inner + '</div></div>';
+                '<div style="font-weight:700;font-size:16px;margin-bottom:10px;">' +
+                (jn ? 'Job ' + _escHtml(jn) : 'Plans') + '</div>' +
+                '<div style="max-width:320px;margin:0 auto;">' + inner + '</div></div>' +
+                '<div style="display:flex;align-items:center;padding:12px 14px calc(12px + env(safe-area-inset-bottom));' +
+                'background:var(--bg-primary);border-top:1px solid var(--border-color);flex:0 0 auto;">' +
+                '<button onclick="closeJobPlan()" style="background:none;border:none;font-size:17px;font-weight:600;' +
+                'color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Back</button></div>';
             return ov;
         }
         function closeJobPlan() {
@@ -10670,17 +10673,23 @@
         function _planRenderShell() {
             const st = _planState;
             const ov = _planOverlay('');
+            // ALL the controls sit at the BOTTOM (Spiro 2026-08-16: "Needs to be
+            // at the bottom as the time on the smartphone is obstructing").
+            // Padding for env(safe-area-inset-top) was the textbook fix and it
+            // still did not clear the Dynamic Island on his phone. The bottom
+            // has no clock, no island and no notch to argue with — and it is
+            // where a thumb already is. Two rows so nothing is crowded.
             ov.innerHTML = `
-                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);border-bottom:1px solid var(--border-color);flex:0 0 auto;">
-                    <button onclick="closeJobPlan()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Back</button>
-                    <div style="font-weight:700;font-size:16px;color:var(--text-primary);">📐 Job ${_escHtml(st.jobNumber)}</div>
-                    <button onclick="planReload()" title="Fetch the latest plan from CH Tracker" style="margin-left:auto;background:none;border:none;font-size:17px;cursor:pointer;padding:2px 6px;color:var(--text-secondary);">↻</button>
-                    <span id="plan-pagenav" style="display:flex;align-items:center;gap:4px;"></span>
-                </div>
                 <div id="plan-scroll" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;background:#5a5a5a;text-align:center;">
                     <canvas id="plan-canvas" style="display:block;margin:0 auto;"></canvas>
                 </div>
-                <div style="display:flex;align-items:center;gap:7px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--bg-primary);border-top:1px solid var(--border-color);flex:0 0 auto;">
+                <div style="display:flex;align-items:center;gap:10px;padding:9px 14px 7px;background:var(--bg-primary);border-top:1px solid var(--border-color);flex:0 0 auto;">
+                    <button onclick="closeJobPlan()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Back</button>
+                    <div style="font-weight:700;font-size:15px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📐 Job ${_escHtml(st.jobNumber)}</div>
+                    <button onclick="planReload()" title="Fetch the latest plan from CH Tracker" style="margin-left:auto;background:none;border:none;font-size:17px;cursor:pointer;padding:2px 6px;color:var(--text-secondary);">↻</button>
+                    <span id="plan-pagenav" style="display:flex;align-items:center;gap:4px;"></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;padding:0 12px calc(10px + env(safe-area-inset-bottom));background:var(--bg-primary);flex:0 0 auto;">
                     <button onclick="planRotate()" id="plan-rot" title="Turn the sheet 90°" style="flex:0 0 auto;padding:11px 13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;cursor:pointer;">⟳</button>
                     <button onclick="planMarkup()" id="plan-markup" style="flex:1 1 auto;min-width:0;padding:11px 10px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;">✏️ Mark up</button>
                     <button onclick="planZoom(-1)" style="flex:0 0 auto;padding:11px 13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary);color:var(--text-primary);font-size:16px;font-weight:700;cursor:pointer;">−</button>
@@ -10867,11 +10876,11 @@
             ov.id = 'plan-sheets';
             ov.style.cssText = 'position:fixed;inset:0;z-index:100005;background:var(--bg-secondary,#1b1b1b);display:flex;flex-direction:column;box-sizing:border-box;padding-top:env(safe-area-inset-top,24px);';
             ov.innerHTML = `
-                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg-primary);border-bottom:1px solid var(--border-color);flex:0 0 auto;">
+                <div id="plan-sheet-grid" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start;grid-auto-rows:max-content;align-items:start;"></div>
+                <div style="display:flex;align-items:center;gap:10px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));background:var(--bg-primary);border-top:1px solid var(--border-color);flex:0 0 auto;">
                     <button onclick="planCloseSheets()" style="background:none;border:none;font-size:17px;font-weight:600;color:var(--blue,#2563eb);cursor:pointer;padding:0;">‹ Plan</button>
                     <div style="font-weight:700;font-size:16px;color:var(--text-primary);">${n} sheet${n === 1 ? '' : 's'}</div>
-                </div>
-                <div id="plan-sheet-grid" style="flex:1 1 auto;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-content:start;grid-auto-rows:max-content;align-items:start;"></div>`;
+                </div>`;
             document.body.appendChild(ov);
             const grid = ov.querySelector('#plan-sheet-grid');
             for (let i = 1; i <= n; i++) {
@@ -12844,7 +12853,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16c';
+        const APP_VERSION = '2026-08-16d';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12918,7 +12927,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16c"></script>
+    <script src="cloud-sync.js?v=2026-08-16d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

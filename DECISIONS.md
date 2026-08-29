@@ -2,6 +2,26 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (d) — all the plan controls moved to the BOTTOM
+
+- **Spiro, after (c) shipped: "Needs to be at the bottom as the time on the
+  smartphone is obstructing."** Padding for `env(safe-area-inset-top)` is the
+  textbook fix and it STILL had Back under the clock on his phone.
+- **Stopped arguing with the notch.** Back, the job number, the page counter,
+  `↻`, Mark up and the zoom controls all sit at the bottom now, in two rows. The
+  bottom of a phone has no clock, no island and no inset to negotiate — and it
+  is where the thumb already is. The plan itself gets the whole screen.
+- **Applies to every plan screen**: the viewer, the sheet index, and the message
+  states.
+- **The test asserts POSITION, not padding.** Every control must sit below 66%
+  of the viewport height; a structural check on a CSS declaration could not have
+  caught this, because the declaration was there and correct and it still did
+  not work on the device.
+- **Why the earlier fix failed is still unconfirmed** — his phone was also
+  showing the pre-(c) build (no Attach button), so it may simply never have run.
+  Moving the controls makes the question moot, which is the better outcome than
+  a fix that depends on `env()` behaving.
+
 ## 2026-08-16 (c) — attach a plan from the app, and clear the notch
 
 - **Spiro, standing on a job with the PDF on his phone: "Create ability to drop
