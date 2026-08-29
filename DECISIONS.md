@@ -18,6 +18,9 @@ Newest at top. Format: date — decision — why — trade-off accepted.
 - **Measured on the real address that prompted it** ("Lot 218, (14) Red Fruit
   Street, Clyde North - 305942"): two lines to one, both screens now identical
   at 17px. A 47-character address steps to 14px and still holds one line.
+- **The `›` needed a margin, not a space.** Leading whitespace collapses at the
+  start of a flex item — the CSS already said so about the job number — so the
+  space in the trailer was doing nothing and the arrow sat against `305942`.
 - **A header that never scrolls away pays for its height on every screen.**
   That was the argument for hdr-inline in the first place; it applies at least
   as much to the screen where you are typing.

@@ -367,7 +367,8 @@
         .defects-header.hdr-inline .lot-add { flex-shrink: 0; }
         /* Leading whitespace collapses at the start of a flex item, so the gap
            before the job number has to be a margin, not a space. */
-        .defects-header.hdr-inline .lot-job { margin-left: .3em; }
+        .defects-header.hdr-inline .lot-job,
+        .defects-header.hdr-inline .lot-add { margin-left: .3em; }
         /* 📋 ON THE ADDRESS, not in the toolbar (Spiro 2026-08-12).
            There is already a 📋 in the toolbar and it copies the DEFECT LIST.
            Two clipboards on one screen only works if each one sits on the thing
@@ -3139,7 +3140,7 @@
                          steps 17px→14px rather than wrapping — the wrap was
                          costing a whole line of a header that never scrolls. -->
                     <div class="defects-header hdr-inline">
-                        <div class="lot-title" onclick="leaveAddDefects(() => viewDefectsForAddress(${addressId}))" style="cursor: pointer;" title="${formatAddress(address)} — tap to view this job's defects">${lotTitleHtml(address, ' ›')}</div>
+                        <div class="lot-title" onclick="leaveAddDefects(() => viewDefectsForAddress(${addressId}))" style="cursor: pointer;" title="${formatAddress(address)} — tap to view this job's defects">${lotTitleHtml(address, '›')}</div>
                     </div>
 
                     <div style="padding: 0 14px;">
@@ -13006,7 +13007,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16h';
+        const APP_VERSION = '2026-08-16i';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13080,7 +13081,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16h"></script>
+    <script src="cloud-sync.js?v=2026-08-16i"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

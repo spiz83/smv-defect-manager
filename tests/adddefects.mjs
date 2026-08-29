@@ -313,6 +313,14 @@ console.log('\n--- H · the address header, one line like View Defects ---');
   check('…on ONE line, not two', add.lines === 1, `${add.lines} line(s), ${add.height}px`);
   check('…and still shows the job number', /305942/.test(add.text), add.text);
   check('…which is never the bit that gets cut', !add.jobClipped);
+  // Leading whitespace collapses at the start of a flex item — the CSS already
+  // says so for the job number — so the › needs a margin, not a space.
+  check('…and the › is not jammed against the job number',
+    await page.evaluate(() => {
+      const a = document.querySelector('.hdr-inline .lot-add');
+      return !!a && parseFloat(getComputedStyle(a).marginLeft) > 1;
+    }),
+    await page.evaluate(() => { const a = document.querySelector('.hdr-inline .lot-add'); return a ? getComputedStyle(a).marginLeft : 'none'; }));
   check('…dropping the suburb, which is what made it wrap', !/Clyde North/.test(add.text), add.text);
 
   await page.evaluate(() => viewDefectsForAddress(1));
