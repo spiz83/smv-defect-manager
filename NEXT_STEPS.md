@@ -135,6 +135,13 @@ lazily by `_clrNode()`. What will bite a later change:
 - **It is driven by focus, not markup.** Nothing declares a ✕; a new text field
   anywhere in the app gets one automatically. To exclude one, put
   `data-no-clear` on it.
+- **Do not give it `position:fixed` again.** It is `absolute` inside the field's
+  own parent for a reason: fixed elements have to be re-placed as the page
+  moves, and iOS shifts them while the keyboard is up — which drew the ✕ 200px
+  above its field on a real phone. Anchored in the DOM there is nothing to
+  re-place. (Same lesson as the defect suggestion list and the Bulk Import
+  chips: `position:fixed` tracking a moving element is a bug waiting for a
+  phone to find it.)
 - **Do not move the handler to `click`.** It is on touchstart/mousedown with the
   default prevented so the field never blurs — a blur bounces the keyboard shut
   and fires the dropdown-hide timers. The click is swallowed separately because

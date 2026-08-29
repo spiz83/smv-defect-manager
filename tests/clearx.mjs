@@ -66,6 +66,8 @@ await page.evaluate(() => { window.CloudJobs = { isManager: () => true, currentU
 const fail = [];
 const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? '  ' + d : '')); if (!c) fail.push(l); };
 
+// Hiding now REMOVES it from the document — it lives beside whichever field is
+// focused rather than floating over the page — so "not there" is "not shown".
 const xState = () => page.evaluate(() => {
   const d = document.getElementById('input-clear-x');
   if (!d) return { exists: false, shown: false };
@@ -109,9 +111,23 @@ console.log('\n--- A · it appears only when the focused field has text ---');
   const box = await boxOf('#add-contractor-1-input');
   check('…sitting inside the field\'s right edge', Math.abs(st.left - (box.right - 33)) <= 2, `x@${st.left}, field right ${box.right}`);
   check('…vertically centred on the field', Math.abs(st.top - (box.top + (box.height - 30) / 2)) <= 2, `x@${st.top}, field top ${box.top} h${box.height}`);
+  // It used to be position:fixed and re-placed on every scroll. iOS shifts
+  // fixed elements while the keyboard is up, which put it 200px above the field
+  // (Spiro 2026-08-16). Now it is a child of the field's own parent, so the
+  // browser keeps it there and there is nothing to go stale.
+  const anchored = await page.evaluate(() => {
+    const d = document.getElementById('input-clear-x'), el = document.getElementById('add-contractor-1-input');
+    return { pos: getComputedStyle(d).position, sameParent: d.parentElement === el.parentElement,
+             hostPos: getComputedStyle(el.parentElement).position };
+  });
+  check('…anchored INSIDE the field\'s parent, not floating over the viewport',
+    anchored.pos === 'absolute' && anchored.sameParent, JSON.stringify(anchored));
+  check('…with that parent made a positioning context', anchored.hostPos !== 'static', anchored.hostPos);
   check('…and the field gains right padding so the text does not run under it',
     parseFloat(box.padR) >= 34, box.padR);
-  check('…above the modal, bulk and suggestion layers', Number(st.z) > 100002, st.z);
+  // It no longer needs to out-rank the modal layers: sitting inside the field's
+  // own parent, it stacks with the field, wherever that field happens to be.
+  check('…and it draws over the field, not under it', Number(st.z) > 0, st.z);
 
   await page.fill('#add-contractor-1-input', '');
   check('deleting the text by hand takes the ✕ away', !(await xState()).shown);
@@ -214,19 +230,47 @@ console.log('\n--- D · one ✕, following the focused field ---');
   const b = await xState();
   check('there is only ever ONE ✕ in the document',
     await page.evaluate(() => document.querySelectorAll('#input-clear-x').length === 1));
+  check('…which has MOVED to the new field\'s parent, not been copied',
+    await page.evaluate(() => document.getElementById('input-clear-x').parentElement === document.getElementById('add-contractor-3-input').parentElement));
   check('…and it moves to the newly focused field', b.top !== a.top, `${a.top} -> ${b.top}`);
   check('…the field left behind gets its padding back',
     parseFloat((await boxOf('#add-contractor-1-input')).padR) < 34, (await boxOf('#add-contractor-1-input')).padR);
   check('…the one still holding text keeps its value', (await page.inputValue('#add-contractor-1-input')) === 'Carpenter');
 
   // Scrolling the form must not leave it stranded mid-screen.
-  const before = (await xState()).top;
-  await page.evaluate(() => window.scrollBy(0, 120));
-  await page.waitForTimeout(60);
-  const after = await xState();
-  const box = await boxOf('#add-contractor-3-input');
-  check('scrolling the form moves the ✕ with its field, not adrift',
-    Math.abs(after.top - (box.top + (box.height - 30) / 2)) <= 2, `x@${after.top} field@${box.top} (was ${before})`);
+  // Nothing re-places it any more, so this proves the anchoring rather than a
+  // scroll handler. The gap to the field must be identical at every position.
+  const gapAt = async (y) => {
+    await page.evaluate((y) => window.scrollTo(0, y), y);
+    await page.waitForTimeout(40);
+    return page.evaluate(() => {
+      const d = document.getElementById('input-clear-x').getBoundingClientRect();
+      const f = document.getElementById('add-contractor-3-input').getBoundingClientRect();
+      return Math.round(d.top - f.top);
+    });
+  };
+  const gaps = [];
+  for (const y of [0, 90, 220, 400, 90, 0]) gaps.push(await gapAt(y));
+  console.log('  ✕ offset from the field at scroll 0/90/220/400/90/0:', JSON.stringify(gaps));
+  check('the ✕ keeps EXACTLY the same offset on its field at every scroll position',
+    gaps.every(g => g === gaps[0]), JSON.stringify(gaps));
+  await page.evaluate(() => window.scrollTo(0, 0));
+
+  // And when the keyboard shifts the visual viewport — the case that broke it.
+  await page.evaluate(() => {
+    const vv = window.visualViewport;
+    Object.defineProperty(vv, 'offsetTop', { get: () => 200, configurable: true });
+    Object.defineProperty(vv, 'height', { get: () => 500, configurable: true });
+    vv.dispatchEvent(new Event('resize'));
+  });
+  await page.waitForTimeout(80);
+  const kbGap = await page.evaluate(() => {
+    const d = document.getElementById('input-clear-x').getBoundingClientRect();
+    const f = document.getElementById('add-contractor-3-input').getBoundingClientRect();
+    return Math.round(d.top - f.top);
+  });
+  check('…and stays on the field when the keyboard shifts the viewport',
+    kbGap === gaps[0], `${kbGap} vs ${gaps[0]}`);
 
   // Blurring everything must take it away.
   await page.evaluate(() => document.activeElement.blur());
@@ -245,7 +289,8 @@ console.log('\n--- E · where it should not appear ---');
       Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
       document.body.appendChild(el); el.value = 'x';
       el.focus(); el.dispatchEvent(new Event('input', { bubbles: true }));
-      const shown = getComputedStyle(document.getElementById('input-clear-x') || document.createElement('i')).display !== 'none';
+      const x = document.getElementById('input-clear-x');
+      const shown = !!x && getComputedStyle(x).display !== 'none';
       el.remove(); return shown;
     };
     return { readonly: mk({ type: 'text', readonly: 'readonly' }), disabled: mk({ type: 'text', disabled: 'disabled' }),
@@ -262,7 +307,8 @@ console.log('\n--- E · where it should not appear ---');
     const el = document.createElement('textarea');
     document.body.appendChild(el); el.value = 'notes';
     el.focus(); el.dispatchEvent(new Event('input', { bubbles: true }));
-    const shown = getComputedStyle(document.getElementById('input-clear-x')).display !== 'none';
+    const x = document.getElementById('input-clear-x');
+    const shown = !!x && getComputedStyle(x).display !== 'none';
     el.remove(); return shown;
   });
   check('but it DOES appear on a textarea', ta);

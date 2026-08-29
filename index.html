@@ -10422,7 +10422,7 @@
         // yet: Bulk Import builds its rows in JS, the modals build theirs on
         // open, and neither needs to know about this.
         const CLEARABLE_TYPES = ['text', 'search', 'tel', 'email', 'url', 'number', ''];
-        let _clrEl = null, _clrFor = null, _clrPad = null;
+        let _clrEl = null, _clrFor = null, _clrPad = null, _clrHost = null, _clrHostPos = null;
 
         function _clrCanClear(el) {
             if (!el || el.disabled || el.readOnly) return false;
@@ -10433,7 +10433,7 @@
             return CLEARABLE_TYPES.indexOf((el.getAttribute('type') || 'text').toLowerCase()) >= 0;
         }
         function _clrNode() {
-            if (_clrEl && document.body.contains(_clrEl)) return _clrEl;
+            if (_clrEl) return _clrEl;
             const d = document.createElement('div');
             d.id = 'input-clear-x';
             d.setAttribute('role', 'button');
@@ -10441,7 +10441,14 @@
             // Above the modal overlay (100001), the Bulk Import screen (100000)
             // and the suggestion popup (100002) — it sits INSIDE the field's
             // right edge, so it never covers a list hanging below the field.
-            d.style.cssText = 'display:none;position:fixed;z-index:100003;width:30px;height:30px;' +
+            // position:ABSOLUTE inside the field's own parent, not fixed against
+            // the viewport. A fixed element has to be re-placed whenever the
+            // page moves, and iOS shifts fixed elements while the keyboard is
+            // up — which put the ✕ 200px above the field it belongs to (Spiro
+            // 2026-08-16). Anchored to the parent, the browser keeps it on the
+            // field for free: no scroll maths, nothing to go stale. Same lesson
+            // as the defect suggestion list.
+            d.style.cssText = 'display:none;position:absolute;z-index:6;width:30px;height:30px;' +
                 'align-items:center;justify-content:center;cursor:pointer;' +
                 'font-size:19px;line-height:1;font-weight:400;color:var(--red,#b3261e);' +
                 '-webkit-tap-highlight-color:transparent;user-select:none;';
@@ -10458,7 +10465,6 @@
             // "close dropdowns on any outside click" handler sees the same thing
             // on both and the ✕ behaves identically.
             d.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
-            document.body.appendChild(d);
             _clrEl = d;
             return d;
         }
@@ -10474,9 +10480,11 @@
             _clrSync();
         }
         function _clrHide() {
-            if (_clrEl) _clrEl.style.display = 'none';
+            if (_clrEl) { _clrEl.style.display = 'none'; if (_clrEl.parentElement) _clrEl.parentElement.removeChild(_clrEl); }
             if (_clrFor && _clrPad !== null) { _clrFor.style.paddingRight = _clrPad; }
-            _clrFor = null; _clrPad = null;
+            // Put the host's positioning back the way we found it.
+            if (_clrHost && _clrHostPos !== null) { _clrHost.style.position = _clrHostPos; }
+            _clrFor = null; _clrPad = null; _clrHost = null; _clrHostPos = null;
         }
         // Show it against the focused field, if that field has anything in it.
         function _clrSync() {
@@ -10487,28 +10495,31 @@
                 _clrFor = el;
                 _clrPad = el.style.paddingRight || '';
             }
-            const r = el.getBoundingClientRect();
-            if (!r.width || !r.height) { if (_clrEl) _clrEl.style.display = 'none'; return; }
+            if (!el.offsetWidth || !el.offsetHeight) { if (_clrEl) _clrEl.style.display = 'none'; return; }
             // Keep the caret clear of the ✕ rather than letting text run under it.
             const want = 34;
             if (parseFloat(getComputedStyle(el).paddingRight) < want) el.style.paddingRight = want + 'px';
             const d = _clrNode();
+            // Park it in the field's own parent, making that a positioning
+            // context if it isn't one already (restored on hide).
+            const host = el.parentElement || document.body;
+            if (_clrHost !== host) {
+                if (_clrHost && _clrHostPos !== null) _clrHost.style.position = _clrHostPos;
+                _clrHost = host;
+                _clrHostPos = host.style.position || '';
+                if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+            }
+            if (d.parentElement !== host) host.appendChild(d);
             d.style.display = 'flex';
-            d.style.left = Math.round(r.right - 33) + 'px';
-            d.style.top = Math.round(r.top + (r.height - 30) / 2) + 'px';
+            d.style.left = Math.round(el.offsetLeft + el.offsetWidth - 33) + 'px';
+            d.style.top = Math.round(el.offsetTop + (el.offsetHeight - 30) / 2) + 'px';
         }
         document.addEventListener('focusin', _clrSync);
         document.addEventListener('input', _clrSync);
         document.addEventListener('focusout', () => setTimeout(_clrSync, 0));
-        // Follow the field: inner scrollers (capture), window scroll, rotation,
-        // and the iOS keyboard, which resizes the visual viewport out from under
-        // a fixed element without firing a window resize.
-        document.addEventListener('scroll', () => { if (_clrFor) _clrSync(); }, true);
-        window.addEventListener('resize', () => { if (_clrFor) _clrSync(); });
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', () => { if (_clrFor) _clrSync(); });
-            window.visualViewport.addEventListener('scroll', () => { if (_clrFor) _clrSync(); });
-        }
+        // No scroll, resize or visualViewport listeners: the ✕ is a child of the
+        // field's own parent, so the browser moves it with the field. Deleting
+        // them is the fix, not an optimisation.
 
         // ===================================================================
         //  📐 Plans — the job's construction plan, one tap from the job
@@ -12923,7 +12934,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16e';
+        const APP_VERSION = '2026-08-16f';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -12997,7 +13008,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16e"></script>
+    <script src="cloud-sync.js?v=2026-08-16f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

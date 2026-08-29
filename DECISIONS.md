@@ -2,6 +2,31 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (f) — the ✕ stops floating and sits on its field
+
+- **Spiro: "the red little cross… needs to be on the top corner of the input
+  field, at the moment it seems to be above it."** On his phone it was drawn
+  about 200px high, up in the address header.
+- **It was `position:fixed`, re-placed on scroll.** iOS shifts fixed elements
+  while the keyboard is up, so the coordinates it had been given were measured
+  against a viewport that had since moved. Scroll and visualViewport listeners
+  chased it and still lost.
+- **It is now `position:absolute` inside the FIELD'S OWN PARENT**, which is made
+  a positioning context if it is not one already (and put back on hide). The
+  browser keeps it on the field because it is part of the field's box — nothing
+  to re-place, nothing to go stale. Measured: the offset is byte-identical
+  across six scroll positions and under a simulated keyboard shift, where before
+  it was recomputed each time.
+- **All the scroll / resize / visualViewport listeners are DELETED**, as with
+  the defect suggestion list.
+- **Third time this exact lesson has landed** — Bulk Import's chips, the
+  suggestion list, now this. **`position:fixed` that has to track a moving
+  element is a bug waiting for a phone to find it.** Anchor it in the DOM and
+  let the browser do the work.
+- **It no longer has to out-rank every overlay** either. Sitting inside the
+  field's parent, it stacks with the field wherever the field lives, so the
+  z-index went from 100003 to 6.
+
 ## 2026-08-16 (e) — pinch to zoom; and Mark up was opening behind the plan
 
 - **"When I press on markup, it doesn't allow me to do anything."** Two silent
