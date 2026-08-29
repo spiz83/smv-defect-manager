@@ -2,6 +2,44 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (r) — preview mode holds still
+
+- **Spiro, scrolling a job on site: "the photos tend to kind of flicker a fair
+  bit and refresh themselves… it kind of scrolls up and you have to continue
+  scrolling down", and "when I click left or right in the photos it actually
+  goes up or down".** Three separate causes, none of them the photos.
+- **1. `render()` threw the scroll position away.** It replaces `#app` wholesale,
+  and redraws fire on their own — a photo count landing, another phone's edit
+  arriving over realtime. So the list reset itself under your thumb with nothing
+  touched. It now keeps the offset when the view AND its filters are unchanged,
+  and still starts at the top on real navigation.
+- **2. `fillPreviewPhotos()` rebuilt every photo on every render** — it revoked
+  every object URL on the page and rewrote every slot. That is the flicker
+  literally: all images dropped and reloaded. Each slot now carries a signature
+  (its cloud URLs plus its pending COUNT — pending photos get a fresh object URL
+  every call, so comparing URLs would never match) and an unchanged slot is left
+  alone. Object URLs are revoked per defect, not globally.
+- **3. Paging rewrote the slot's innerHTML**, dropping the `<img>` out of layout
+  for a frame. The slot collapsed, everything below leapt up, and it sprang back
+  when the next photo decoded. `pvRenderPhoto` now mutates the existing element:
+  swap `src`, update the counter, add or remove the arrows in place.
+- **The slot only ever GROWS.** Fixing (3) alone still left a 347px jump in the
+  test, because one defect's photos are genuinely different shapes — portrait to
+  landscape really is 300px less box. It now keeps the tallest height it has
+  seen and letterboxes the rest (`object-fit: contain` was already there, so
+  nothing is cropped). Nothing below a card ever moves upward; the worst case is
+  one downward nudge the first time a taller photo appears.
+- **Heights survive a redraw.** `previewCard` seeds each slot with the height it
+  last painted at, so after `render()` the page is already the right length and
+  the restored scroll lands on the row you were on instead of clamping short.
+- **Trade-off: a wide photo in a card whose tallest is a portrait gets bands
+  down the sides.** Accepted — it is the price of nothing moving, and the whole
+  point of preview mode is walking a house thumb-first.
+- **`tests/pvstable.mjs` is a new suite (29 now)** and asserts POSITION and
+  IDENTITY: the scroll offset across a redraw, that a repeat fill rewrites zero
+  slots, that paging re-uses the same `<img>`, and that the card BELOW does not
+  move. "The photo is on screen" passed happily through all three bugs.
+
 ## 2026-08-16 (q) — the defect list goes in the message body
 
 - **Spiro: "the PDF is attached but there's nothing in the body."** Right — (p)

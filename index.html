@@ -6396,7 +6396,7 @@
                 <div class="pv-in">
                     <div class="pv-meta">${refLbl ? `<span class="pv-ref">${refLbl}</span>` : ''}${loc}</div>
                     <div class="pv-desc">${_pvEsc(body)}</div>
-                    ${n > 0 ? `<div class="pv-photo" data-pvphoto="${defect.id}" onclick="event.stopPropagation(); CloudPhotos.openGallery(${defect.id})">
+                    ${n > 0 ? `<div class="pv-photo" data-pvphoto="${defect.id}"${_pvHeights[defect.id] ? ` style="min-height:${_pvHeights[defect.id]}px"` : ''} onclick="event.stopPropagation(); CloudPhotos.openGallery(${defect.id})">
                         <div class="pv-ph-wait">loading photo…</div>
                     </div>` : ''}
                     <div class="pv-act">
@@ -6514,10 +6514,20 @@
         //  take a new one from the camera or the gallery without leaving.
         // ===========================================================================
         let _pvPhotos = {};        // legacyId -> [url]
-        let _pvBlobUrls = [];      // object URLs for not-yet-uploaded photos
-        function _pvRevokeBlobUrls() {
-            _pvBlobUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
-            _pvBlobUrls = [];
+        let _pvBlobUrls = {};      // legacyId -> [object URL] for not-yet-uploaded photos
+        let _pvSig = {};           // legacyId -> what the slot is ALREADY showing
+        let _pvHeights = {};       // legacyId -> last painted slot height, in px
+        // Revoke only ONE defect's object URLs. It used to revoke every one on
+        // the page before every refill, which broke any <img> still pointing at
+        // them and forced the whole list to reload — the flicker (Spiro
+        // 2026-08-16: "the photos tend to kind of flicker a fair bit and refresh
+        // themselves").
+        function _pvRevokeBlobUrls(id) {
+            const ids = id == null ? Object.keys(_pvBlobUrls) : [id];
+            ids.forEach(k => {
+                (_pvBlobUrls[k] || []).forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
+                delete _pvBlobUrls[k];
+            });
         }
         // Photos still on THIS phone, not yet uploaded. Appended last (they're the
         // newest), so a photo taken in a black spot is on the card immediately
@@ -6527,11 +6537,9 @@
             if (!cp || !cp.pendingPhotos || !cp.pendingCount || !cp.pendingCount(id)) return [];
             try {
                 const items = await cp.pendingPhotos(id);
-                return (items || []).map(it => {
-                    const u = URL.createObjectURL(it.blob);
-                    _pvBlobUrls.push(u);
-                    return u;
-                });
+                _pvRevokeBlobUrls(id);
+                _pvBlobUrls[id] = (items || []).map(it => URL.createObjectURL(it.blob));
+                return _pvBlobUrls[id].slice();
             } catch (e) { return []; }
         }
         async function fillPreviewPhotos() {
@@ -6540,35 +6548,93 @@
             const cp = window.CloudPhotos;
             if (!slots.length || !cp || !(cp.thumbsAll || cp.thumbs)) return;
             const ids = slots.map(el => Number(el.getAttribute('data-pvphoto')));
-            _pvRevokeBlobUrls();
             const cloud = cp.thumbsAll
                 ? await cp.thumbsAll(ids)
                 // Older cached cloud-sync.js: one url per defect. Still works.
                 : Object.fromEntries(Object.entries(await cp.thumbs(ids)).map(([k, v]) => [k, [v]]));
             for (const el of slots) {
                 const id = Number(el.getAttribute('data-pvphoto'));
-                _pvPhotos[id] = (cloud[id] || []).concat(await _pvPendingUrls(id));
-                pvRenderPhoto(el, id, 0);
+                // A signature of what this defect's photos ARE, built without
+                // creating any object URLs: pending ones get a fresh URL every
+                // call, so comparing URLs would never match and every refill
+                // would redraw. Compare the cloud URLs and the pending COUNT.
+                const cloudUrls = cloud[id] || [];
+                const pend = (cp.pendingCount && cp.pendingCount(id)) || 0;
+                const sig = cloudUrls.join('|') + '#' + pend;
+                // Unchanged AND already on screen → don't touch it. Re-running
+                // this on every render is what made the list flicker.
+                if (_pvSig[id] === sig && el.querySelector('img')) continue;
+                _pvSig[id] = sig;
+                _pvPhotos[id] = cloudUrls.concat(await _pvPendingUrls(id));
+                pvRenderPhoto(el, id, Number(el.getAttribute('data-pvindex') || 0));
             }
         }
         // Draw ONE photo plus its controls. Index is kept on the slot, so paging
         // never touches the rest of the card or the scroll position.
+        //
+        // This MUTATES the existing <img> rather than rewriting the slot. Setting
+        // innerHTML dropped the image out of the layout for a frame, so the slot
+        // collapsed to nothing, everything below it jumped up, and it all sprang
+        // back when the next photo decoded — which is what tapping ‹ or › felt
+        // like (Spiro 2026-08-16: "when I click left or right in the photos it
+        // actually goes up or down"). The slot's height is also pinned across the
+        // swap, so a taller or shorter photo can't shove the list either.
         function pvRenderPhoto(slot, id, index) {
             const urls = _pvPhotos[id] || [];
             if (!urls.length) {
-                slot.innerHTML = '<div class="pv-ph-wait">photo unavailable offline</div>';
+                const wait = slot.querySelector('.pv-ph-wait');
+                if (!wait) slot.innerHTML = '<div class="pv-ph-wait">photo unavailable offline</div>';
+                else wait.textContent = 'photo unavailable offline';
                 return;
             }
             const i = Math.max(0, Math.min(index, urls.length - 1));
             slot.setAttribute('data-pvindex', String(i));
             const many = urls.length > 1;
-            slot.innerHTML =
-                `<img src="${urls[i]}" loading="lazy" alt="defect photo">`
-                + (many ? `<button class="pv-nav pv-prev" aria-label="Previous photo"
+
+            let img = slot.querySelector('img');
+            if (!img) {
+                slot.innerHTML = '<img alt="defect photo">';
+                img = slot.querySelector('img');
+            }
+            // Controls exist only while there IS more than one photo, and are
+            // added or removed in place rather than by redrawing the slot.
+            let nav = slot.querySelector('.pv-nav');
+            if (many && !nav) {
+                slot.insertAdjacentHTML('beforeend',
+                    `<button class="pv-nav pv-prev" aria-label="Previous photo"
                         onclick="event.stopPropagation(); pvStepPhoto(${id}, -1)">‹</button>
                     <button class="pv-nav pv-next" aria-label="Next photo"
                         onclick="event.stopPropagation(); pvStepPhoto(${id}, 1)">›</button>
-                    <span class="pv-pcount">${i + 1}/${urls.length}</span>` : '');
+                    <span class="pv-pcount"></span>`);
+            } else if (!many && nav) {
+                slot.querySelectorAll('.pv-nav, .pv-pcount').forEach(el => el.remove());
+            }
+            const cnt = slot.querySelector('.pv-pcount');
+            if (cnt) cnt.textContent = (i + 1) + '/' + urls.length;
+
+            if (img.getAttribute('src') !== urls[i]) {
+                // Hold the height the slot has NOW (or had last time it painted)
+                // until the replacement has decoded, so nothing moves under a
+                // thumb mid-scroll.
+                const hold = slot.offsetHeight || _pvHeights[id] || 0;
+                if (hold) slot.style.minHeight = hold + 'px';
+                img.addEventListener('load', () => {
+                    // The slot only ever GROWS. Photos of one defect are all
+                    // different shapes, so letting each set its own height meant
+                    // paging from a portrait to a landscape shot yanked 300px out
+                    // of the page and everything below leapt up the screen — the
+                    // other half of what Spiro was seeing. Keeping the tallest
+                    // seen and letterboxing the rest (object-fit: contain, so
+                    // nothing is cropped) means nothing below a card ever moves
+                    // upward; the worst case is one downward nudge the first time
+                    // a taller photo appears, and it is settled after that.
+                    slot.style.minHeight = '';
+                    const h = Math.round(slot.getBoundingClientRect().height);
+                    const keep = Math.max(_pvHeights[id] || 0, h);
+                    if (keep) { _pvHeights[id] = keep; slot.style.minHeight = keep + 'px'; }
+                }, { once: true });
+                img.setAttribute('src', urls[i]);
+            }
         }
         // Wraps at both ends — with three or four photos, hunting for the arrow
         // that isn't greyed out is worse than just looping.
@@ -6577,7 +6643,14 @@
             const urls = _pvPhotos[id] || [];
             if (!slot || urls.length < 2) return;
             const cur = Number(slot.getAttribute('data-pvindex') || 0);
-            pvRenderPhoto(slot, id, (cur + delta + urls.length) % urls.length);
+            const next = (cur + delta + urls.length) % urls.length;
+            pvRenderPhoto(slot, id, next);
+            // Warm the two either side, so the following tap is instant instead
+            // of showing the held box while it fetches.
+            [1, -1].forEach(d => {
+                const u = urls[(next + d + urls.length) % urls.length];
+                if (u) { const pre = new Image(); pre.src = u; }
+            });
         }
         // 📷 on the card. accept="image/*" is what gives iOS the Camera / Photo
         // Library / Files sheet, so "take one" and "pick one" are the same button.
@@ -8541,8 +8614,27 @@
             mo.observe(document.body, { childList: true });
         }
 
+        // What screen is on the glass, filters included. Two renders with the
+        // same key are the SAME screen being redrawn — not navigation.
+        let _lastRenderKey = null;
+        function _renderKey() {
+            try { return state.currentView + '|' + JSON.stringify(state.filters || {}); }
+            catch (e) { return state.currentView + '|?'; }
+        }
+
         function render() {
             const app = document.getElementById('app');
+
+            // render() replaces the whole screen, so the browser drops the scroll
+            // position with it. On NAVIGATION that is right — a new screen starts
+            // at the top. On a redraw of the screen you are already on it threw
+            // you back up mid-job, and those redraws fire on their own: a photo
+            // count landing, another phone's edit arriving over realtime (Spiro
+            // 2026-08-16: "it kind of scrolls up and you have to continue
+            // scrolling down"). Same key → put it back.
+            const key = _renderKey();
+            const keepScroll = key === _lastRenderKey;
+            const wasY = keepScroll ? (window.scrollY || document.documentElement.scrollTop || 0) : 0;
 
             let content = '';
             // Safety net: a single malformed record must never blank the whole
@@ -8607,6 +8699,12 @@
                 ${content}
                 ${createModals()}
             `;
+            _lastRenderKey = key;
+            // Straight away, before paint, so there is no visible jump to the top
+            // and back. In preview mode the photo slots are seeded with the
+            // height they last painted at, so the page is already tall enough for
+            // this to land on the right row rather than clamping short.
+            if (keepScroll && wasY) window.scrollTo(0, wasY);
 
             if (state.currentView === 'home') {
                 // No need for multi-select rendering in new design
@@ -13076,7 +13174,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16q';
+        const APP_VERSION = '2026-08-16r';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13150,7 +13248,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16q"></script>
+    <script src="cloud-sync.js?v=2026-08-16r"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
