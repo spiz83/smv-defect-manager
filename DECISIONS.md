@@ -2,6 +2,35 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (t) — a missing email is an offer, never a wall
+
+- **Spiro, blocked by a `prompt()` on a Carpenter: "never make it mandatory to
+  add email for a TRADE type ie painter carpenter roof plumber… you can only do
+  this with contractors / supplier, even still don't make it mandatory."**
+- **A TRADE is never asked at all.** Carpenter, Painter, Roof Plumber are
+  placeholders, not companies — they have no inbox and never will. Asking was
+  pure obstruction on the most common case of the lot.
+- **A real supplier is OFFERED one, with Skip for now beside it.** Skip always
+  goes through: the email still sends, you fill the To line in Mail yourself,
+  which is where supervisors keep their contacts anyway. ✕ cancels the send
+  outright, which is a different answer from Skip and is tested as such.
+- **This removed the app's ONE `prompt()`.** A native browser dialog cannot be
+  styled, cannot offer a third option, and on iOS it is modal over everything.
+  `askSupplierEmail()` is a promise-returning overlay in the app's own furniture.
+- **Two downstream landmines went with it.** The server-send branch and the
+  mailto were both written assuming `c.email` exists — the mailto would have
+  produced `mailto:undefined?subject=…` the first time anyone skipped. Guarded.
+- **Swept the rest of the app: there is nothing else.** The add-contractor form,
+  the edit-contact modal and the bulk paste all already treated email as
+  optional. `emailDefectList` collects addresses where they exist and opens Mail
+  with an empty To line where they don't. The count of `prompt(` in index.html
+  is now zero.
+- **`emailattach.mjs` section E** covers trade-never-asked, offered-with-skip,
+  skip-saves-nothing, a bad address refused without closing the sheet, a good
+  one saved, and ✕ stopping the send. It also registers a Playwright `dialog`
+  handler and asserts NOTHING opens one — the wall coming back would be a
+  native dialog, so that is the thing to watch for.
+
 ## 2026-08-16 (s) — one fixed photo frame per defect
 
 - **Spiro, on (r): "photo one of five was the first photo and then when I press

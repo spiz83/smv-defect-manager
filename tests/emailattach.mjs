@@ -32,11 +32,21 @@ server.unref();
 
 const SEED = {
   addresses: [{ id: 1, lot: '905', street: 'Lot 905, (11) Woodlawn Rd', suburb: 'Wollert', propertyNumber: '306648', jobStatus: 'active', active: true }],
-  contractors: [{ id: 1, name: 'COSTAS PLUMBING', trades: 'Plumber', tradeIds: [1], email: 'orders@costasplumbing.com.au' }],
+  contractors: [
+    { id: 1, name: 'COSTAS PLUMBING', trades: 'Plumber', tradeIds: [1], email: 'orders@costasplumbing.com.au' },
+    // A TRADE, not a company. No inbox, and must never be asked for one.
+    { id: 2, name: 'Carpenter', trades: 'Carpenter', tradeIds: [], isTradePlaceholder: true, isActive: true },
+    // A real supplier that simply has no email saved yet.
+    { id: 3, name: 'BAYSIDE JOINERY', trades: 'Carpenter', tradeIds: [] },
+    { id: 4, name: 'APEX ROOFING', trades: 'Roof Plumber', tradeIds: [] },
+  ],
   trades: [{ id: 1, name: 'Plumber' }],
   defects: [
     { id: 1, addressId: 1, contractorId: 1, description: 'Downpipe missing behind garage.', status: 'open', completed: false },
     { id: 2, addressId: 1, contractorId: 1, description: 'Repair wall at cistern stop tap.', status: 'open', completed: false },
+    { id: 3, addressId: 1, contractorId: 2, description: 'Adjust striker plate to entry door.', status: 'open', completed: false },
+    { id: 4, addressId: 1, contractorId: 3, description: 'Refit robe shelf.', status: 'open', completed: false },
+    { id: 5, addressId: 1, contractorId: 4, description: 'Reseal valley gutter.', status: 'open', completed: false },
   ],
 };
 
@@ -52,6 +62,10 @@ await ctx.route('**', route => {
   return route.fulfill({ status: 200, contentType: u.includes('fonts.googleapis') ? 'text/css' : 'application/javascript', body: '' });
 });
 const errs = [];
+const dialogs = [];
+// The email gate used to be a browser prompt() — a wall you could not skip.
+// Anything that opens one here is that wall coming back.
+page.on('dialog', async d => { dialogs.push(d.type() + ': ' + d.message().slice(0, 80)); await d.dismiss().catch(() => {}); });
 page.on('pageerror', e => errs.push('pageerror: ' + String(e).slice(0, 220)));
 page.on('console', m => { if (m.type() === 'error' && !/supabase-js|Failed to load resource|jspdf|pdf/i.test(m.text())) errs.push('console: ' + m.text().slice(0, 200)); });
 await page.addInitScript(seed => {
@@ -196,6 +210,79 @@ console.log('\n--- D · files+text refused → the file still goes ---');
   check('the PDF is still attached', shared && shared.files.length === 1, JSON.stringify(shared));
   check('…and the body is dropped rather than the whole share failing',
     shared && !shared.keys.includes('text'), JSON.stringify(shared && shared.keys));
+}
+
+// ============ E. a missing email is an offer, never a wall =================
+// Spiro 2026-08-16, on a Carpenter: "never make it mandatory to add email for a
+// TRADE type… instead do something like there is no email address saved for
+// this contractor do you want to add one or skip for now?"
+console.log('\n--- E · a missing email never blocks the send ---');
+{
+  // A TRADE is never asked at all.
+  await arm();
+  await page.evaluate(() => { emailSupplier(2, 1); });
+  await page.waitForTimeout(900);
+  const trade = await page.evaluate(() => ({
+    asked: !!document.getElementById('ask-email'),
+    reachedShare: !!document.getElementById('sh-go'),
+  }));
+  console.log('trade placeholder:', JSON.stringify(trade));
+  check('a trade is NEVER asked for an email', !trade.asked, JSON.stringify(trade));
+  check('…and the send goes straight through', trade.reachedShare, JSON.stringify(trade));
+  await page.evaluate(() => impClose());
+
+  // A real supplier with no email IS offered, with a way past.
+  await arm();
+  await page.evaluate(() => { emailSupplier(3, 1); });
+  await page.waitForSelector('#ask-email', { timeout: 4000 });
+  const offer = await page.evaluate(() => ({
+    save: !!document.getElementById('ask-save'),
+    skip: !!document.getElementById('ask-skip'),
+    text: (document.getElementById('imp-body') || {}).textContent || '',
+  }));
+  check('a real supplier is offered the chance to add one', offer.save);
+  check('…with Skip for now beside it', offer.skip);
+  check('…and it names the supplier', /BAYSIDE JOINERY/.test(offer.text));
+
+  // Skip → straight on to the send, nothing saved.
+  await page.evaluate(() => document.getElementById('ask-skip').click());
+  await page.waitForSelector('#sh-go', { timeout: 5000 });
+  const skipped = await page.evaluate(() => ({
+    reachedShare: !!document.getElementById('sh-go'),
+    stored: (db.getContractor(3).email || null),
+  }));
+  check('Skip carries on to the send', skipped.reachedShare, JSON.stringify(skipped));
+  check('…without inventing an address', skipped.stored === null, String(skipped.stored));
+  await page.evaluate(() => impClose());
+
+  // A bad address is refused, and the sheet stays put rather than dumping you out.
+  await arm();
+  await page.evaluate(() => { emailSupplier(4, 1); });
+  await page.waitForSelector('#ask-email', { timeout: 4000 });
+  await page.evaluate(() => { document.getElementById('ask-email').value = 'not-an-email'; document.getElementById('ask-save').click(); });
+  await page.waitForTimeout(300);
+  const badEmail = await page.evaluate(() => ({ stillOpen: !!document.getElementById('ask-email'), stored: db.getContractor(4).email || null }));
+  check('a bad address is refused and the sheet stays open', badEmail.stillOpen && badEmail.stored === null, JSON.stringify(badEmail));
+
+  // A good one saves and carries on.
+  await page.evaluate(() => { document.getElementById('ask-email').value = 'jobs@apexroofing.com.au'; document.getElementById('ask-save').click(); });
+  await page.waitForSelector('#sh-go', { timeout: 5000 });
+  const saved = await page.evaluate(() => ({ stored: db.getContractor(4).email, reachedShare: !!document.getElementById('sh-go') }));
+  check('a good one is saved for next time', saved.stored === 'jobs@apexroofing.com.au', String(saved.stored));
+  check('…and the send carries on', saved.reachedShare);
+  await page.evaluate(() => impClose());
+
+  // ✕ means stop — it must NOT fall through and send anyway.
+  await arm();
+  await page.evaluate(() => { emailSupplier(3, 1); });
+  await page.waitForSelector('#ask-email', { timeout: 4000 });
+  await page.evaluate(() => document.getElementById('imp-close').click());
+  await page.waitForTimeout(900);
+  const cancelled = await page.evaluate(() => ({ share: !!document.getElementById('sh-go'), ask: !!document.getElementById('ask-email') }));
+  check('✕ stops the send rather than falling through', !cancelled.share && !cancelled.ask, JSON.stringify(cancelled));
+
+  console.log('native dialogs opened:', JSON.stringify(dialogs));
+  check('no browser prompt() is used anywhere in this flow', dialogs.length === 0, JSON.stringify(dialogs));
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

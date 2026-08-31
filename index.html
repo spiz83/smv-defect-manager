@@ -6995,6 +6995,51 @@
             return [ref.label, loc, ref.body.trim()].filter(Boolean).join(' — ');
         }
         // Email ONE supplier their open items (with photo links) for this address.
+        // A missing email must never be a wall (Spiro 2026-08-16: "never make it
+        // mandatory… instead do something like there is no email address saved
+        // for this contractor do you want to add one or skip for now?").
+        //
+        // A TRADE — Carpenter, Painter, Roof Plumber — is a placeholder, not a
+        // company. It has no inbox and never will, so it is not asked at all;
+        // asking was pure obstruction on the most common case of the lot.
+        // A real supplier is OFFERED the chance to save one, and Skip always
+        // goes through: the email still sends, you just fill the To line in Mail
+        // yourself, which is where supervisors keep their contacts anyway.
+        //
+        // Resolves 'go' to carry on, 'cancel' to stop. It replaced the app's one
+        // and only prompt() — a browser dialog you could not skip past.
+        function askSupplierEmail(c) {
+            return new Promise((resolve) => {
+                if (!c || c.isTradePlaceholder || (c.email || '').trim()) return resolve('go');
+                let done = false;
+                const finish = (r) => { if (done) return; done = true; impClose(); resolve(r); };
+                impOverlay(`
+                    <div id="imp-head"><strong>No email saved</strong><button id="imp-close">✕</button></div>
+                    <div id="imp-body">
+                        <p style="font-size:14px;line-height:1.5;margin:0 0 12px">
+                            There's no email address saved for <b>${_escHtml(c.name || 'this supplier')}</b>.
+                            Add one and it's kept for next time — or skip, and fill the To line in Mail yourself.
+                        </p>
+                        <input id="ask-email" type="text" inputmode="email" autocapitalize="none" autocorrect="off"
+                               placeholder="name@company.com.au"
+                               style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border-color,#ccc);border-radius:9px;font-size:16px;margin-bottom:12px">
+                        <button class="imp-btn" id="ask-save" style="width:100%;margin-bottom:8px">Save &amp; continue</button>
+                        <button class="imp-btn secondary" id="ask-skip" style="width:100%">Skip for now</button>
+                    </div>`);
+                const ov = document.getElementById('imp-ov');
+                const x = document.getElementById('imp-close'); if (x) x.onclick = () => finish('cancel');
+                if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) finish('cancel'); });
+                document.getElementById('ask-skip').onclick = () => finish('go');
+                document.getElementById('ask-save').onclick = () => {
+                    const v = (document.getElementById('ask-email').value || '').trim();
+                    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { showToast('That doesn\u2019t look like a valid email', true); return; }
+                    c.email = v; db.save();                          // persists locally + syncs to cloud
+                    showToast('Email saved for ' + (c.name || 'this supplier'));
+                    finish('go');
+                };
+            });
+        }
+
         async function emailSupplier(contractorId, addressId, asLink = false) {
             const c = db.getContractor(contractorId);
             const addr = formatAddress(db.getAddress(addressId));
@@ -7002,15 +7047,8 @@
                 d.addressId === addressId && d.contractorId === contractorId && !d.completed);
             if (!defects.length) { showToast('No open items for this supplier', true); return; }
             if (!c) { showToast('Supplier not found', true); return; }
-            // No email on file? Ask for it, validate, save so we don't ask again.
-            if (!c.email) {
-                const entered = prompt('No email on file for ' + c.name + '.\n\nEnter their email address — it will be saved for next time:', '');
-                if (entered === null) return;                       // cancelled
-                const email = entered.trim();
-                if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { showToast('That doesn’t look like a valid email', true); return; }
-                c.email = email; db.save();                          // persists locally + syncs to cloud
-                showToast('Email saved for ' + c.name);
-            }
+            // Offered, never required — and never asked at all for a trade.
+            if ((await askSupplierEmail(c)) !== 'go') return;
             showToast('Building PDF…');
             const booking = db.getContractorBooking(contractorId, addressId);
             const subject = 'Defects - ' + addr;
@@ -7080,7 +7118,7 @@
             // Hoisted so the link path below reuses this upload instead of
             // sending the same PDF up a second time on mobile data.
             let hosted = null;
-            if (!asLink && scopedPdf && window.CloudMail && window.CloudShare) {
+            if (!asLink && scopedPdf && c.email && window.CloudMail && window.CloudShare) {
                 hosted = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name).catch(() => null);
                 const pdfKey = window.CloudShare.lastKey && window.CloudShare.lastKey();
                 if (hosted && pdfKey) {
@@ -7124,7 +7162,9 @@
             if (url) body += '\nDefects list + photos — tap to open:\n' + url + '\n';
             else showToast('Could not build the PDF link — sending text only', true);
 
-            window.location.href = 'mailto:' + encodeURIComponent(c.email) +
+            // No address on file (a trade, or Skip) → open Mail with the To line
+            // empty rather than the literal string "undefined" in it.
+            window.location.href = 'mailto:' + (c.email ? encodeURIComponent(c.email) : '') +
                 '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
             markEmailedPending();   // mail client opened → items are now ordered
         }
@@ -13187,7 +13227,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16s';
+        const APP_VERSION = '2026-08-16t';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13261,7 +13301,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16s"></script>
+    <script src="cloud-sync.js?v=2026-08-16t"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
