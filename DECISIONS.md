@@ -2,6 +2,42 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (w) — report item numbers, trade grouping, and a contents page
+
+- **The question Spiro actually asked was a data-modelling one:** "a report for
+  the whole job might be 1 to 20, but a report for the individual trade might be
+  1 to 5 — do you create a separate item list for that contractor? You don't
+  want to create a way that information is all over the shop."
+- **Answer: the number belongs to the JOB, not to the report.** Item 7 is item 7
+  on the whole-job report, on the carpenter's own list, and on a reprint next
+  month. A per-report 1..N — or the 1.1 / 1.2 per-trade idea — reads neatly but
+  makes the same item two different numbers on two documents, which is precisely
+  the mess being asked about. A trade's report therefore shows #3, #7, #12, not
+  1, 2, 3, and that is the point rather than a limitation.
+- **DERIVED, never stored.** A stored "next item number" is the contractor-id
+  collision again: two phones offline both take the same one, and this session
+  has already watched that destroy rows. `jobItemNumbers()` computes it from the
+  order the cloud already returns (`dm_defects` is pulled ordered by id), so
+  every device agrees with no new column, no migration and nothing to sync.
+- **Completed items keep their number and stay in the sequence**, so ticking one
+  off does not renumber everything below it and invalidate a printed list.
+- **Trades are grouped.** A report grouped by address now sub-groups by trade,
+  which is why "Carpenter on the first page, another trade, then Carpenter
+  again" was happening: the address was the only group, so items came out in
+  list order. Trades sort A-Z with Unassigned last.
+- **A contents page, from the BPI report Spiro works from**: Item, Location,
+  Description, Trade, Page, Rectified — the same columns as BPI's summary plus
+  Trade and Page, which theirs does not carry. Built AFTER the body, because a
+  page number is only knowable once photos have pushed the cards around, then
+  the pages are appended and moved to the front with every recorded page number
+  shifted by however many contents pages there turned out to be.
+- **NOT VERIFIED BY RENDERING, and that is worth being plain about.** jsPDF
+  loads from cdnjs, which this sandbox's egress proxy denies, so no real PDF can
+  be produced here. The DECISIONS therefore live in pure functions —
+  `jobItemNumbers`, `reportSections`, `tocRowFor` — and `tests/reportindex.mjs`
+  (30 suites now) asserts those; the drawing reads them. The contents page's
+  layout and the `movePage` reordering need a real check on a device.
+
 ## 2026-08-16 (v) — 📎 file a bulk photo against a defect that already exists
 
 - **Spiro: "sometimes multiple of those photos relate to the same defect —

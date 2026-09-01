@@ -12713,6 +12713,99 @@
         // otherwise it falls back to the sub's own name (so it still groups), or
         // "Unassigned". This is what makes Painter/Plumbing/Electrical items sit
         // together and combine in the report (#7).
+        // ===================================================================
+        //  Report numbering + grouping  (Spiro 2026-08-16)
+        // ===================================================================
+        // "It doesn't actually list a number that you can tie the report item
+        // to… I don't understand how this would work in a database setting.
+        // You don't want to create a way that information is all over the shop."
+        //
+        // THE NUMBER BELONGS TO THE JOB, NOT TO THE REPORT. Item 7 is item 7
+        // whether you print the whole job, one trade's list, or reprint it in a
+        // month. That is the only version where a number is safe to say out loud
+        // on the phone. A per-report 1..N (or a per-trade 1.1, 1.2) reads neatly
+        // but means the same item is #3 on one document and #1 on another, which
+        // is exactly the mess the question was about.
+        //
+        // DERIVED, NEVER STORED. A stored "next item number" is the contractor-id
+        // collision again: two phones offline both take the same one, and this
+        // session has already watched that destroy rows. This is computed from
+        // the order the cloud hands the defects back in — `dm_defects` is pulled
+        // ordered by id, so every device agrees with no extra column to sync and
+        // nothing to migrate.
+        //
+        // COMPLETED ITEMS KEEP THEIR NUMBER and stay in the sequence. Ticking one
+        // off must not renumber everything under it, or a trade holding a printed
+        // list would find every number had moved.
+        function jobItemNumbers(addressId) {
+            const out = {};
+            let n = 0;
+            (db.data.defects || []).forEach(d => {
+                if (Number(d.addressId) !== Number(addressId)) return;
+                out[d.id] = ++n;
+            });
+            return out;
+        }
+        // Cache per report run — a contractor report spans several jobs and would
+        // otherwise walk the whole defect array once per card.
+        function jobItemNumberer() {
+            const cache = {};
+            return (d) => {
+                const a = Number(d.addressId);
+                if (!cache[a]) cache[a] = jobItemNumbers(a);
+                return cache[a][d.id] || 0;
+            };
+        }
+
+        // Trades A-Z, with Unassigned last — it is a gap to fill, not a trade.
+        function tradeSortKey(a, b) {
+            if (a === b) return 0;
+            if (a === 'Unassigned') return 1;
+            if (b === 'Unassigned') return -1;
+            return a.localeCompare(b);
+        }
+
+        // The report's shape: sections, each with trade sub-groups.
+        // Grouped by ADDRESS, the items under a job are now sub-grouped by trade,
+        // so a trade appears ONCE with its items together. They used to come out
+        // in list order, which is why Spiro saw "Carpenter on the first page and
+        // then another trade will follow and then Carpenter will reappear again".
+        function reportSections(list, opts) {
+            const byAddress = (opts || {}).groupBy === 'address';
+            const groups = {};
+            (list || []).forEach(d => {
+                const k = byAddress ? String(d.addressId) : defectTradeKey(d);
+                (groups[k] = groups[k] || []).push(d);
+            });
+            const keys = byAddress
+                ? Object.keys(groups).sort((a, b) => formatAddress(db.getAddress(parseInt(a, 10)))
+                    .localeCompare(formatAddress(db.getAddress(parseInt(b, 10)))))
+                : Object.keys(groups).sort(tradeSortKey);
+            return keys.map(k => {
+                const items = groups[k];
+                if (!byAddress) return { key: k, label: k, subs: [{ trade: k, items }] };
+                const byTrade = {};
+                items.forEach(d => { const t = defectTradeKey(d); (byTrade[t] = byTrade[t] || []).push(d); });
+                return {
+                    key: k,
+                    label: formatAddress(db.getAddress(parseInt(k, 10))),
+                    subs: Object.keys(byTrade).sort(tradeSortKey).map(t => ({ trade: t, items: byTrade[t] })),
+                };
+            });
+        }
+
+        // One contents row. The columns Spiro asked for, minus the page number,
+        // which only the drawing pass knows.
+        function tocRowFor(d, no) {
+            const ref = typeof splitReportRef === 'function' ? splitReportRef(d.description || '') : null;
+            return {
+                no,
+                location: d.location || '',
+                desc: (ref && ref.body) || d.description || '(no description)',
+                trade: defectTradeKey(d),
+            };
+        }
+
         function defectTradeKey(d) {
             const c = db.getContractor(d.contractorId);
             if (!c) return 'Unassigned';
@@ -12888,12 +12981,8 @@
             // is what per-contractor / per-job reports use so a supplier reads
             // their items laid out job-by-job.
             const byAddress = opts.groupBy === 'address';
-            const groups = {};
-            list.forEach(d => { const k = byAddress ? String(d.addressId) : defectTradeKey(d); (groups[k] = groups[k] || []).push(d); });
-            const groupKeys = byAddress
-                ? Object.keys(groups).sort((a, b) => formatAddress(db.getAddress(parseInt(a))).localeCompare(formatAddress(db.getAddress(parseInt(b)))))
-                : Object.keys(groups).sort((a, b) => a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b));
-            const groupLabel = (gk) => byAddress ? formatAddress(db.getAddress(parseInt(gk))) : gk;
+            const sections = reportSections(list, opts);
+            const numberOf = jobItemNumberer();
             const ensureSpace = (h) => { if (y + h > pageH - 18) { doc.addPage(); y = M + 4; } };
 
             // Two-column "table" of photo cards — DENSE: big, wide photos with a
@@ -13010,32 +13099,59 @@
                 }
             };
 
-            let itemNo = 0;
             const bookingDates = new Set();
-            for (const gk of groupKeys) {
-                const gdefects = groups[gk];
+            // Every item's contents row, with the page it actually landed on.
+            // Collected while drawing because nothing else knows where a card
+            // ends up once photos have pushed the layout around.
+            const toc = [];
+            const curPage = () => doc.internal.getCurrentPageInfo().pageNumber;
+            for (const sec of sections) {
                 ensureSpace(16);
                 // section bar — trade name, or job address when grouped by address
+                const secCount = sec.subs.reduce((n, sub) => n + sub.items.length, 0);
                 fill([241, 244, 250]); doc.roundedRect(M, y, contentW, 8.5, 1.6, 1.6, 'F');
                 fill(NAVY); doc.rect(M, y, 1.8, 8.5, 'F');
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(11); ink(NAVY);
-                doc.text(doc.splitTextToSize(groupLabel(gk), contentW - 30)[0], M + 5, y + 5.7);
+                doc.text(doc.splitTextToSize(sec.label, contentW - 30)[0], M + 5, y + 5.7);
                 doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); ink(MUTE);
-                doc.text(gdefects.length + (gdefects.length === 1 ? ' item' : ' items'), pageW - M - 4, y + 5.7, { align: 'right' });
+                doc.text(secCount + (secCount === 1 ? ' item' : ' items'), pageW - M - 4, y + 5.7, { align: 'right' });
                 y += 12;
 
-                // Photos up front — needed to measure card heights before drawing.
-                const imgsByIdx = [];
-                for (const d of gdefects) { imgsByIdx.push(await photosFor(d)); if (d.bookingAt) bookingDates.add(fmtDateNice(d.bookingAt)); }
+                for (const sub of sec.subs) {
+                    const gdefects = sub.items;
+                    // A trade sub-heading, but only where it says something the
+                    // section bar hasn't: grouped BY trade the bar is already the
+                    // trade name, and repeating it under itself is just noise.
+                    if (byAddress) {
+                        ensureSpace(9);
+                        doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); ink(NAVY2);
+                        doc.text(sub.trade.toUpperCase(), M + 1, y + 3.4);
+                        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); ink(MUTE);
+                        doc.text(gdefects.length + (gdefects.length === 1 ? ' item' : ' items'), pageW - M - 4, y + 3.4, { align: 'right' });
+                        stroke(LINE); doc.line(M + 1, y + 5, pageW - M - 1, y + 5);
+                        y += 8.5;
+                    }
 
-                for (let i = 0; i < gdefects.length; i += 2) {
-                    const lD = gdefects[i], rD = gdefects[i + 1];
-                    const lImgs = imgsByIdx[i], rImgs = rD ? imgsByIdx[i + 1] : [];
-                    const rowH = Math.max(measureCard(lD, lImgs), rD ? measureCard(rD, rImgs) : 0);
-                    if (y + rowH > pageH - 18) { doc.addPage(); y = M + 4; }
-                    drawCard(M, y, rowH, lD, ++itemNo, lImgs);
-                    if (rD) drawCard(M + colW + gap, y, rowH, rD, ++itemNo, rImgs);
-                    y += rowH + gap;
+                    // Photos up front — needed to measure card heights before drawing.
+                    const imgsByIdx = [];
+                    for (const d of gdefects) { imgsByIdx.push(await photosFor(d)); if (d.bookingAt) bookingDates.add(fmtDateNice(d.bookingAt)); }
+
+                    for (let i = 0; i < gdefects.length; i += 2) {
+                        const lD = gdefects[i], rD = gdefects[i + 1];
+                        const lImgs = imgsByIdx[i], rImgs = rD ? imgsByIdx[i + 1] : [];
+                        const rowH = Math.max(measureCard(lD, lImgs), rD ? measureCard(rD, rImgs) : 0);
+                        if (y + rowH > pageH - 18) { doc.addPage(); y = M + 4; }
+                        const lNo = numberOf(lD);
+                        drawCard(M, y, rowH, lD, lNo, lImgs);
+                        toc.push(Object.assign(tocRowFor(lD, lNo), { page: curPage() }));
+                        if (rD) {
+                            const rNo = numberOf(rD);
+                            drawCard(M + colW + gap, y, rowH, rD, rNo, rImgs);
+                            toc.push(Object.assign(tocRowFor(rD, rNo), { page: curPage() }));
+                        }
+                        y += rowH + gap;
+                    }
+                    y += 2;
                 }
                 y += 3;
             }
@@ -13051,6 +13167,107 @@
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(10); ink([146, 100, 20]);
                 doc.text(note, M + 5, y + 6.4);
                 y += 14;
+            }
+
+            // ── contents page(s), moved to the FRONT ─────────────────
+            // Spiro 2026-08-16: "the first page is a table of contents which
+            // lists all of the items — the item number, location, item
+            // description, the trade responsible and the page number.
+            // Rectified?" — the same columns as the BPI summary he works from,
+            // plus Trade and Page, which BPI's does not carry.
+            //
+            // Built AFTER the body because a page number is only knowable once
+            // the photos have pushed the cards around. The pages are appended and
+            // then moved to the front, and every recorded page number is shifted
+            // by however many contents pages there turned out to be.
+            if (opts.toc !== false && toc.length > 1) {
+                const COLS = [
+                    { k: 'no', w: 14, t: 'Item', a: 'center' },
+                    { k: 'location', w: 30, t: 'Location' },
+                    { k: 'desc', w: 76, t: 'Description' },
+                    { k: 'trade', w: 34, t: 'Trade' },
+                    { k: 'page', w: 13, t: 'Page', a: 'center' },
+                    { k: 'rect', w: 21, t: 'Rectified', a: 'center' },
+                ];
+                const LH = 3.1, ROWPAD = 2.2, HEADH = 7;
+                const TOP_FIRST = 46, TOP_REST = M + 6, BOTTOM = pageH - 16;
+                doc.setFontSize(7.5);
+                // Wrap once, keep it: measuring and drawing must agree, and
+                // splitTextToSize is the expensive part of this whole page.
+                const wrapped = toc.map(r => {
+                    const cells = {};
+                    COLS.forEach(c => {
+                        const v = c.k === 'rect' ? '' : String(r[c.k] == null ? '' : r[c.k]);
+                        cells[c.k] = v ? doc.splitTextToSize(v, c.w - 3) : [''];
+                    });
+                    const lines = Math.max(...COLS.map(c => cells[c.k].length));
+                    return { cells, h: lines * LH + ROWPAD };
+                });
+                // How many pages does it need? Measured before anything is drawn,
+                // because the answer is also the offset added to every page number
+                // printed in the table.
+                let tocPages = 1, cursor = TOP_FIRST + HEADH;
+                wrapped.forEach(w => {
+                    if (cursor + w.h > BOTTOM) { tocPages++; cursor = TOP_REST + HEADH; }
+                    cursor += w.h;
+                });
+                for (let i = 0; i < tocPages; i++) {
+                    doc.addPage();
+                    doc.movePage(doc.internal.getNumberOfPages(), 1 + i);
+                }
+                const drawHead = (ty) => {
+                    fill([241, 244, 250]); stroke(LINE);
+                    doc.rect(M, ty, contentW, HEADH, 'FD');
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.8); ink(NAVY);
+                    let cx = M;
+                    COLS.forEach(c => {
+                        if (cx > M) { stroke(LINE); doc.line(cx, ty, cx, ty + HEADH); }
+                        doc.text(c.t, c.a === 'center' ? cx + c.w / 2 : cx + 1.5, ty + 4.8,
+                            c.a === 'center' ? { align: 'center' } : undefined);
+                        cx += c.w;
+                    });
+                    return ty + HEADH;
+                };
+                let tp = 1;
+                doc.setPage(tp);
+                // Page 1 of the contents carries the report's own masthead, so the
+                // document opens on something that says what it is.
+                fill(NAVY); doc.rect(0, 0, pageW, 30, 'F');
+                fill(NAVY2); doc.rect(0, 30, pageW, 1.4, 'F');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(19); ink([255, 255, 255]);
+                doc.text('DEFECT REPORT', M, 15);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); ink([186, 199, 224]);
+                doc.text('Contents', M, 22);
+                doc.setFontSize(9); ink([198, 209, 230]);
+                doc.text(niceDate, pageW - M, 13.5, { align: 'right' });
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(11); ink([255, 255, 255]);
+                doc.text(toc.length + (toc.length === 1 ? ' item' : ' items'), pageW - M, 21, { align: 'right' });
+                const heading = (opts.addressIds && opts.addressIds.length === 1)
+                    ? 'Summary Of Defects For ' + formatAddress(db.getAddress(opts.addressIds[0]))
+                    : 'Summary Of Defects';
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(12); ink(INK);
+                doc.text(doc.splitTextToSize(heading, contentW)[0], M, 40);
+                let ty = drawHead(TOP_FIRST);
+                wrapped.forEach((w, i) => {
+                    if (ty + w.h > BOTTOM) {
+                        tp++; doc.setPage(tp);
+                        ty = drawHead(TOP_REST);
+                    }
+                    stroke(LINE);
+                    doc.rect(M, ty, contentW, w.h, 'S');
+                    let cx = M;
+                    COLS.forEach(c => {
+                        if (cx > M) doc.line(cx, ty, cx, ty + w.h);
+                        const isNo = c.k === 'no';
+                        doc.setFont('helvetica', isNo ? 'bold' : 'normal');
+                        doc.setFontSize(7.5); ink(isNo ? NAVY : INK);
+                        const val = c.k === 'page' ? [String(toc[i].page + tocPages)] : w.cells[c.k];
+                        doc.text(val, c.a === 'center' ? cx + c.w / 2 : cx + 1.5, ty + 3.4,
+                            c.a === 'center' ? { align: 'center' } : undefined);
+                        cx += c.w;
+                    });
+                    ty += w.h;
+                });
             }
 
             // ── footer on every page ─────────────────────────────────
@@ -13339,7 +13556,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16v';
+        const APP_VERSION = '2026-08-16w';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13413,7 +13630,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16v"></script>
+    <script src="cloud-sync.js?v=2026-08-16w"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
