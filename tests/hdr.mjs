@@ -168,6 +168,40 @@ await shot('32-headings-320');
 check('one line at 320px too', narrow.every(h => h.lines === 1), narrow.map(h => h.lines).join(','));
 check('nothing overflows at 320px', narrow.every(h => h.overflows <= 0), narrow.map(h => h.overflows).join(','));
 
+// ---- the screen title needs the room the word "Back" was taking -----------
+// Spiro 2026-08-16, circling the top bar: "the word back is in the way of view
+// defects and add defects… just do an icon for back, that way it gives more
+// space and it doesn't look cluttered." "‹ Back" sat hard against the title,
+// so it read as one word: "BackAdd Defects".
+await page.setViewportSize({ width: 390, height: 800 });
+await page.waitForTimeout(250);
+for (const [go, want] of [['viewDefectsForAddress(1)', 'View Defects'], ['startDefectsForJob(1)', 'Add Defects']]) {
+  await page.evaluate((g) => { render(); eval(g); }, go);
+  await page.waitForSelector('.back-link');
+  await page.waitForTimeout(200);
+  const h = await page.evaluate(() => {
+    const b = document.querySelector('.back-link'), t = document.querySelector('.header-title');
+    const bb = b.getBoundingClientRect(), tb = t.getBoundingClientRect();
+    const cs = getComputedStyle(t);
+    return {
+      title: t.textContent.trim(),
+      // The word is HIDDEN, not deleted: it is still the link's accessible name.
+      label: b.textContent.trim(),
+      wordShown: parseFloat(getComputedStyle(b).fontSize) > 0,
+      tap: Math.round(bb.width) + 'x' + Math.round(bb.height),
+      gap: Math.round(tb.left - bb.right),
+      lines: Math.round(tb.height / (parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4)),
+    };
+  });
+  console.log('header:', JSON.stringify(h));
+  check(`"${want}" is the title`, h.title === want, h.title);
+  check('…the word Back is not drawn', !h.wordShown, JSON.stringify(h));
+  check('…but it is still the link\'s name, for a screen reader', h.label === 'Back', h.label);
+  check('…the chevron is still a finger-sized target', /^3[0-9]x3[0-9]$/.test(h.tap), h.tap);
+  check('…there is clear space before the title', h.gap >= 3, String(h.gap));
+  check('…and the title fits on ONE line', h.lines === 1, String(h.lines));
+}
+
 console.log('\nerrors:', errs.length ? errs : 'none');
 console.log(fail.length ? 'FAILED: ' + fail.join(' | ') : 'ALL CHECKS PASSED');
 await browser.close();

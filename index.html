@@ -131,19 +131,32 @@
             color: var(--text-primary);
         }
 
+        /* The chevron alone — the word "Back" is hidden, not deleted, so it is
+           still the link's accessible name for a screen reader. "‹ Back" sat
+           immediately against the screen title, so "BackAdd Defects" ran
+           together as one word (Spiro 2026-08-16: "the word back is in the way
+           of view defects and add defects"). The modal back button has always
+           been chevron-only; this just brings the pages into line with it.
+           font-size:0 hides the text; the :before sets its own size, so the
+           glyph is unaffected. */
         .back-link {
             color: var(--blue);
-            font-size: 17px;
+            font-size: 0;
             text-decoration: none;
             display: flex;
             align-items: center;
-            gap: 5px;
+            justify-content: center;
+            gap: 0;
+            flex: 0 0 auto;
+            width: 32px; height: 32px;
+            margin-left: -8px;   /* the glyph keeps the position it always had */
         }
 
         .back-link:before {
             content: '‹';
-            font-size: 28px;
+            font-size: 30px;
             font-weight: 300;
+            line-height: 1;
         }
 
         /* Home Screen Styles */
@@ -1912,7 +1925,7 @@
         .loc-opt { padding: 11px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; cursor: pointer; text-align: left; }
         .loc-opt.sel { border-color: var(--blue); color: var(--blue); font-weight: 700; }
         /* Title left-aligned so the F1 theme picker doesn't cover it */
-        .app-header .header-title { flex: 1; text-align: left; }
+        .app-header .header-title { flex: 1; text-align: left; margin-left: 4px; }
         /* floating F1 picker removed — no reserved header space needed */
 
         /* Pin left of the description, camera right of it. NO text on either —
@@ -13556,7 +13569,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16w';
+        const APP_VERSION = '2026-08-16x';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13630,7 +13643,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16w"></script>
+    <script src="cloud-sync.js?v=2026-08-16x"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

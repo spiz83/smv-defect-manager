@@ -2,6 +2,29 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (x) — Back is a chevron, not a word
+
+- **Spiro, circling the top bar on both screens: "the word back is in the way of
+  view defects and add defects… just do an icon for back, that way it gives more
+  space and it doesn't look cluttered."** "‹ Back" sat hard against the
+  left-aligned title, so it read as one word: "BackAdd Defects".
+- **The word is HIDDEN, not deleted** — `font-size: 0` on the link, with the
+  `:before` chevron setting its own size. "Back" stays in the DOM as the link's
+  accessible name, which an `aria-label` would have had to be added in twelve
+  places to replace.
+- **The modal back button has always been chevron-only** (`ensureModalBack`
+  builds an empty button with `aria-label="Back"`). This brings the pages into
+  line with the modals rather than inventing a new pattern.
+- **It also bought back the title's wrap.** "Add Defects" used to break onto two
+  lines below 402px; it now holds one line down to 375px, which covers every
+  current iPhone. 320px and 360px still wrap — the three 30px header buttons are
+  what is left pressing on it, and shrinking those was not asked for.
+- **32x32 tap target**, kept with a negative margin so the glyph sits exactly
+  where it always did rather than jumping right.
+- **`hdr.mjs`** checks the title, that the word is not drawn, that it is still
+  the link's name, the target size, the gap, and the single line — on both
+  screens.
+
 ## 2026-08-16 (w) — report item numbers, trade grouping, and a contents page
 
 - **The question Spiro actually asked was a data-modelling one:** "a report for
