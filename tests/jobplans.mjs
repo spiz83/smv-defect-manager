@@ -477,10 +477,14 @@ console.log('\n--- F · markup ---');
   await page.evaluate(() => {
     window.__saved = [];
     window.__edited = [];
+    window.__queued = [];
     window.CloudPhotos = {
       count: () => 0, pendingCount: () => 0, refreshCounts: () => {},
       async editPhoto(file) { window.__edited.push({ name: file.name, type: file.type, size: file.size }); return file; },
       async savePhoto(defectId, blob) { window.__saved.push({ defectId, size: blob.size }); },
+      // The "new defect" path goes through the durable upload queue, the same
+      // one a per-row 📸 uses — not savePhoto.
+      queueRowPhoto(id, blob) { window.__queued.push({ id, size: blob.size }); },
     };
   });
   await page.evaluate(() => { viewDefectsForAddress(1); openJobPlan(1); });
@@ -564,8 +568,90 @@ console.log('\n--- F · markup ---');
     await page.evaluate(() => window.__saved.length === 1 && !document.getElementById('plan-defect-list')));
   await page.evaluate(() => closeJobPlan());
 
-  // A job with no defects has nowhere to put a markup — say so up front.
-  await page.evaluate(() => { window.CloudPhotos.editPhoto = async (f) => f; db.data.defects = []; db.save(); });
+  // ---- Create a NEW defect straight off the markup ------------------------
+  // Spiro 2026-08-16: "sometimes I won't know the area/location until I look at
+  // the plan, but it's double handling if I'm looking at the plan, then backing
+  // out, creating a defect, then going back into the plan and assigning."
+  await page.evaluate(() => { window.CloudPhotos.editPhoto = async (f) => f; });
+  await page.evaluate(() => openJobPlan(1));
+  await page.waitForFunction(() => document.getElementById('plan-canvas') && document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
+  await page.evaluate(() => planMarkup());
+  await page.waitForSelector('#plan-defect-list', { timeout: 8000 });
+  check('the picker offers a NEW defect as well as the existing ones',
+    await page.evaluate(() => !!document.querySelector('#imp-body [onclick*="planNewDefect"]')));
+
+  await page.evaluate(() => planNewDefect());
+  await page.waitForSelector('#bulk-photo-ov', { timeout: 8000 });
+  const form = await page.evaluate(() => {
+    const ov = document.getElementById('bulk-photo-ov');
+    const r = ov.getBoundingClientRect();
+    const mid = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + 40));
+    return {
+      onTop: !!(mid && ov.contains(mid)),
+      planHidden: (document.getElementById('plan-ov') || {}).style.display === 'none',
+      heading: (ov.querySelector('strong') || {}).textContent,
+      save: (ov.querySelector('[onclick*="saveBulkPhoto"]') || {}).textContent,
+      back: (ov.querySelector('[onclick*="skipBulkPhoto"]') || {}).textContent,
+      fields: ['bulk-loc', 'bulk-sup', 'bulk-desc'].filter(i => !!document.getElementById(i)),
+    };
+  });
+  console.log('  new-defect form:', JSON.stringify(form));
+  check('the form is ON SCREEN, not behind the plan viewer', form.onTop && form.planHidden, JSON.stringify(form));
+  check('…and reads as coming from the plan', /plan/i.test(form.heading || ''), String(form.heading));
+  check('…offering location, supplier and description', form.fields.length === 3, JSON.stringify(form.fields));
+  check('…with plan wording on the buttons', /Save defect/.test(form.save || '') && /Back to plan/.test(form.back || ''),
+    JSON.stringify([form.save, form.back]));
+
+  // Back to plan → nothing created, and the plan is where it was.
+  const wasCount = await page.evaluate(() => (db.data.defects || []).length);
+  await page.evaluate(() => skipBulkPhoto());
+  await page.waitForTimeout(300);
+  const backed = await page.evaluate((n) => ({
+    form: !!document.getElementById('bulk-photo-ov'),
+    plan: (document.getElementById('plan-ov') || {}).style.display,
+    unchanged: (db.data.defects || []).length === n,
+  }), wasCount);
+  check('Back to plan creates nothing and returns to the plan',
+    !backed.form && backed.plan === 'flex' && backed.unchanged, JSON.stringify(backed));
+
+  // And the real thing: mark up, describe, save.
+  const before = await page.evaluate(() => (db.data.defects || []).length);
+  await page.evaluate(() => planMarkup());
+  await page.waitForSelector('#plan-defect-list', { timeout: 8000 });
+  await page.evaluate(() => planNewDefect());
+  await page.waitForSelector('#bulk-desc', { timeout: 8000 });
+  await page.evaluate(() => {
+    document.getElementById('bulk-desc').value = 'Bulkhead not aligned to plan';
+    document.getElementById('bulk-loc').value = 'Kitchen';
+    document.getElementById('bulk-sup').value = 'Carpenter';
+    saveBulkPhoto();
+  });
+  await page.waitForTimeout(600);
+  const made = await page.evaluate(() => {
+    const d = (db.data.defects || []).slice(-1)[0];
+    const c = d && d.contractorId != null ? db.getContractor(d.contractorId) : null;
+    return {
+      count: (db.data.defects || []).length, newId: d && d.id,
+      desc: d && d.description, loc: d && d.location, sup: c && c.name,
+      addressId: d && d.addressId,
+      queued: (window.__queued || []).map(q => ({ id: q.id, size: q.size })),
+      planGone: !document.getElementById('plan-ov'),
+      formGone: !document.getElementById('bulk-photo-ov'),
+    };
+  });
+  console.log('  created:', JSON.stringify(made));
+  check('a NEW defect is created on this job', made.count === before + 1 && made.addressId === 1, JSON.stringify(made));
+  check('…with the description typed against the plan', made.desc === 'Bulkhead not aligned to plan', String(made.desc));
+  check('…the location picked while looking at it', made.loc === 'Kitchen', String(made.loc));
+  check('…and the supplier', made.sup === 'Carpenter', String(made.sup));
+  check('…the markup is attached to THAT defect, as a real image',
+    made.queued.length === 1 && made.queued[0].id === made.newId && made.queued[0].size > 500,
+    JSON.stringify(made.queued));
+  check('…and the plan closes once it is saved', made.planGone && made.formGone, JSON.stringify(made));
+  await page.evaluate(() => closeJobPlan());
+
+  // A job with NO defects is no longer a dead end — it is where you start.
+  await page.evaluate(() => { db.data.defects = []; db.save(); });
   await page.evaluate(() => openJobPlan(1));
   await page.waitForFunction(() => document.getElementById('plan-canvas') && document.getElementById('plan-canvas').width > 10, { timeout: 15000 });
   const none = await page.evaluate(async () => {
@@ -573,10 +659,18 @@ console.log('\n--- F · markup ---');
     window.showToast = (m) => { window.__toasts.push(m); };
     await planMarkup();
     window.showToast = orig;
-    return { toasts: window.__toasts, asked: !!document.getElementById('plan-defect-list') };
+    return {
+      asked: !!document.getElementById('plan-defect-list'),
+      canCreate: !!document.querySelector('#imp-body [onclick*="planNewDefect"]'),
+      toasts: window.__toasts,
+    };
   });
-  check('a job with no defects yet says to add one first, rather than a dead end',
-    !none.asked && none.toasts.some(t => /defect/i.test(t)), JSON.stringify(none));
+  console.log('  empty job:', JSON.stringify(none));
+  check('a job with no defects still opens the picker', none.asked, JSON.stringify(none));
+  check('…offering to create the first one, instead of refusing', none.canCreate, JSON.stringify(none));
+  check('…and does not turn it away with a toast', !none.toasts.some(t => /add a defect .* first/i.test(t)),
+    JSON.stringify(none.toasts));
+  await page.evaluate(() => { const x = document.getElementById('imp-close'); if (x) x.click(); });
   await page.evaluate(() => closeJobPlan());
 }
 

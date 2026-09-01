@@ -2,6 +2,38 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (u) — a plan markup can create the defect it belongs to
+
+- **Spiro: "sometimes I won't know the area/location until I look at the plan,
+  but it's double handling if I'm looking at the plan, then backing out, then
+  creating a defect, then going back into the plan and assigning."** Marking up
+  and writing the item are one action on site, so they are one action here.
+- **The picker gained a ➕ Create a NEW defect row, above the search.** Attaching
+  to an existing defect is unchanged and still the second option.
+- **It reuses Bulk Import's one-photo form rather than growing a third
+  defect-entry form.** Location, supplier and description, with the autocompletes
+  and wording suggestions already built and tested. `bulkPhotoState` gains
+  `fromPlan`, which only changes the heading, the two button labels and what
+  happens on the way out — `edited: [true]` stops it reopening the photo editor
+  on a drawing that has just been made.
+- **`planMarkup` no longer refuses a job with no defects.** "Add a defect on this
+  job first" was a dead end; an empty job is now exactly where this starts, and
+  the picker opens with the ➕ and a line saying so.
+- **Backing out restores the plan.** Save closes it and lands on the job; "Back
+  to plan" and ✕ put the viewer back at the sheet and zoom it was on. The ✕ also
+  drops Bulk Import's "discard unsaved photos?" confirm here, because with one
+  drawing there is nothing part-way to lose.
+- **Same z-index trap, third time.** The bulk form is 100000, the plan viewer is
+  100004, so it would have opened BEHIND the plan exactly as the photo editor
+  and the defect picker both did. The test asserts it with `elementFromPoint`,
+  not by querying for the element.
+- **`jobplans.mjs` covers the round trip**: the ➕ is offered, the form is on
+  screen and reads as coming from the plan, Back creates nothing and restores
+  the viewer, and a save produces a defect on this job with the typed
+  description, the picked location and supplier, the markup queued against THAT
+  defect's id, and the plan closed. The old "no defects is a dead end" check is
+  replaced by its opposite.
+
 ## 2026-08-16 (t) — a missing email is an offer, never a wall
 
 - **Spiro, blocked by a `prompt()` on a Carpenter: "never make it mandatory to

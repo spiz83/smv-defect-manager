@@ -4850,10 +4850,16 @@
             if (!st) return;
             if (st.idx >= st.files.length) {   // finished
                 const n = st.files.length;
+                const fromPlan = st.fromPlan, saved = st.savedCount || 0;
                 _revokeBulkUrl();
                 const ov = document.getElementById('bulk-photo-ov'); if (ov) ov.remove();
                 bulkPhotoState = null;
-                showToast(`${n} photo defect(s) added`);
+                // A markup that produced nothing means they backed out — put the
+                // plan back on screen where they left it, rather than dropping
+                // them on the job list wondering what happened.
+                if (fromPlan && !saved) { _planRestoreAfterNew(); return; }
+                showToast(fromPlan ? '✓ Defect created from the plan markup' : `${n} photo defect(s) added`);
+                if (fromPlan) closeJobPlan();
                 render();
                 return;
             }
@@ -4878,7 +4884,7 @@
             ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:var(--bg-primary,#fff);display:flex;flex-direction:column;box-sizing:border-box;padding-top:env(safe-area-inset-top,24px);';
             ov.innerHTML =
                 `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border-color,#eee);">
-                    <strong style="font-size:15px;color:var(--text-primary,#111);">Bulk Import — Photo ${st.idx + 1} of ${st.files.length}</strong>
+                    <strong style="font-size:15px;color:var(--text-primary,#111);">${st.fromPlan ? '📐 New defect from the plan' : `Bulk Import — Photo ${st.idx + 1} of ${st.files.length}`}</strong>
                     <button onclick="closeBulkPhoto(true)" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary,#777);">✕</button>
                 </div>
                 <div style="flex:1;overflow:auto;padding:12px 14px;">
@@ -4912,8 +4918,8 @@
                     <div class="bulk-photo-wrap" style="text-align:center;margin:14px 0 4px;"><img src="${url}" style="max-width:100%;max-height:38vh;border-radius:10px;object-fit:contain;"></div>
                 </div>
                 <div style="display:flex;gap:10px;padding:12px 14px;border-top:1px solid var(--border-color,#eee);">
-                    <button onclick="skipBulkPhoto()" style="flex:1;padding:13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary,#f2f2f2);color:var(--text-secondary,#777);font-size:15px;cursor:pointer;">Skip</button>
-                    <button onclick="saveBulkPhoto()" style="flex:2;padding:13px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-weight:700;font-size:15px;cursor:pointer;">${st.idx === st.files.length - 1 ? 'Save &amp; Finish' : 'Save &amp; Next'}</button>
+                    <button onclick="skipBulkPhoto()" style="flex:1;padding:13px;border:1px solid var(--border-color,#ccc);border-radius:9px;background:var(--bg-secondary,#f2f2f2);color:var(--text-secondary,#777);font-size:15px;cursor:pointer;">${st.fromPlan ? 'Back to plan' : 'Skip'}</button>
+                    <button onclick="saveBulkPhoto()" style="flex:2;padding:13px;border:none;border-radius:9px;background:var(--blue,#2563eb);color:#fff;font-weight:700;font-size:15px;cursor:pointer;">${st.fromPlan ? 'Save defect' : (st.idx === st.files.length - 1 ? 'Save &amp; Finish' : 'Save &amp; Next')}</button>
                 </div>`;
             _ensureBulkPhotoStyles();
             document.body.appendChild(ov);
@@ -4926,12 +4932,17 @@
         }
 
         function closeBulkPhoto(ask) {
-            if (ask && bulkPhotoState && bulkPhotoState.idx < bulkPhotoState.files.length) {
+            const fromPlan = !!(bulkPhotoState && bulkPhotoState.fromPlan);
+            // Nothing is part-way through a single markup, so there is nothing to
+            // warn about losing — the question would just be in the way.
+            if (ask && !fromPlan && bulkPhotoState && bulkPhotoState.idx < bulkPhotoState.files.length) {
                 if (!confirm('Stop the bulk import? Photos you haven\'t saved yet are discarded (already-saved ones stay).')) return;
             }
             _revokeBulkUrl();
             const ov = document.getElementById('bulk-photo-ov'); if (ov) ov.remove();
+            const saved = (bulkPhotoState && bulkPhotoState.savedCount) || 0;
             bulkPhotoState = null;
+            if (fromPlan && !saved && _planRestoreAfterNew()) return;
             render();
         }
 
@@ -4953,6 +4964,7 @@
             const cp = window.CloudPhotos;
             if (cp && (cp.queueRowPhoto || cp.uploadWhenReady)) (cp.queueRowPhoto || cp.uploadWhenReady)(d.id, file);
             _revokeBulkUrl();
+            st.savedCount = (st.savedCount || 0) + 1;
             st.idx++;
             renderBulkPhotoStep();
         }
@@ -10544,11 +10556,10 @@
             if (!st || !st.pdf) return;
             const cp = window.CloudPhotos;
             if (!cp || !cp.savePhoto) { showToast('Photos need a cloud sign-in', true); return; }
+            // No longer refuses when the job has no defects yet: the picker can
+            // now CREATE one, so an empty job is a normal starting point rather
+            // than a dead end (Spiro 2026-08-16).
             const defects = db.getDefects({ addressId: st.addressId }) || [];
-            if (!defects.length) {
-                showToast('Add a defect on this job first — a markup attaches to one', true);
-                return;
-            }
             const r = _planVisibleRegion();
             if (!r) { showToast('Nothing to mark up yet', true); return; }
             const out = document.createElement('canvas');
@@ -10587,10 +10598,18 @@
             // cancelling puts the plan back where it was.
             const planOv = document.getElementById('plan-ov');
             if (planOv) planOv.style.display = 'none';
-            impOverlay(`<div id="imp-head"><strong>📐 Attach to which defect?</strong><button id="imp-close">✕</button></div>
+            // ➕ FIRST, above the search. Spiro 2026-08-16: "sometimes I won't
+            // know the area/location until I look at the plan, but it's double
+            // handling if I'm looking at the plan, then backing out, creating a
+            // defect, then going back into the plan and assigning." Marking up
+            // and writing the item are one action on site, so they are one
+            // action here.
+            impOverlay(`<div id="imp-head"><strong>📐 Attach this markup</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
-                    <input id="plan-defect-search" type="text" placeholder="Search this job's defects…" oninput="planFilterDefects(this.value)"
-                        style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;margin-bottom:10px;">
+                    <button class="imp-btn" onclick="planNewDefect()" style="width:100%;margin-bottom:12px;">➕ Create a NEW defect</button>
+                    ${defects.length ? `<input id="plan-defect-search" type="text" placeholder="Search this job's defects…" oninput="planFilterDefects(this.value)"
+                        style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;margin-bottom:10px;">`
+                    : `<p style="font-size:13px;color:var(--text-secondary);margin:0 0 6px;">No defects on this job yet — create the first one above.</p>`}
                     <div id="plan-defect-list">${rows}</div>
                 </div>`);
             const back = () => {
@@ -10606,6 +10625,33 @@
             if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) back(); });
         }
         let _planPending = null;
+        // Turn the markup into a NEW defect rather than hanging it on an existing
+        // one. It reuses the SAME one-photo form Bulk Import already uses —
+        // location, supplier and description, with their autocompletes and
+        // wording suggestions — instead of growing a third defect-entry form in
+        // the app. `edited: [true]` stops that flow reopening the photo editor:
+        // the drawing has already been done, on the plan.
+        function planNewDefect() {
+            const blob = _planPending;
+            _planPending = null;
+            impClose();
+            const st = _planState;
+            if (!blob || !st) return;
+            // Same z-index trap as the picker: the bulk form is 100000 and this
+            // viewer is 100004, so it would open BEHIND the plan. Step aside —
+            // and come back if nothing is saved.
+            const planOv = document.getElementById('plan-ov');
+            if (planOv) planOv.style.display = 'none';
+            bulkPhotoState = { addressId: st.addressId, files: [blob], idx: 0, edited: [true], fromPlan: true, savedCount: 0 };
+            renderBulkPhotoStep();
+        }
+        // Put the plan back after a cancelled "new defect from markup" — without
+        // this the screen is left blank behind a closed form.
+        function _planRestoreAfterNew() {
+            const ov = document.getElementById('plan-ov');
+            if (ov) { ov.style.display = 'flex'; return true; }
+            return false;
+        }
         function planFilterDefects(q) {
             const list = document.getElementById('plan-defect-list');
             if (!list) return;
@@ -13227,7 +13273,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16t';
+        const APP_VERSION = '2026-08-16u';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13301,7 +13347,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16t"></script>
+    <script src="cloud-sync.js?v=2026-08-16u"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
