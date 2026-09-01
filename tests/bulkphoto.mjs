@@ -656,6 +656,98 @@ console.log('\n=== a chip Save resolves through the real assignment path ===');
     !!savedNoMatch && !savedNoMatch.contractorId && savedNoMatch.unassigned === true, JSON.stringify(savedNoMatch));
 }
 
+// ====== 📎 this photo belongs to a defect that is already on the list ======
+// Spiro 2026-08-16: "sometimes multiple of those photos relate to the same
+// defect — sometimes I'll just capture a different angle." Filling the form
+// again would create a duplicate item; 📎 files the photo against the one that
+// already exists instead.
+console.log('\n--- 📎 add this photo to an existing defect ---');
+{
+  await page.evaluate(() => {
+    window.__queued = [];
+    window.CloudPhotos = { count: () => 0, pendingCount: () => 0, refreshCounts: () => {},
+      queueRowPhoto(id, blob) { window.__queued.push({ id, size: blob.size }); } };
+    db.data.defects = [
+      { id: 41, addressId: 1, contractorId: 1, description: 'Downpipe missing behind garage.', location: 'Garage', status: 'open', completed: false },
+      { id: 42, addressId: 1, contractorId: 4, description: 'Align door with jamb.', location: 'Ensuite', status: 'open', completed: false },
+    ];
+    db.save();
+  });
+  await openBulkStep(3);
+  check('the header offers 📎 alongside the ✕',
+    await page.evaluate(() => !!document.querySelector('#bulk-photo-ov [onclick*="bulkAttachExisting"]')));
+
+  // Fields left blank on purpose — that is the whole point of the button.
+  await page.evaluate(() => bulkAttachExisting());
+  await page.waitForSelector('#plan-defect-list', { timeout: 6000 });
+  const pick = await page.evaluate(() => {
+    const el = document.getElementById('plan-defect-list');
+    const r = el.getBoundingClientRect();
+    const mid = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + 20));
+    return {
+      // The picker is 100001 and the bulk form 100000, so it must land ON TOP.
+      // Getting this backwards is what hid the same list behind the plan viewer.
+      onTop: !!(mid && el.contains(mid)),
+      rows: [...el.children].map(e => e.innerText.replace(/\n/g, ' | ')),
+      newDefectOffered: !!document.querySelector('#imp-body [onclick*="planNewDefect"]'),
+    };
+  });
+  console.log('  picker:', JSON.stringify(pick));
+  check('it lists this job\'s defects, ON SCREEN not behind the form', pick.onTop && pick.rows.length === 2, JSON.stringify(pick));
+  check('…with location and trade, so two similar items can be told apart',
+    pick.rows.some(t => /Ensuite/.test(t) && /Carpenter/.test(t)), JSON.stringify(pick.rows));
+  check('…and it does NOT offer "create a new defect" — that is what the form is for',
+    !pick.newDefectOffered, JSON.stringify(pick));
+
+  const before = await page.evaluate(() => db.data.defects.length);
+  await page.evaluate(() => _pickJobDefectHit(42));
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => ({
+    queued: window.__queued,
+    defects: db.data.defects.length,
+    heading: (document.querySelector('#bulk-photo-ov strong') || {}).textContent,
+    picker: !!document.getElementById('imp-ov'),
+  }));
+  console.log('  after picking:', JSON.stringify(after));
+  check('the photo is filed against the defect that was picked',
+    after.queued.length === 1 && after.queued[0].id === 42, JSON.stringify(after.queued));
+  check('…creating NO duplicate defect', after.defects === before, `${before} -> ${after.defects}`);
+  check('…the picker closes', !after.picker);
+  check('…and it moves on to the next photo', /Photo 2 of 3/.test(after.heading || ''), String(after.heading));
+
+  // Cancelling leaves the photo where it was, on the same step.
+  await page.evaluate(() => bulkAttachExisting());
+  await page.waitForSelector('#plan-defect-list', { timeout: 6000 });
+  await page.evaluate(() => document.getElementById('imp-close').click());
+  await page.waitForTimeout(300);
+  const cancelled = await page.evaluate(() => ({
+    queued: window.__queued.length,
+    heading: (document.querySelector('#bulk-photo-ov strong') || {}).textContent,
+  }));
+  check('backing out attaches nothing and stays on the same photo',
+    cancelled.queued === 1 && /Photo 2 of 3/.test(cancelled.heading || ''), JSON.stringify(cancelled));
+
+  // A mixed run reports both kinds honestly.
+  await page.evaluate(() => {
+    window.__toasts = []; const real = window.showToast;
+    window.showToast = (m, bad) => { window.__toasts.push(String(m)); return real(m, bad); };
+  });
+  await page.evaluate(() => {
+    document.getElementById('bulk-desc').value = 'Sill not sealed';
+    document.getElementById('bulk-loc').value = 'Bed 2';
+    saveBulkPhoto();
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => skipBulkPhoto());
+  await page.waitForTimeout(400);
+  const done = await page.evaluate(() => ({ toasts: window.__toasts, form: !!document.getElementById('bulk-photo-ov') }));
+  console.log('  finish:', JSON.stringify(done));
+  check('the finish message counts new defects AND attached photos separately',
+    done.toasts.some(t => /1 photo defect added/.test(t) && /1 photo added to existing/.test(t)),
+    JSON.stringify(done.toasts));
+  check('…and the import closes', !done.form);
+}
+
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));
 console.log('\nerrors:', bad.length ? bad : 'none');
 if (bad.length) fail.push('page errors');

@@ -2,6 +2,32 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-08-16 (v) — 📎 file a bulk photo against a defect that already exists
+
+- **Spiro: "sometimes multiple of those photos relate to the same defect —
+  sometimes I'll just capture a different angle."** Filling the form again made
+  a duplicate item. 📎 in the Bulk Import header opens this job's defect list;
+  pick one and the photo is filed against it, then straight on to the next
+  photo. The fields are ignored deliberately — whatever is half-typed in them is
+  not what this photo is for, which is why "leave everything blank and press
+  that button" is the stated workflow.
+- **The "which defect?" picker is now ONE function**, `pickJobDefect`, shared by
+  this and the plan markup. Both wanted the same searchable list against the
+  same job; a second copy would have made it the third place this list is built.
+  The plan case passes a `topHtml` (its ➕ row) and an `onCancel` that puts the
+  viewer back; Bulk Import passes neither.
+- **No z-index dance here, and that is worth writing down**: the picker is
+  100001 and the bulk form is 100000, so it lands on top by itself. The same
+  picker has to HIDE the plan viewer first because that sits at 100004. The
+  direction is the whole difference, and the test asserts it with
+  `elementFromPoint` either way rather than trusting the number.
+- **The finish message counts both kinds** — "1 photo defect added · 1 photo
+  added to existing" — instead of claiming every photo became a defect.
+- **`bulkphoto.mjs` covers it**: 📎 present, the list on screen, no "create new"
+  offered (the form is already that), the photo landing on the picked id with no
+  duplicate defect created, cancel leaving you on the same photo, and the mixed
+  finish message.
+
 ## 2026-08-16 (u) — a plan markup can create the defect it belongs to
 
 - **Spiro: "sometimes I won't know the area/location until I look at the plan,

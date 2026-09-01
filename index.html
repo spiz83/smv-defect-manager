@@ -4858,7 +4858,14 @@
                 // plan back on screen where they left it, rather than dropping
                 // them on the job list wondering what happened.
                 if (fromPlan && !saved) { _planRestoreAfterNew(); return; }
-                showToast(fromPlan ? '✓ Defect created from the plan markup' : `${n} photo defect(s) added`);
+                // Say what actually happened: some photos become new defects,
+                // some are extra angles filed against ones already on the list.
+                const att = st.attachedCount || 0, made = saved - att;
+                const bits = [];
+                if (made) bits.push(made + ' photo defect' + (made === 1 ? '' : 's') + ' added');
+                if (att) bits.push(att + ' photo' + (att === 1 ? '' : 's') + ' added to existing');
+                showToast(fromPlan ? '✓ Defect created from the plan markup'
+                    : (bits.length ? '✓ ' + bits.join(' · ') : `${n} photo defect(s) added`));
                 if (fromPlan) closeJobPlan();
                 render();
                 return;
@@ -4885,7 +4892,10 @@
             ov.innerHTML =
                 `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border-color,#eee);">
                     <strong style="font-size:15px;color:var(--text-primary,#111);">${st.fromPlan ? '📐 New defect from the plan' : `Bulk Import — Photo ${st.idx + 1} of ${st.files.length}`}</strong>
-                    <button onclick="closeBulkPhoto(true)" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary,#777);">✕</button>
+                    <span style="display:flex;align-items:center;gap:4px;">
+                        ${st.fromPlan ? '' : `<button onclick="bulkAttachExisting()" title="This photo belongs to a defect that's already on the list — pick it instead of filling the form" style="background:none;border:1px solid var(--border-color,#ddd);border-radius:8px;padding:5px 9px;font-size:17px;line-height:1;cursor:pointer;">📎</button>`}
+                        <button onclick="closeBulkPhoto(true)" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary,#777);padding:0 2px;">✕</button>
+                    </span>
                 </div>
                 <div style="flex:1;overflow:auto;padding:12px 14px;">
                     <!-- FIELDS FIRST, PHOTO BELOW (site suggestion 2026-08-15).
@@ -4947,6 +4957,37 @@
         }
 
         function skipBulkPhoto() { _revokeBulkUrl(); if (bulkPhotoState) bulkPhotoState.idx++; renderBulkPhotoStep(); }
+
+        // 📎 in the Bulk Import header. Several photos of one job are often the
+        // SAME defect from a different angle, and filling the form again just
+        // creates a duplicate item (Spiro 2026-08-16: "sometimes I'll just
+        // capture a different angle"). Leave the fields blank, tap 📎, pick the
+        // defect, and the photo lands on it. The fields are ignored on purpose —
+        // whatever is half-typed in them is not what this photo is for.
+        //
+        // No z-index dance here: the picker is 100001 and this form is 100000,
+        // so it lands on top. That is only true in this direction — the plan
+        // viewer at 100004 is why the same picker has to hide the plan first.
+        function bulkAttachExisting() {
+            const st = bulkPhotoState;
+            if (!st || st.idx >= st.files.length) return;
+            const file = st.files[st.idx];
+            pickJobDefect(st.addressId, {
+                title: '📎 Add this photo to which defect?',
+                emptyNote: 'No defects on this job yet — fill in the fields below to create the first one.',
+                onPick: (defectId) => {
+                    if (!bulkPhotoState) return;                  // import closed under us
+                    const cp = window.CloudPhotos;
+                    if (cp && (cp.queueRowPhoto || cp.uploadWhenReady)) (cp.queueRowPhoto || cp.uploadWhenReady)(defectId, file);
+                    _revokeBulkUrl();
+                    st.savedCount = (st.savedCount || 0) + 1;
+                    st.attachedCount = (st.attachedCount || 0) + 1;
+                    st.idx++;
+                    showToast('📸 Photo added to that defect');
+                    renderBulkPhotoStep();
+                },
+            });
+        }
 
         function saveBulkPhoto() {
             const st = bulkPhotoState; if (!st) return;
@@ -10583,15 +10624,48 @@
         }
         // Which defect does this belong to? Asked AFTER the drawing, because you
         // circle the spot and then say what it is for, not the other way round.
-        function _planPickDefect(defects, blob) {
-            _planPending = blob;
+        // ONE "which defect on this job?" picker, shared by the plan markup and by
+        // Bulk Import. Both needed the same searchable list against the same job;
+        // a second copy would have been the third place this list is built.
+        // opts: { title, topHtml, emptyNote, onPick(defectId), onCancel() }
+        let _pickJobDefectCb = null;
+        function pickJobDefect(addressId, opts) {
+            const o = opts || {};
+            const defects = db.getDefects({ addressId }) || [];
             const rows = defects.map(d => {
                 const c = d.contractorId != null ? db.getContractor(d.contractorId) : null;
-                return `<div onclick="planAttachTo(${d.id})" class="rv-combo-item" style="border-bottom:1px solid var(--border-color,#eee);">
+                return `<div onclick="_pickJobDefectHit(${d.id})" class="rv-combo-item" style="border-bottom:1px solid var(--border-color,#eee);">
                     <div style="font-weight:600;">${_escHtml(d.description || '(no description)')}</div>
                     <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${_escHtml((d.location ? d.location + ' · ' : '') + ((c && c.name) || 'Unassigned'))}</div>
                 </div>`;
             }).join('');
+            _pickJobDefectCb = o.onPick || null;
+            impOverlay(`<div id="imp-head"><strong>${o.title || 'Which defect?'}</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    ${o.topHtml || ''}
+                    ${defects.length ? `<input id="plan-defect-search" type="text" placeholder="Search this job's defects…" oninput="planFilterDefects(this.value)"
+                        style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;margin-bottom:10px;">`
+                    : `<p style="font-size:13px;color:var(--text-secondary);margin:0 0 6px;">${o.emptyNote || 'No defects on this job yet.'}</p>`}
+                    <div id="plan-defect-list">${rows}</div>
+                </div>`);
+            const back = () => { _pickJobDefectCb = null; impClose(); if (o.onCancel) o.onCancel(); };
+            const x = document.getElementById('imp-close');
+            if (x) x.onclick = back;
+            // Tapping the backdrop dismisses the shared overlay too — whatever
+            // opened this has to be put back from that route as well, or the
+            // screen goes blank.
+            const ov = document.getElementById('imp-ov');
+            if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) back(); });
+        }
+        function _pickJobDefectHit(id) {
+            const cb = _pickJobDefectCb;
+            _pickJobDefectCb = null;
+            impClose();
+            if (cb) cb(id);
+        }
+
+        function _planPickDefect(defects, blob) {
+            _planPending = blob;
             // The plan viewer sits at z-index 100004, ABOVE the shared modal
             // (100001) — so the picker opened behind it and the screen looked
             // frozen after the drawing. Step out of the way while it is asked;
@@ -10604,25 +10678,17 @@
             // defect, then going back into the plan and assigning." Marking up
             // and writing the item are one action on site, so they are one
             // action here.
-            impOverlay(`<div id="imp-head"><strong>📐 Attach this markup</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body">
-                    <button class="imp-btn" onclick="planNewDefect()" style="width:100%;margin-bottom:12px;">➕ Create a NEW defect</button>
-                    ${defects.length ? `<input id="plan-defect-search" type="text" placeholder="Search this job's defects…" oninput="planFilterDefects(this.value)"
-                        style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;margin-bottom:10px;">`
-                    : `<p style="font-size:13px;color:var(--text-secondary);margin:0 0 6px;">No defects on this job yet — create the first one above.</p>`}
-                    <div id="plan-defect-list">${rows}</div>
-                </div>`);
-            const back = () => {
-                _planPending = null; impClose();
-                const ov = document.getElementById('plan-ov');
-                if (ov) ov.style.display = 'flex';
-            };
-            const x = document.getElementById('imp-close');
-            if (x) x.onclick = back;
-            // Tapping the backdrop dismisses the shared overlay too — the plan
-            // has to come back from that route as well, or the screen goes blank.
-            const ov = document.getElementById('imp-ov');
-            if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) back(); });
+            pickJobDefect(_planState && _planState.addressId, {
+                title: '📐 Attach this markup',
+                topHtml: `<button class="imp-btn" onclick="planNewDefect()" style="width:100%;margin-bottom:12px;">➕ Create a NEW defect</button>`,
+                emptyNote: 'No defects on this job yet — create the first one above.',
+                onPick: (id) => planAttachTo(id),
+                onCancel: () => {
+                    _planPending = null;
+                    const ov = document.getElementById('plan-ov');
+                    if (ov) ov.style.display = 'flex';
+                },
+            });
         }
         let _planPending = null;
         // Turn the markup into a NEW defect rather than hanging it on an existing
@@ -13273,7 +13339,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16u';
+        const APP_VERSION = '2026-08-16v';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13347,7 +13413,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16u"></script>
+    <script src="cloud-sync.js?v=2026-08-16v"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
