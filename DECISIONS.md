@@ -2,6 +2,33 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-09-01 (a) — the report filename, on real data
+
+- **Spiro, after testing the new PDFs: "when I generate the PDF be purely the
+  supplier or the full report [it] lacks the file naming that we originally
+  established… reinstate it for all defects as well as trade specific."**
+  Two separate bugs, both hidden by the same thing: the fixture.
+- **A job report took the lot twice — `905Lot905_01.09_Items.pdf`.** CH Tracker
+  syncs the whole line in `street` ("Lot 905, (11) Woodlawn Rd") with no
+  separate `streetName` or `lotNo`. `reportJobWord` pulled the lot out of that
+  string and then built the street word from the same string, lot included. It
+  now strips a leading "Lot <n>," before the house number. Correct name:
+  `905Woodlawn_01.09_Items.pdf`.
+- **A trade with ONE sub was named after the sub** — the whole Plumber list came
+  out `Costas_01.09_Items.pdf` — because a single `contractorIds` entry
+  satisfied the supplier rule before the trade was ever considered. The trade
+  rules now run FIRST, and `runContextReport` clears `tradeName` when the
+  supervisor unticks away from the trade's own set, so a genuinely per-sub
+  report still lands on the supplier rule.
+- **EVERY address in `pdfname.mjs` carried `streetName` and `lotNo`, and every
+  trade fixture had two subs.** That is why 30 green suites said the naming was
+  fine while it was broken on a phone. Both shapes are now in the fixture — an
+  address in the form the sync actually delivers, and a one-sub trade — and the
+  narrowing case is driven through the real dialog rather than by calling
+  `buildReportFilename` with hand-written opts.
+- **The lesson, again: a fixture that is tidier than production tests nothing.**
+  The same trap as the plan sheet names, which only failed at twelve sheets.
+
 ## 2026-08-16 (x) — Back is a chevron, not a word
 
 - **Spiro, circling the top bar on both screens: "the word back is in the way of

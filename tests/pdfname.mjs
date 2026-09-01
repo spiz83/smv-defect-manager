@@ -52,6 +52,11 @@ const SEED = {
     { id: 1, lot: '1933', street: 'Lot 1933, 19 Lahar Road', suburb: 'Tarneit', propertyNumber: '306363', streetName: 'Lahar Road', lotNo: 1933, active: true },
     { id: 2, lot: '1258', street: 'Lot 1258, Balbi Rd', suburb: 'Truganina', propertyNumber: '306587', streetName: 'Balbi Rd', lotNo: 1258, active: true },
     { id: 3, lot: '1118', street: 'Lot 1118, 60 Rainbow Street', suburb: 'Wollert', propertyNumber: '306548', streetName: 'Rainbow Street', lotNo: 1118, active: true },
+    // EXACTLY what CH Tracker syncs down: the whole line in `street`, and no
+    // separate streetName or lotNo. Every fixture above carries those two
+    // fields, which is why "905Lot905_01.09_Items.pdf" survived on real data
+    // while this suite stayed green (Spiro 2026-09-01).
+    { id: 4, lot: '905', street: 'Lot 905, (11) Woodlawn Rd', suburb: 'Wollert', propertyNumber: '306648', active: true },
   ],
   contractors: [
     { id: 1, name: 'BAYHILL PLUMBING PTY LTD', trades: 'Plumber', tradeIds: [1] },
@@ -161,6 +166,12 @@ console.log('opts:', JSON.stringify(job.opts));
 check('a job report is named after the job — lot + street, no street type',
   job.name === `1933Lahar_${DM}_Items.pdf`, String(job.name));
 
+// The shape real data actually arrives in.
+const jobCombined = await A.page.evaluate(() => buildReportFilename({ statuses: ['open'], addressIds: [4] }));
+console.log('combined-street address:', jobCombined);
+check('an address with the lot inside the street line does not take the lot twice',
+  jobCombined === `905Woodlawn_${DM}_Items.pdf`, jobCombined);
+
 // ---- the trade screen ----------------------------------------------------
 console.log('\n--- trade screen ---');
 const trade = await nameFrom(async () => {
@@ -183,6 +194,39 @@ const narrowed = await A.page.evaluate(() => buildReportFilename({
 }));
 check('…but an explicitly ticked trade wins over the screen it came from',
   narrowed === `Painter_${DM}_Items.pdf`, narrowed);
+
+// A trade with ONE sub. This is the case that shipped broken: a single
+// contractorId satisfied the supplier rule before the trade was considered, so
+// the whole Plumber list came out named after that one sub.
+const soloTrade = await nameFrom(async () => {
+  state.currentView = 'view-defects-trade';
+  state.filters = { tradeName: 'Plumber', contractorIds: [1] };
+  render();
+  await new Promise(r => setTimeout(r, 200));
+  document.querySelector('[title="Generate PDF Report"]').click();
+  await new Promise(r => setTimeout(r, 250));
+  document.getElementById('cr-go').click();
+});
+console.log('one-sub trade opts:', JSON.stringify(soloTrade.opts));
+check('a trade with only ONE sub is still named after the trade, not the sub',
+  soloTrade.name === `Plumber_${DM}_Items.pdf`, String(soloTrade.name));
+
+// …but untick one of the trade's subs and the file is about those subs now.
+const narrowedToSub = await nameFrom(async () => {
+  state.currentView = 'view-defects-trade';
+  state.filters = { tradeName: 'Plumber', contractorIds: [1, 2] };
+  render();
+  await new Promise(r => setTimeout(r, 200));
+  document.querySelector('[title="Generate PDF Report"]').click();
+  await new Promise(r => setTimeout(r, 300));
+  // Leave exactly one of the trade's own subs ticked.
+  const boxes = [...document.querySelectorAll('.cr-contr')];
+  boxes.forEach(b => { b.checked = Number(b.value) === 1; });
+  document.getElementById('cr-go').click();
+});
+console.log('narrowed-to-sub opts:', JSON.stringify(narrowedToSub.opts));
+check('…and narrowing to one of its subs names it after that sub instead',
+  narrowedToSub.name === `Bayhill_${DM}_Items.pdf`, String(narrowedToSub.name));
 
 // ---- the report builder, unscoped ----------------------------------------
 console.log('\n--- report builder ---');

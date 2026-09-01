@@ -12889,7 +12889,16 @@
             const a = db.getAddress(addressId);
             if (!a) return '';
             const lot = String(a.lotNo || (String(a.street || '').match(/lot\s*(\d+)/i) || [])[1] || '').replace(/\D/g, '');
-            const raw = (a.streetName || a.street || '').replace(/^\s*\(?\d+[a-z]?\)?[\s,]+/i, '').replace(/,.*$/, '');
+            // A CH Tracker address carries the WHOLE line in `street` —
+            // "Lot 905, (11) Woodlawn Rd" — and no separate streetName. Strip the
+            // lot prefix before the house number, or the lot is taken twice and
+            // the file comes out "905Lot905_01.09_Items.pdf" (Spiro 2026-09-01).
+            // The fixture this was written against had streetName/lotNo set, so
+            // the combined form was never exercised.
+            const raw = (a.streetName || a.street || '')
+                .replace(/^\s*lot\s*\d+[a-z]?\s*[,\-]?\s*/i, '')   // "Lot 905, "
+                .replace(/^\s*\(?\d+[a-z]?\)?[\s,]+/i, '')          // "(11) "
+                .replace(/,.*$/, '');
             // Stripping the street type off 'The Grove' would leave 'The', so
             // only take the stripped form when something is actually left.
             const stripped = raw.replace(STREET_TYPES, ' ').replace(/[^a-z0-9]/gi, '');
@@ -12903,23 +12912,31 @@
             const dm = pad(now.getDate()) + '.' + pad(now.getMonth() + 1);   // 12.06
 
             let who = '';
-            // 1 · The supplier it is going to. This is the common case — the
-            //     supplier email, and 📑 on a supplier group inside a job.
-            if (opts.contractorIds && opts.contractorIds.length === 1) {
-                const c = db.getContractor(opts.contractorIds[0]);
-                who = reportNameWord(c && c.name);
-            }
-            // 2 · The trade, when the report covers a whole trade rather than
-            //     one sub. An explicitly TICKED trade comes first: the dialog
-            //     can be opened on the Plumber screen and narrowed to Painter,
-            //     and the file has to say what is in it, not where it started.
-            //     The trade screen itself scopes by its SET of contractors, so
-            //     its trade name is handed down as tradeName or it is lost.
-            if (!who && opts.tradeIds && opts.tradeIds.length === 1) {
+            // 1 · The trade, when the report IS a trade's list. An explicitly
+            //     TICKED trade first: the dialog can be opened on the Plumber
+            //     screen and narrowed to Painter, and the file has to say what
+            //     is in it, not where it started. The trade screen scopes by its
+            //     SET of subs, so its name is handed down as tradeName or lost.
+            //
+            //     This runs BEFORE the supplier rule, which is the fix for a
+            //     trade that has only ONE sub: the report was named after that
+            //     sub — "Costas_01.09_Items.pdf" for the whole Plumber list —
+            //     because a single contractorId satisfied the supplier rule
+            //     first. The fixture had two subs, so it never fired
+            //     (Spiro 2026-09-01). runContextReport drops tradeName when the
+            //     supervisor narrows the ticks, so a genuinely per-sub report
+            //     still lands on rule 2.
+            if (opts.tradeIds && opts.tradeIds.length === 1) {
                 const t = (db.data.trades || []).find(x => x.id === opts.tradeIds[0]);
                 who = reportNameWord(t && t.name);
             }
             if (!who && opts.tradeName) who = reportNameWord(opts.tradeName);
+            // 2 · The supplier it is going to — the supplier email, and 📑 on a
+            //     supplier group inside a job.
+            if (!who && opts.contractorIds && opts.contractorIds.length === 1) {
+                const c = db.getContractor(opts.contractorIds[0]);
+                who = reportNameWord(c && c.name);
+            }
             // 3 · The job — a report generated from the job screen.
             if (!who && opts.addressIds && opts.addressIds.length === 1) who = reportJobWord(opts.addressIds[0]);
             // 4 · Nothing single to name it after: say what it spans, rather
@@ -13498,6 +13515,11 @@
                 // which are blank on many subs and used to silently drop them).
                 const selC = Array.from(document.querySelectorAll('.cr-contr:checked')).map(x => parseInt(x.value)).filter(Boolean);
                 if (selC.length) o.contractorIds = selC;
+                // Narrowed away from the trade's own set → the file is about
+                // those subs now, not the trade, so stop naming it after one.
+                const same = selC.length === ctxContractorIds.length
+                    && selC.every(id => ctxContractorIds.includes(id));
+                if (selC.length && !same) o.tradeName = '';
             } else {
                 const allTrades = db.data.trades.length;
                 const selT = Array.from(document.querySelectorAll('.cr-trade:checked')).map(x => parseInt(x.value)).filter(Boolean);
@@ -13569,7 +13591,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-08-16x';
+        const APP_VERSION = '2026-09-01a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13643,7 +13665,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-08-16x"></script>
+    <script src="cloud-sync.js?v=2026-09-01a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
