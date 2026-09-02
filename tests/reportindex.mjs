@@ -25,7 +25,7 @@ import { dirname, join } from 'node:path';
 const __here = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__here, '..');
 const ROOT = REPO, PORT = 8197;
-const MIME = { '.html': 'text/html', '.js': 'text/javascript' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png' };
 const server = http.createServer((q, r) => {
   const u = q.url.split('?')[0], f = path.join(ROOT, u === '/' ? 'index.html' : u);
   if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); return r.end('x'); }
@@ -172,6 +172,53 @@ console.log('\n--- D · contents rows: item, location, description, trade ---');
   // Page and Rectified are the drawing's business: Page is only known once the
   // photos have pushed the cards around, Rectified is a box to tick by hand.
   check('page is left to the drawing pass', rows[0].page === undefined);
+}
+
+// ================= E. the company logo on the header band ==================
+// Spiro 2026-09-01: "change header from PDF REPORT to feature this logo to make
+// it more official from company… logo to be on the LHS, however on the right to
+// still read Defect Report, Date and Number of Items."
+//
+// The drawing cannot run here (jsPDF is a blocked CDN dependency), so what is
+// asserted is the part that can fail silently on a phone: the asset resolving,
+// and it being big enough to print without upscaling.
+console.log('\n--- E · the logo the header band draws ---');
+{
+  const logo = await page.evaluate(async () => {
+    const url = await reportLogo();
+    if (!url) return { ok: false };
+    const img = await new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = url; });
+    return { ok: true, isPng: url.startsWith('data:image/png;base64,'), bytes: url.length,
+      w: img && img.naturalWidth, h: img && img.naturalHeight };
+  });
+  console.log('logo:', JSON.stringify(logo));
+  check('the logo resolves', logo.ok && logo.isPng, JSON.stringify(logo));
+  check('…and decodes as a real image', logo.w > 0 && logo.h > 0, `${logo.w}x${logo.h}`);
+  // Drawn 46mm wide. 300dpi at 46mm needs 46/25.4*300 = 543px, so anything at
+  // or above that prints cleanly and needs no upscaling.
+  const needed = Math.ceil(46 / 25.4 * 300);
+  check(`…at print resolution for the size it is drawn (needs ${needed}px wide)`,
+    logo.w >= needed, `${logo.w}px vs ${needed}px`);
+  check('…with the aspect ratio the drawing assumes',
+    Math.abs((logo.w / logo.h) - (560 / 169)) < 0.01, (logo.w / logo.h).toFixed(3));
+
+  // Precached, or a report built on site with no signal loses its letterhead.
+  // Read from disk: this harness serves /sw.js as a 404 on purpose, to stop the
+  // service worker registering and caching the page under test.
+  const sw = fs.readFileSync(join(REPO, 'sw.js'), 'utf8');
+  check('…and the service worker precaches it, so it survives no signal',
+    sw.includes('creation-homes-logo.png'));
+
+  // Cached after the first call: a report can be built several times a session.
+  const twice = await page.evaluate(async () => {
+    let n = 0;
+    const real = window.fetch;
+    window.fetch = (...a) => { if (String(a[0]).includes('creation-homes-logo')) n++; return real(...a); };
+    await reportLogo(); await reportLogo();
+    window.fetch = real;
+    return n;
+  });
+  check('…and is not re-fetched on every report', twice === 0, `${twice} extra fetch(es)`);
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

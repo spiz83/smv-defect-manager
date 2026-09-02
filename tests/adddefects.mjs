@@ -237,6 +237,47 @@ console.log('\n--- E · three blocks of five, each row on ONE line ---');
     .map(i => parseFloat(getComputedStyle(i).fontSize)));
   check('no input is under 16px, which would make iOS zoom on focus',
     fs.every(v => v >= 16), JSON.stringify([...new Set(fs)]));
+
+  // "Contractor missing? Add one" was a full-width strip above the form, which
+  // cost a line to say something you only need at the moment you cannot find a
+  // name (Spiro 2026-09-01: "taking up too much space… only do an icon").
+  const addNew = await page.evaluate(() => {
+    const strip = [...document.querySelectorAll('#app *')]
+      .some(el => /Contractor missing/i.test(el.textContent || '') && el.children.length === 0);
+    const btns = [...document.querySelectorAll('.add-contractor-new')];
+    const b = btns[0], inp = document.getElementById('add-contractor-1-input');
+    const bb = b.getBoundingClientRect(), ib = inp.getBoundingClientRect();
+    return {
+      strip, count: btns.length, label: b.textContent.trim(),
+      tap: Math.round(bb.width) + 'x' + Math.round(bb.height),
+      rightOfField: bb.left >= ib.right - 1,
+      level: Math.abs((bb.top + bb.height / 2) - (ib.top + ib.height / 2)) < 3,
+      opens: (b.getAttribute('onclick') || '').includes('openAddContractor'),
+    };
+  });
+  console.log('add-contractor button:', JSON.stringify(addNew));
+  check('the full-width "Contractor missing?" strip is gone', !addNew.strip, JSON.stringify(addNew));
+  check('…replaced by an icon beside every contractor field', addNew.count === 3, String(addNew.count));
+  check('…which is an icon, not a sentence', addNew.label.length <= 3, JSON.stringify(addNew.label));
+  check('…sitting to the RIGHT of the field, on the same line',
+    addNew.rightOfField && addNew.level, JSON.stringify(addNew));
+  check('…finger-sized', /^3[0-9]x3[0-9]$/.test(addNew.tap), addNew.tap);
+  check('…and still opens the add-contractor form', addNew.opens);
+
+  // The field's own suggestion list must still land under the field, not be
+  // pushed around by the button now sharing its row.
+  await page.fill('#add-contractor-1-input', 'C');
+  await page.waitForTimeout(350);
+  const dd = await page.evaluate(() => {
+    const inp = document.getElementById('add-contractor-1-input');
+    const d = document.getElementById('add-contractor-1-dropdown');
+    const ib = inp.getBoundingClientRect(), db = d.getBoundingClientRect();
+    const under = document.elementFromPoint(Math.round(db.left + db.width / 2), Math.round(db.top + 8));
+    return { active: d.classList.contains('active'), gap: Math.round(db.top - ib.bottom), onTop: !!(under && d.contains(under)) };
+  });
+  check('the contractor suggestions still open directly under the field',
+    dd.active && Math.abs(dd.gap) <= 4 && dd.onTop, JSON.stringify(dd));
+  await page.fill('#add-contractor-1-input', '');
   check('pin sits left of the description, camera right of it',
     rows.geo.every(g => g.pinLeft && g.camRight));
   check('all three are on the same line, vertically centred',

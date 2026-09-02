@@ -2,6 +2,37 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-09-01 (b) — the company logo, and 👷+ instead of a banner
+
+- **Spiro: "Contractor missing? Add one… taking up too much space… only do an
+  icon, ie + sign with a construction hat"**, with an arrow at the right of the
+  contractor field. The full-width strip is gone; a 👷＋ button now sits at the
+  right of EVERY contractor field — where the thought "I can't find them"
+  actually happens, rather than in a banner above the form you read once and
+  then scroll past forever. Removing the strip also bought back a line: all
+  three supplier blocks now reach the screen.
+- **The autocomplete container became a flex row** to hold the button, and the
+  suggestion list is still absolutely positioned inside it, so it lands under
+  the field exactly as before. Asserted, because "the dropdown exists" would
+  pass with it hanging off the side of the screen.
+- **The report's header band now carries the Creation Homes mark**, left, with
+  DEFECT REPORT / date / item count on the right (Spiro 2026-09-01). The mark is
+  navy on white, so it sits on a white card rather than straight on the navy —
+  which is how the company sets it. A dead fetch falls back to the wordmark in
+  type; a report is never blocked on an image.
+- **No upscaling, because none is needed.** The asset is 560x169 and is drawn
+  46mm wide — about 356 DPI, past the 300 print needs. Upscaling a raster adds
+  pixels, never detail. The test asserts the width against the DPI the drawing
+  requires, so shrinking the source or growing the logo will fail rather than
+  quietly print soft.
+- **Taken from CH Tracker's `public/creation-homes-logo.png`** rather than
+  redrawn: it is the company's own mark and guessing at a brand asset is worse
+  than copying it. Precached in the service worker's CORE list, so a report
+  built on site with no signal still carries the letterhead.
+- **Still not verified by rendering** — jsPDF remains a blocked CDN dependency.
+  The asset, its resolution, its aspect ratio, the precache and the fetch-once
+  behaviour are all covered; the band's layout needs eyes on a real PDF.
+
 ## 2026-09-01 (a) — the report filename, on real data
 
 - **Spiro, after testing the new PDFs: "when I generate the PDF be purely the

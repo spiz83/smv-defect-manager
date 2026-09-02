@@ -837,6 +837,22 @@
            already Titillium Web, from body.design-f1's input rule. The
            placeholder drops back to regular: it is a prompt, not a name. */
         .add-contractor-input { font-weight: 700; }
+        /* 👷+ beside the contractor field: the "I can't find them" button, put
+           where that thought actually happens rather than in a banner above the
+           form. Sized to the field it sits next to, so the row still reads as
+           one control. */
+        .add-contractor-new {
+            flex: 0 0 auto;
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 36px; height: 34px; padding: 0;
+            border: 1px dashed var(--border-color, #ccc); border-radius: 9px;
+            background: transparent; cursor: pointer;
+            font-size: 15px; line-height: 1;
+        }
+        .add-contractor-new span {
+            font-size: 11px; font-weight: 700; color: var(--blue, #2563eb);
+            margin-left: -2px;
+        }
         .add-contractor-input::placeholder { font-weight: 400; }
         /* Both icons: the padding makes a finger-sized target, the negative
            margins stop that padding from taking width off the description or
@@ -3199,14 +3215,16 @@
                 for (let r = 0; r < ADD_DEFECT_ROWS; r++) rows += addDefectRowHtml('add-defect-' + i);
                 out += `
                         <div style="margin-bottom: 8px; padding: 9px 12px; background: var(--bg-primary); border-radius: 10px; border: 1px solid var(--border-color);">
-                            <div class="autocomplete-container" style="position: relative; margin-bottom: 5px;">
+                            <div class="autocomplete-container" style="position: relative; margin-bottom: 5px; display: flex; align-items: center; gap: 6px;">
                                 <input type="text"
                                        id="add-contractor-${i}-input"
                                        class="add-contractor-input"
                                        placeholder="Contractor ${i} \u2014 start typing name\u2026"
                                        oninput="handleAddDefectsContractorAutocomplete(this, ${i})"
                                        onfocus="handleAddDefectsContractorAutocomplete(this, ${i})"
-                                       style="width: 100%; padding: 7px 10px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 16px; line-height: 1.25;">
+                                       style="flex: 1 1 auto; min-width: 0; padding: 7px 10px; border: 1px solid #c6c6c8; border-radius: 10px; font-size: 16px; line-height: 1.25;">
+                                <button type="button" class="add-contractor-new" onclick="openAddContractor('')"
+                                        title="Can't find them? Add a new contractor" aria-label="Add a new contractor">\u{1F477}<span>\uFF0B</span></button>
                                 <div id="add-contractor-${i}-dropdown" class="autocomplete-dropdown"></div>
                             </div>
                             ${rows}
@@ -3241,10 +3259,13 @@
                         <div class="lot-title" onclick="leaveAddDefects(() => viewDefectsForAddress(${addressId}))" style="cursor: pointer;" title="${formatAddress(address)} — tap to view this job's defects">${lotTitleHtml(address, '›')}</div>
                     </div>
 
-                    <div style="padding: 0 12px;">
-                        <div onclick="openAddContractor('')" style="display:inline-flex;align-items:center;gap:6px;margin:2px 0;padding:6px 10px;border:1px dashed var(--border-color,#ccc);border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;color:var(--blue,#2563eb);">👤＋ Contractor missing? Add one</div>
-                    </div>
-
+                    <!-- "Contractor missing? Add one" used to be a full-width
+                         strip here, above the form. It cost a whole line to say
+                         something you only need at the moment you cannot find a
+                         name — so it is now a 👷 button at the right of each
+                         contractor field, exactly where that thought occurs
+                         (Spiro 2026-09-01: "taking up too much space… only do an
+                         icon"). -->
                     <div style="padding: 10px 12px;">
                         ${addDefectBlocksHtml()}
                     </div>
@@ -12948,6 +12969,37 @@
             return who + '_' + dm + '_Items.pdf';
         }
 
+        // The Creation Homes mark for the report's header band. Fetched once and
+        // held as a data URL, because jsPDF wants one and a report can be built
+        // several times in a session. The file is in the service worker's CORE
+        // list, so this resolves from cache on site with no signal.
+        //
+        // 560x169 native. At the ~46mm it is drawn, that is about 356 DPI —
+        // comfortably past the 300 needed for print, so it is embedded as-is
+        // (Spiro 2026-09-01: "if the resolution is bad upscale it" — it isn't;
+        // upscaling a raster adds pixels, never detail, and this one already has
+        // more than the page can use).
+        let _logoUrl;
+        async function reportLogo() {
+            if (_logoUrl !== undefined) return _logoUrl;
+            try {
+                const r = await fetch('creation-homes-logo.png');
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const b = await r.blob();
+                _logoUrl = await new Promise((res, rej) => {
+                    const fr = new FileReader();
+                    fr.onload = () => res(fr.result);
+                    fr.onerror = rej;
+                    fr.readAsDataURL(b);
+                });
+            } catch (e) {
+                console.warn('[report] logo unavailable, header falls back to text', e);
+                _logoUrl = null;      // cached, so a dead fetch is not retried per page
+            }
+            return _logoUrl;
+        }
+        const LOGO_W = 560, LOGO_H = 169;   // native pixels, for the aspect ratio
+
         async function generateDefectPDF(list, opts) {
             await ensureJsPdf();
             const { jsPDF } = window.jspdf;
@@ -12964,17 +13016,40 @@
             const stroke = (c) => doc.setDrawColor(c[0], c[1], c[2]);
             const ink = (c) => doc.setTextColor(c[0], c[1], c[2]);
 
-            // ── header band (page 1) ─────────────────────────────────
-            fill(NAVY); doc.rect(0, 0, pageW, 34, 'F');
-            fill(NAVY2); doc.rect(0, 34, pageW, 1.4, 'F');
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(22); ink([255, 255, 255]);
-            doc.text('DEFECT REPORT', M, 16.5);
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(10); ink([186, 199, 224]);
-            doc.text('SMV Defect Manager', M, 23.5);
-            doc.setFontSize(9); ink([198, 209, 230]);
-            doc.text(niceDate, pageW - M, 14, { align: 'right' });
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(12); ink([255, 255, 255]);
-            doc.text(list.length + (list.length === 1 ? ' defect' : ' defects'), pageW - M, 22, { align: 'right' });
+            // ── header band ──────────────────────────────────────────
+            // Logo LEFT, the report's own details RIGHT (Spiro 2026-09-01).
+            // The mark is navy on white, so it sits on a white card rather than
+            // straight on the navy — which is exactly how the company sets it.
+            // No logo (a dead fetch) falls back to the wordmark in type, so a
+            // report is never blocked on an image.
+            const logo = await reportLogo();
+            const drawBand = (subtitle, count) => {
+                const BAND = 32;
+                fill(NAVY); doc.rect(0, 0, pageW, BAND, 'F');
+                fill(NAVY2); doc.rect(0, BAND, pageW, 1.4, 'F');
+                if (logo) {
+                    const lw = 46, lh = lw * (LOGO_H / LOGO_W);      // keep the aspect
+                    const cardW = lw + 8, cardH = lh + 7;
+                    const cx = M, cy = (BAND - cardH) / 2;
+                    fill([255, 255, 255]); doc.roundedRect(cx, cy, cardW, cardH, 2.4, 2.4, 'F');
+                    try { doc.addImage(logo, 'PNG', cx + 4, cy + 3.5, lw, lh); } catch (e) {}
+                } else {
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); ink([255, 255, 255]);
+                    doc.text('CREATION HOMES', M, 18);
+                }
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(17); ink([255, 255, 255]);
+                doc.text('DEFECT REPORT', pageW - M, 13.5, { align: 'right' });
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(9); ink([198, 209, 230]);
+                doc.text(niceDate, pageW - M, 20, { align: 'right' });
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(11); ink([255, 255, 255]);
+                doc.text(count, pageW - M, 27, { align: 'right' });
+                if (subtitle) {
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); ink([186, 199, 224]);
+                    doc.text(subtitle, M, BAND - 3);
+                }
+                return BAND + 1.4;
+            };
+            drawBand('', list.length + (list.length === 1 ? ' defect' : ' defects'));
 
             let y = 44;
 
@@ -13260,18 +13335,9 @@
                 };
                 let tp = 1;
                 doc.setPage(tp);
-                // Page 1 of the contents carries the report's own masthead, so the
-                // document opens on something that says what it is.
-                fill(NAVY); doc.rect(0, 0, pageW, 30, 'F');
-                fill(NAVY2); doc.rect(0, 30, pageW, 1.4, 'F');
-                doc.setFont('helvetica', 'bold'); doc.setFontSize(19); ink([255, 255, 255]);
-                doc.text('DEFECT REPORT', M, 15);
-                doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); ink([186, 199, 224]);
-                doc.text('Contents', M, 22);
-                doc.setFontSize(9); ink([198, 209, 230]);
-                doc.text(niceDate, pageW - M, 13.5, { align: 'right' });
-                doc.setFont('helvetica', 'bold'); doc.setFontSize(11); ink([255, 255, 255]);
-                doc.text(toc.length + (toc.length === 1 ? ' item' : ' items'), pageW - M, 21, { align: 'right' });
+                // Page 1 of the contents carries the same masthead, so the
+                // document opens on something that says whose report it is.
+                drawBand('Contents', toc.length + (toc.length === 1 ? ' item' : ' items'));
                 const heading = (opts.addressIds && opts.addressIds.length === 1)
                     ? 'Summary Of Defects For ' + formatAddress(db.getAddress(opts.addressIds[0]))
                     : 'Summary Of Defects';
@@ -13591,7 +13657,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-01a';
+        const APP_VERSION = '2026-09-01b';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13665,7 +13731,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-01a"></script>
+    <script src="cloud-sync.js?v=2026-09-01b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

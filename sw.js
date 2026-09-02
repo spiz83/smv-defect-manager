@@ -13,19 +13,22 @@
  *
  * Bump CACHE (and the cloud-sync ?v= below) whenever the shell changes.
  */
-const CACHE = 'deffixer-shell-2026-09-01a';
+const CACHE = 'deffixer-shell-2026-09-01b';
 
 // Same-origin shell. All of these must exist or install precache will fail.
 const CORE = [
   './',
   './index.html',
-  './cloud-sync.js?v=2026-09-01a',
+  './cloud-sync.js?v=2026-09-01b',
   './manifest.webmanifest',
   './icon.svg',
   './favicon-48.png',
   './icon-180.png',
   './icon-192.png',
   './icon-512.png',
+  // The company logo on the PDF report's header band. Precached so a report
+  // built on site, with no signal, still carries it.
+  './creation-homes-logo.png',
 ];
 // Cross-origin, needed to boot cloud sync offline. Best-effort (don't fail install).
 const EXTRA = [
