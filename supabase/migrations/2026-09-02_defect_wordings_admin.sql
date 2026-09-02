@@ -151,21 +151,38 @@ from (values
 where not exists (select 1 from public.dm_defect_wordings);
 
 -- ============================================================================
---   STEP 2 — THE GRANT.  Put YOUR email between the quotes and run it.
---   Matching on auth.users means you type your own address and nothing is
---   guessed on your behalf. Case is ignored.
+--   THE GRANT — runs as part of this file. Nothing to fill in.
 -- ============================================================================
+-- Spiro named the address himself (2026-09-02), so it is in here rather than
+-- left as a placeholder to type. Add another admin by putting their address in
+-- the list below and re-running the file; it is idempotent.
 --
---   update public.profiles p
---      set is_wordings_admin = true
---     from auth.users u
---    where u.id = p.id
---      and lower(u.email) = lower('YOUR-EMAIL-HERE');
---
--- Check it took — this should list you, and only you:
+-- Matched against auth.users rather than a column on profiles, because
+-- auth.users is where the address actually lives. Case-folded, so the way it
+-- was typed at signup does not matter.
+update public.profiles p
+   set is_wordings_admin = true
+  from auth.users u
+ where u.id = p.id
+   and lower(u.email) in (
+       'svladimiroski@hotmail.com'
+       -- , 'someone.else@example.com'
+   );
+
+-- ---------------------------------------------------------------------------
+-- CHECK IT TOOK. This must list the address above, with true beside it.
 --
 --   select u.email, p.is_wordings_admin
 --     from public.profiles p join auth.users u on u.id = p.id
 --    where p.is_wordings_admin;
 --
--- To take it away later, set is_wordings_admin = false the same way.
+-- NOTHING LISTED? Then that account has no row in public.profiles yet — the row
+-- is created on first sign-in, so sign in on the phone once and re-run the file.
+-- The UPDATE above quietly changes zero rows in that case, which looks exactly
+-- like success from the SQL editor.
+--
+-- TO TAKE IT AWAY:
+--
+--   update public.profiles p set is_wordings_admin = false
+--     from auth.users u
+--    where u.id = p.id and lower(u.email) = lower('them@example.com');

@@ -2,6 +2,26 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-09-02 (b) — the wordings admin is named in the migration
+
+- **Spiro gave the address: `svladimiroski@hotmail.com`.** (a) deliberately left
+  the grant as a placeholder to type, because the address in his screenshot was
+  truncated (`…@hotmail.c…`) and could have been `.com` or `.com.au` — guessing
+  wrong would have locked him out of his own feature. He has now named it, so
+  the guess is gone and the grant runs as part of the file.
+- **Still a flag on the profile, not an email in the app.** The address is in
+  SQL that runs once, matched against `auth.users`, where the address actually
+  lives. `index.html` still contains no email: it is public, it enforces
+  nothing, and a second copy of the value would be a second thing to keep true.
+- **An IN list, so a second admin is one line and a re-run.** The file is
+  idempotent.
+- **The likely failure is silent and is called out in the file**: the UPDATE
+  changes zero rows if that account has no `profiles` row yet — the row appears
+  on first sign-in — and zero rows looks exactly like success in the SQL editor.
+  The verification query is right beside it.
+- **No app behaviour changed**, only the SQL and one line of banner text that no
+  longer tells him to fill something in.
+
 ## 2026-09-02 (a) — adding defect wordings, admin only
 
 - **Spiro: "I need to be able to start adding new wordings… only admin email can
