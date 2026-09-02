@@ -14,17 +14,29 @@ second editor anywhere would be the mistake.
 # Next Steps / Handover
 
 STATUS: Active
-LAST UPDATED: 2026-08-15
+LAST UPDATED: 2026-09-02
 
-## ⚠ ONE THING TO DO BEFORE THE EDITOR WORKS — build `2026-08-15n`
+## ✅ The defect-wordings editor is LIVE — build `2026-09-02b`
 
-Run `supabase/migrations/2026-08-15_defect_wordings.sql` in the Supabase SQL
-editor. Until then Settings → 📝 Defect wordings opens **read-only** over the
-62 wordings built into index.html and says so on screen. Nothing is broken in
-the meantime; nothing can be edited either.
+`supabase/migrations/2026-09-02_defect_wordings_admin.sql` was run on 2026-09-02
+and the grant confirmed:
 
-After running it, check on a phone: Settings → Defect wordings → open a trade →
-✎ an item → Save. It should stick after a pull-to-refresh.
+    email                     | is_wordings_admin
+    svladimiroski@hotmail.com | true
+
+That file supersedes `2026-08-15_defect_wordings.sql` — it repeats everything
+that one did, guarded, and adds `profiles.is_wordings_admin`. Do not run the
+August file; it would put back the manager-wide write policy.
+
+**Writes are gated on the FLAG, not on `role = 'manager'`.** A manager who is
+not flagged sees the list read-only, and the screen says which of the two
+reasons applies. To add another admin, put their address in the IN list at the
+bottom of the September file and re-run it — it is idempotent.
+
+**If a new admin's grant appears to do nothing:** the UPDATE changes zero rows
+when that account has no `public.profiles` row yet (it appears on first
+sign-in), and zero rows reads as success in the SQL editor. Run the check query
+beside the grant.
 
 ## 📐 Job plans read straight from CH Tracker (2026-08-16) — build `2026-08-16b`
 
@@ -219,11 +231,12 @@ edit reaches every phone. What will bite a later change:
   **Still unconfirmed on the live data: Bricklayer, Tiler, Renderer,
   Landscaper.** If they do not exist as contractors, either add them or move
   their 8 wordings to a trade that does.
-- **Two role gates, on purpose.** `wordingsIsManager()` (CloudJobs) decides who
-  SEES the card and screen; `wordingsCanEdit()` also needs the shared table, and
-  decides who can WRITE. Writes are enforced again by RLS on
-  `profiles.role = 'manager'` — if a manager sees the read-only banner, check
-  their profile row before the code.
+- **Two gates, on purpose.** `wordingsIsManager()` (CloudJobs) decides who SEES
+  the card and screen; `wordingsCanEdit()` decides who can WRITE. Since
+  2026-09-02 the write gate is `profiles.is_wordings_admin`, NOT
+  `role = 'manager'` — enforced again by RLS. If a manager sees the read-only
+  banner, check their profile row before the code; the banner already says
+  which of the two reasons it is.
 - **`tests/wordings.mjs` (46 checks) covers the screen**, including the
   before-migration read-only state and a supervisor being kept out of both the
   card and the screen. It is suite 21 in
