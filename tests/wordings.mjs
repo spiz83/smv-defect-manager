@@ -82,9 +82,12 @@ const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? ' 
 
 // A stand-in for the Supabase-backed CloudWordings: same signatures, same
 // return shapes, backed by an array so the round-trip is observable.
-const installFakeCloud = (role, rows) => page.evaluate(({ role, rows }) => {
-  // Both role gates move together, the way they do in cloud-sync.js: CloudJobs
-  // for who may see the screen, CloudWordings for who may write to the table.
+// `canEdit` is SEPARATE from the role since 2026-09-02: a manager sees the
+// screen, but only the flagged wordings admin may write to the table
+// (profiles.is_wordings_admin, enforced by RLS). Defaults to the old coupling so
+// the sections written before that still read the way they were written.
+const installFakeCloud = (role, rows, canEdit) => page.evaluate(({ role, rows, canEdit }) => {
+  // CloudJobs for who may SEE the screen, CloudWordings for who may WRITE.
   window.CloudJobs = { isManager: () => role === 'manager', currentUserId: () => 'me' };
   let list = rows.map(r => ({ ...r }));
   let seq = 100;
@@ -92,7 +95,7 @@ const installFakeCloud = (role, rows) => page.evaluate(({ role, rows }) => {
   window.CloudWordings = {
     ready: () => true,
     list: () => list.slice(),
-    canEdit: () => role === 'manager',
+    canEdit: () => (canEdit === undefined ? role === 'manager' : !!canEdit),
     async add(text, trade, sortN) {
       window.__cloudCalls.push(['add', text, trade]);
       if (!String(text || '').trim()) return { error: 'empty' };
@@ -113,7 +116,7 @@ const installFakeCloud = (role, rows) => page.evaluate(({ role, rows }) => {
     },
   };
   render();
-}, { role, rows });
+}, { role, rows, canEdit });
 
 const FIXTURE = [
   { id: 'w1', text: 'Adjust door margins to 3mm-4mm.', trade: 'Carpenter', n: 3 },
@@ -375,6 +378,71 @@ console.log('\n--- J · the built-in list behind the shared one ---');
   check('…every one has a trade ("not assigned under a trade to be go as Supervisor")', r.untraded === 0, String(r.untraded));
   check('…and Supervisor is one of them', r.trades.includes('Supervisor'), JSON.stringify(r.trades));
   check('the Settings card counts the same list', /62 items across 12 trades\./.test(r.summary), r.summary);
+}
+
+// ===== only the flagged admin may edit ====================================
+// Spiro 2026-09-02: "I need to be able to start adding new wordings… only admin
+// email can do this." A manager can still SEE the list; writing needs the flag.
+console.log('\n--- only the wordings admin can edit ---');
+{
+  await installFakeCloud('manager', FIXTURE, false);
+  await page.evaluate(() => { state.currentView = 'wordings'; render(); });
+  await page.waitForTimeout(200);
+  const ro = await page.evaluate(() => ({
+    body: document.body.innerText,
+    controls: /✎|✕|\+ Add/.test(document.body.innerText),
+    newBtn: !!document.getElementById('wording-new'),
+  }));
+  check('a manager who is not the admin sees the list', /Carpenter/.test(ro.body));
+  check('…told plainly why it is read-only', /not the wordings admin/i.test(ro.body),
+    ro.body.split('\n').slice(0, 4).join(' | '));
+  check('…and pointed at the grant that fixes it', /defect_wordings_admin\.sql/.test(ro.body));
+  check('…with no edit controls at all', !ro.controls && !ro.newBtn, JSON.stringify(ro.controls));
+
+  // The admin gets them.
+  await installFakeCloud('manager', FIXTURE, true);
+  await page.evaluate(() => { state.currentView = 'wordings'; render(); });
+  await page.waitForTimeout(200);
+  const rw = await page.evaluate(() => ({
+    newBtn: !!document.getElementById('wording-new'),
+    banner: /Read-only/.test(document.body.innerText),
+  }));
+  check('the admin gets a ＋ New wording button', rw.newBtn);
+  check('…and no read-only banner', !rw.banner);
+
+  // A trade with NO wordings yet has no group, so it had no way in.
+  await page.evaluate(() => startNewWordingTrade());
+  await page.waitForSelector('#wn-trade', { timeout: 4000 });
+  await page.evaluate(() => { document.getElementById('wn-trade').value = 'Renderer'; document.getElementById('wn-go').click(); });
+  await page.waitForTimeout(250);
+  const fresh = await page.evaluate(() => ({
+    input: !!document.getElementById('wording-edit-input'),
+    hasGroup: /Renderer/.test(document.getElementById('wordings-body').innerText),
+  }));
+  check('a brand-new trade gets a group to add into', fresh.hasGroup && fresh.input, JSON.stringify(fresh));
+
+  await page.evaluate(() => {
+    document.getElementById('wording-edit-input').value = 'Patch and re-render damaged section.';
+    saveWordingEdit('', 'Renderer');
+  });
+  await page.waitForTimeout(300);
+  const added = await page.evaluate(() => ({
+    calls: window.__cloudCalls.filter(c => c[0] === 'add'),
+    listed: window.CloudWordings.list().some(w => w.trade === 'Renderer'),
+  }));
+  console.log('add call:', JSON.stringify(added.calls));
+  check('…and the wording saves against that trade',
+    added.listed && added.calls.some(c => c[2] === 'Renderer'), JSON.stringify(added));
+
+  // The trade must match a contractor name exactly, so the picker offers the
+  // ones that exist rather than leaving it to memory.
+  await page.evaluate(() => startNewWordingTrade());
+  // Wait on the visible INPUT: a <datalist> is never visible, so waiting for it
+  // times out even though it is right there in the DOM.
+  await page.waitForSelector('#wn-trade', { timeout: 4000 });
+  const opts = await page.evaluate(() => [...document.querySelectorAll('#wn-trades option')].map(o => o.value));
+  check('the trade field suggests trades that actually exist', opts.includes('Carpenter'), JSON.stringify(opts.slice(0, 6)));
+  await page.evaluate(() => impClose());
 }
 
 const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));

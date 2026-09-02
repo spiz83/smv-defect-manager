@@ -113,6 +113,7 @@
   let photoCounts = {};               // legacyDefectId -> # photos CONFIRMED in the cloud
   let pendingCounts = {};             // legacyDefectId -> # photos saved on THIS phone, not yet uploaded
   let refreshCountsTimer = null;      // debounce for CloudPhotos.refreshCounts()
+  let wordingsAdmin = false;          // profiles.is_wordings_admin — may edit the shared wordings
   const defectUuidToLegacy = {};      // cloud uuid -> legacy defect id
 
   // Framework call-up (BPI import): address legacy id -> the job's Order Profile
@@ -776,8 +777,22 @@
       if (navigator.onLine) throw e;
       userRole = userRole || 'supervisor';
     }
+    // May this person edit the shared defect wordings? A SEPARATE query on
+    // purpose: `is_wordings_admin` only exists once
+    // supabase/migrations/2026-09-02_defect_wordings_admin.sql has been run, and
+    // folding it into the select above would make an unknown column break role
+    // resolution for EVERY user on a database that hasn't had it yet. Its own
+    // query, its own catch, and the answer defaults to "no".
+    try {
+      const { data: adm, error: admErr } = await sb
+        .from('profiles')
+        .select('is_wordings_admin')
+        .eq('id', user.id)
+        .maybeSingle();
+      wordingsAdmin = !admErr && !!(adm && adm.is_wordings_admin);
+    } catch (e) { wordingsAdmin = false; }
     // Remember who this is so the next reload scopes jobs from the first frame.
-    cachedIdentity = { id: userId, role: userRole };
+    cachedIdentity = { id: userId, role: userRole, wordingsAdmin };
     try { localStorage.setItem('cs_identity', JSON.stringify(cachedIdentity)); } catch (e) {}
   }
 
@@ -2916,12 +2931,15 @@
       default: return s.weight_supervisor;
     }
   }
-  // Shared defect wordings: read by everyone, written by managers only (RLS
-  // enforces that server-side too — this is not the security boundary).
+  // Shared defect wordings: read by everyone, written by ONE flagged admin
+  // (Spiro 2026-09-02: "only admin email can do this"). This is the UI gate —
+  // the row-level policy on dm_defect_wordings is the security boundary, and it
+  // checks the same flag. A supervisor who forced the buttons to appear would
+  // still be refused by the database.
   window.CloudWordings = {
     ready: () => defectWordingsReady,
     list: () => defectWordings.slice(),
-    canEdit: () => (userRole || cachedIdentity.role) === 'manager',
+    canEdit: () => !!(wordingsAdmin || (cachedIdentity && cachedIdentity.wordingsAdmin)),
     async add(text, trade, sortN) {
       const row = { text: String(text || '').trim(), trade: String(trade || 'Supervisor').trim(), sort_n: Number(sortN) || 1, updated_by: userId };
       if (!row.text) return { error: 'empty' };

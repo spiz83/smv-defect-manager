@@ -2,6 +2,39 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-09-02 (a) — adding defect wordings, admin only
+
+- **Spiro: "I need to be able to start adding new wordings… only admin email can
+  do this."** Two things were in the way, and only one of them was code.
+- **The screen has been read-only since 15 August because the migration was
+  never run.** The banner said so; it named a file and nothing more. It now
+  names the file AND the grant, and tells the two read-only cases apart —
+  "nowhere to save to" and "not the person who may save" need different answers.
+- **A flag on the profile, not an email in the app.** `profiles.is_wordings_admin`
+  is what the RLS policy checks and what the app reads. An email hardcoded in
+  index.html would be a value to keep in step in two places, in a public file,
+  and index.html cannot enforce anything anyway. It also means access is granted
+  or revoked with one UPDATE and no deploy.
+- **The grant is a line Spiro types his own email into.** The truncated address
+  in his screenshot could have been `.com` or `.com.au`; guessing wrong would
+  have locked him out of his own feature. Matching on `auth.users.email` in SQL
+  he runs removes the guess entirely.
+- **`is_wordings_admin` is fetched in its OWN query, with its own catch.** The
+  column does not exist until the migration runs, and folding it into the
+  existing `select('role')` would have made an unknown column break role
+  resolution for every user on a database that had not had it yet.
+- **One file to paste.** `2026-09-02_defect_wordings_admin.sql` repeats
+  everything the August file did, guarded, so it stands alone whether or not the
+  older one was ever run.
+- **A trade with no wordings had no way in**, because the groups are built from
+  the wordings themselves. `＋ New wording` asks for the trade first, offering
+  the ones that exist (the trade must match a contractor name exactly or the
+  wording is unreachable), and `renderWordingGroups` gives the trade being added
+  to an empty group so the add row has somewhere to appear.
+- **`wordings.mjs` now models manager-but-not-admin**, which is the state Spiro
+  is actually in until he runs the grant: the list visible, the reason stated,
+  and not one ✎, ✕ or ＋ on the screen.
+
 ## 2026-09-01 (b) — the company logo, and 👷+ instead of a banner
 
 - **Spiro: "Contractor missing? Add one… taking up too much space… only do an
