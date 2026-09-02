@@ -13,10 +13,16 @@
 -- in step in two places, and index.html is public.
 --
 -- ============================================================================
---   STEP 1 of 2 — paste this whole file into the Supabase SQL editor
---                (project cubwwnvzmeydyixhetfb) and run it.
---   STEP 2 of 2 — run the GRANT at the very bottom with your own email in it.
---                Until you do, nobody can edit and the app says so on screen.
+--   HOW TO RUN: paste this WHOLE file into the Supabase SQL editor
+--   (project cubwwnvzmeydyixhetfb) and press Run. That is all of it — the
+--   table, the 62 wordings, the policies and the admin grant. Nothing to fill
+--   in. Then reopen the app.
+--
+--   Safe to run more than once: every step is guarded, no wording is
+--   overwritten, and nothing is dropped.
+--
+--   AFTERWARDS, run the check near the bottom of this file. It must list the
+--   admin address. If it lists nothing, see the note beside it.
 -- ============================================================================
 
 create table if not exists public.dm_defect_wordings (
