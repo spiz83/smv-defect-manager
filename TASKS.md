@@ -10,10 +10,16 @@
       contractors supervisors say they added that are not there, and for ones
       a manager shared that went back to private. The fix stops it recurring
       but cannot bring back an overwritten row.
-- [ ] **Run `supabase/migrations/2026-08-15_defect_wordings.sql`.** Until it
-      is run, Settings → 📝 Defect wordings is read-only over the 62 built-in
-      wordings and says so on screen. This is the only step left on build
-      `2026-08-15n`.
+- [x] **The defect-wordings migration is run** — `2026-09-02_defect_wordings_admin.sql`,
+      confirmed 2026-09-02 (`svladimiroski@hotmail.com | is_wordings_admin = true`).
+      ⚠️ Do NOT run the older `2026-08-15_defect_wordings.sql`; it would put back
+      the manager-wide write policy the September file replaced.
+- [x] **Temp jobs** — admin-only one-off maintenance jobs at the bottom of the
+      home screen, local to the handset, never uploaded, permanently deleted.
+      Build `2026-09-03a`, covered by `tests/tempjob.mjs` (suite 27).
+- [ ] **Try a temp job on the phone**: add one, dump a few defects with photos
+      onto it, mail the report, then delete it — and confirm nothing about it
+      appears on a second device after a sync on both.
 - [ ] **Confirm Bricklayer, Tiler, Renderer and Landscaper exist as
       contractors / trade placeholders.** 8 of the 62 wordings sit under
       them; if the trades don't exist those wordings can never be reached by

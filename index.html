@@ -3949,10 +3949,118 @@
         // search / picker runs through this so a supervisor can only ever reach
         // their own jobs. Only narrows once supervisor data has loaded, so a slow
         // sync never blanks the results.
+        // Is this the app admin? One answer, from cloud-sync, so the gate cannot
+        // drift between the features that use it.
+        // ===================================================================
+        //  Temp jobs — a one-off maintenance call (Spiro 2026-09-02)
+        // ===================================================================
+        // "Something that isn't active, in the odd event that I do a maintenance
+        // service call. Take a defect dump and then get rid of the job. I
+        // wouldn't want it in the database once it's been deleted."
+        //
+        // It never goes IN. Addresses are CH Tracker jobs and are never pushed,
+        // and pushDiff already drops any defect whose address has no cloud job —
+        // so a temp job and everything on it stay on this handset by the rules
+        // that already existed. cloud-sync carries them across each pull (the
+        // rebuild from CH Tracker would otherwise wipe them within seconds) and
+        // keeps their photos off the upload queue.
+        //
+        // Ids sit in their own band so they can never collide with a real job's
+        // hashId(uuid), which tops out just above 1.0e9.
+        function newTempJobId() {
+            const taken = new Set((db.data.addresses || []).map(a => Number(a.id)));
+            for (let i = 0; i < 40; i++) {
+                const id = 1500000000 + Math.floor(Math.random() * 100000000);
+                if (!taken.has(id)) return id;
+            }
+            return 1500000000 + Math.floor(Math.random() * 100000000);
+        }
+
+        function createTempJob() {
+            if (!isAppAdmin()) { showToast('Admins only', true); return; }
+            impOverlay(`<div id="imp-head"><strong>🛠️ Add temp job</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <p style="font-size:13px;color:var(--text-secondary);margin:0 0 12px;line-height:1.5;">
+                        For a one-off maintenance call. It stays on <b>this phone</b> — it is never
+                        uploaded, nobody else sees it, and deleting it deletes it for good.
+                    </p>
+                    <input id="tj-name" type="text" placeholder="Address or job name"
+                           style="width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--border-color,#ccc);border-radius:9px;font-size:16px;margin-bottom:9px;">
+                    <input id="tj-sub" type="text" placeholder="Suburb (optional)"
+                           style="width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--border-color,#ccc);border-radius:9px;font-size:16px;margin-bottom:9px;">
+                    <input id="tj-ref" type="text" placeholder="Reference (optional)"
+                           style="width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--border-color,#ccc);border-radius:9px;font-size:16px;margin-bottom:12px;">
+                    <button class="imp-btn" id="tj-go" style="width:100%">Create</button>
+                </div>`);
+            setTimeout(() => { const i = document.getElementById('tj-name'); if (i) i.focus(); }, 30);
+            document.getElementById('tj-go').onclick = () => {
+                const name = (document.getElementById('tj-name').value || '').trim();
+                if (!name) { showToast('Enter the address or a name for it', true); return; }
+                const uid = (window.CloudJobs && window.CloudJobs.currentUserId) ? window.CloudJobs.currentUserId() : null;
+                const a = {
+                    id: newTempJobId(),
+                    street: name,
+                    suburb: (document.getElementById('tj-sub').value || '').trim(),
+                    propertyNumber: (document.getElementById('tj-ref').value || '').trim(),
+                    isTemp: true,
+                    tempBy: uid || null,
+                    createdAt: new Date().toISOString(),
+                    supervisorId: uid || null,
+                    jobStatus: 'active',
+                    active: true,
+                };
+                db.data.addresses = db.data.addresses || [];
+                db.data.addresses.push(a);
+                db.save();
+                impClose();
+                showToast('🛠️ Temp job created — this phone only');
+                startDefectsForJob(a.id);
+            };
+        }
+
+        // Deleting IS the delete. Nothing was ever uploaded, so there is no
+        // cloud row, no archive row and nothing for another device to pull —
+        // which is what "permanently deleted" has to mean to be worth saying.
+        async function deleteTempJob(addressId) {
+            const a = db.getAddress(addressId);
+            if (!a || !isTempJob(a)) { showToast('That is not a temp job', true); return; }
+            if (!isAppAdmin()) { showToast('Admins only', true); return; }
+            const items = (db.data.defects || []).filter(d => Number(d.addressId) === Number(addressId));
+            const ok = confirm(
+                'Delete the temp job "' + a.street + '"?\n\n' +
+                items.length + ' defect(s) and any photos on them are deleted from this phone for good.\n\n' +
+                'Nothing was ever uploaded, so there is nothing left anywhere else.');
+            if (!ok) return;
+            const ids = items.map(d => d.id);
+            try { if (window.CloudAdmin && window.CloudAdmin.dropLocalPhotos) await window.CloudAdmin.dropLocalPhotos(ids); } catch (e) {}
+            db.data.defects = (db.data.defects || []).filter(d => Number(d.addressId) !== Number(addressId));
+            db.data.addresses = (db.data.addresses || []).filter(x => Number(x.id) !== Number(addressId));
+            db.save();
+            if (state.filters && Number(state.filters.addressId) === Number(addressId)) showHomeView();
+            else render();
+            showToast('Temp job deleted');
+        }
+
+        function isAppAdmin() {
+            return !!(window.CloudAdmin && window.CloudAdmin.is && window.CloudAdmin.is());
+        }
+        function isTempJob(a) { return !!(a && a.isTemp); }
+
+        // A temp job lives only on the phone that made it, so it is already
+        // private in practice. This is for the case that isn't: two people
+        // signing into the same handset. Not admin, or not yours → not shown.
+        function canSeeTempJob(a) {
+            if (!isAppAdmin()) return false;
+            const cj = window.CloudJobs;
+            const uid = (cj && cj.currentUserId) ? cj.currentUserId() : null;
+            return !a.tempBy || !uid || a.tempBy === uid;
+        }
+
         function scopeAddressesToUser(addresses) {
             const cj = window.CloudJobs;
             const isMgr = !!(cj && cj.isManager && cj.isManager());
             const uid = (cj && cj.currentUserId) ? cj.currentUserId() : null;
+            addresses = (addresses || []).filter(a => !isTempJob(a) || canSeeTempJob(a));
             if (isMgr) return addresses;
             // Identity not known yet (first-ever boot / just signed out): show
             // NOTHING rather than flash every supervisor's jobs. Normal reloads
@@ -9079,7 +9187,13 @@
             // handed-over. Safety net: if NO job has a status yet (data still
             // loading), show all rather than a false-empty list — but the moment
             // any status is present, filter strictly.
-            let list = db.getAddresses();
+            // Temp jobs are held out of BOTH probes below. A maintenance call
+            // has no CH Tracker lifecycle and no allocation, and letting the one
+            // job the APP invented answer "does any job have a status/supervisor
+            // yet?" defeats the two safety nets: on a handset whose cached jobs
+            // predate either field, adding a temp job would hide every real job.
+            const temps = db.getAddresses().filter(a => isTempJob(a) && canSeeTempJob(a));
+            let list = db.getAddresses().filter(a => !isTempJob(a));
             if (list.some(a => a.jobStatus)) list = list.filter(a => a.jobStatus === 'active');
             // Supervisors see only their own jobs; managers see all. Identity
             // resolves from the persisted cs_identity on reload, so the filter
@@ -9101,6 +9215,9 @@
                     : (a.street || ''))).trim().toLowerCase();
             const lotKey = (a) => { if (typeof a.lotNo === 'number') return a.lotNo; const m = (a.street || '').match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
             list = [...list].sort((a, b) => streetKey(a).localeCompare(streetKey(b)) || (lotKey(a) - lotKey(b)));
+            // Temp jobs last, nearest the button that makes them — a one-off
+            // shouldn't push the jobs someone actually works from down the list.
+            list = list.concat(temps);
             // Built from <div>s (not <button>s): iOS Safari mishandles buttons as
             // flex items and was stacking the icons under the address. Icons live
             // in a fixed-width group so they always sit BESIDE the address.
@@ -9129,13 +9246,14 @@
                 return `
                 <div data-job-search="${key}" style="${rowStyle}">
                     <div style="${addrStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">
-                        <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.street}</div>
+                        <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${isTempJob(a) ? '<span style="display:inline-block;background:var(--text-secondary,#777);color:#fff;font-size:10px;font-weight:800;letter-spacing:.06em;border-radius:4px;padding:1px 5px;margin-right:6px;vertical-align:2px;">TEMP</span>' : ''}${a.street}</div>
                         <div style="font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</div>
                     </div>
                     ${badge}
                     <div style="flex:0 0 auto;display:flex;gap:6px;">
                         <div style="${icoStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">👁️</div>
                         <div style="${icoStyle}color:var(--acc,#2563eb);font-weight:800;" onclick="startDefectsForJob(${a.id})" title="Add defects">✚</div>
+                        ${isTempJob(a) ? `<div style="${icoStyle}color:var(--red,#DC143C);" onclick="event.stopPropagation(); deleteTempJob(${a.id})" title="Delete this temp job and everything on it">🗑️</div>` : ''}
                     </div>
                 </div>`;
             }).join('');
@@ -9146,11 +9264,21 @@
                     ? 'Loading your jobs…'
                     : 'No jobs allocated to you yet. Use the search at the top, or tap ↻ (bottom-left) to refresh.');
             const body = list.length ? rows : `<div style="padding:16px;opacity:.7;font-size:13px;">${emptyMsg}</div>`;
+            // Under the list, admin only. A maintenance call is not a CH Tracker
+            // job and never becomes one, so it does not belong anywhere in the
+            // normal job flow — it belongs at the bottom, out of the way of the
+            // list people actually work from (Spiro 2026-09-02).
+            const tempBtn = isAppAdmin() ? `
+                <div onclick="createTempJob()" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:-8px 0 18px;padding:10px 12px;border:1px dashed var(--border-color,#ccc);border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text-secondary,#777);">
+                    🛠️ ＋ Add temp job
+                    <span style="font-weight:400;font-size:12px;opacity:.8;">· this phone only</span>
+                </div>` : '';
             return `
                 <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
                 <div id="myjobs-list" style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:360px;overflow-y:auto;margin-bottom:18px;">
                     ${body}
-                </div>`;
+                </div>
+                ${tempBtn}`;
         }
         // Sits directly under the job list, above Reports. Every job the
         // supervisor holds, in one list — the point being that a hardware run is
@@ -13699,7 +13827,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-02b';
+        const APP_VERSION = '2026-09-03a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13773,7 +13901,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-02b"></script>
+    <script src="cloud-sync.js?v=2026-09-03a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -40,8 +40,8 @@ else
 fi
 
 if [ "$QUICK" != "quick" ]; then
-  echo "GATE 3 — behaviour (30 suites, real Chromium)"
-  for f in addrcopy adddefects bpidesc bulkphoto clearx combo contractorid deep emailattach fixes hdr jobplans loc locmodal pass pdfname pendingcontractors photoedit pvgallery pvphoto pvstable recur reportindex rows shop sync tradefilter tradepdf tradereassign wordings; do
+  echo "GATE 3 — behaviour (31 suites, real Chromium)"
+  for f in addrcopy adddefects bpidesc bulkphoto clearx combo contractorid deep emailattach fixes hdr jobplans loc locmodal pass pdfname pendingcontractors photoedit pvgallery pvphoto pvstable recur reportindex rows shop sync tempjob tradefilter tradepdf tradereassign wordings; do
     out=$(timeout 300 node "$f.mjs" 2>&1 | grep -E "^ALL CHECKS|^FAILED" | head -1)
     printf '  %-10s %s\n' "$f" "${out:-NO RESULT}"
     [ "$out" = "ALL CHECKS PASSED" ] || fail=1

@@ -114,6 +114,33 @@
   let pendingCounts = {};             // legacyDefectId -> # photos saved on THIS phone, not yet uploaded
   let refreshCountsTimer = null;      // debounce for CloudPhotos.refreshCounts()
   let wordingsAdmin = false;          // profiles.is_wordings_admin — may edit the shared wordings
+
+  // ---- Temp jobs (Spiro 2026-09-02) ----------------------------------------
+  // A one-off maintenance call: raise a job, dump the defects, print, delete.
+  // "I wouldn't want it in the database once it's been deleted, it can be
+  // permanently deleted."
+  //
+  // So it NEVER reaches the cloud in the first place, which is a stronger
+  // guarantee than deleting it afterwards — there is nothing to purge, nothing
+  // in an audit table, and no window where another device could pull it. Two
+  // existing behaviours give that for free:
+  //   · addresses are CH Tracker jobs and are never pushed at all;
+  //   · a defect whose addressId is not in idMap.addresses is already dropped
+  //     from the push (it would fail the job_id RLS check anyway).
+  // A temp address has no cloud job, so it maps to nothing, so its defects are
+  // skipped. The only thing missing was surviving `db.data = newData`.
+  const isTempAddress = (a) => !!(a && a.isTemp);
+  function tempAddressIds() {
+    const out = new Set();
+    ((db && db.data && db.data.addresses) || []).forEach(a => { if (isTempAddress(a)) out.add(Number(a.id)); });
+    return out;
+  }
+  // Is this defect on a temp job? Used to keep its photos off the upload queue.
+  function isLocalOnlyDefect(legacyId) {
+    const d = ((db && db.data && db.data.defects) || []).find(x => Number(x.id) === Number(legacyId));
+    if (!d) return false;
+    return tempAddressIds().has(Number(d.addressId));
+  }
   const defectUuidToLegacy = {};      // cloud uuid -> legacy defect id
 
   // Framework call-up (BPI import): address legacy id -> the job's Order Profile
@@ -869,6 +896,18 @@
           .map((d) => ({ ...d }))
       : [];
 
+    // Temp jobs and their defects live ONLY on this device, so the rebuild from
+    // CH Tracker's jobs would wipe them on the next pull — which, on a phone
+    // that syncs on focus, is seconds after they are typed. Carried across the
+    // same way un-pushed defects are.
+    const tempIds = tempAddressIds();
+    const carryTempAddresses = tempIds.size
+      ? (db.data.addresses || []).filter(isTempAddress).map((a) => ({ ...a }))
+      : [];
+    const carryTempDefects = tempIds.size
+      ? (db.data.defects || []).filter((d) => tempIds.has(Number(d.addressId))).map((d) => ({ ...d }))
+      : [];
+
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
     //
@@ -1121,6 +1160,14 @@
     // Baseline = the CLOUD state, taken BEFORE re-adding un-pushed rows, so the
     // diff engine still sees those as un-synced and keeps trying to push them.
     snapshot = cloneSnap(db.data);
+    // AFTER the snapshot, deliberately: the snapshot is the cloud's state, and
+    // these rows are not in the cloud and must never be pushed there. The
+    // address filter in pushDiff already drops their defects, so this is belt
+    // and braces rather than the only guard.
+    if (carryTempAddresses.length) {
+      db.data.addresses = (db.data.addresses || []).concat(carryTempAddresses);
+      db.data.defects = (db.data.defects || []).concat(carryTempDefects);
+    }
     if (carryOver.length) {
       // These rows have a local edit that has NOT reached the cloud yet, so the
       // local copy is the newer truth and must OVERLAY what the pull returned —
@@ -2313,10 +2360,17 @@
     let items = [];
     try { items = await pendingAll(); } catch (e) { items = []; }
     const counts = {};
-    for (const it of items) counts[it.legacyId] = (counts[it.legacyId] || 0) + 1;
+    let waiting = 0;
+    for (const it of items) {
+      counts[it.legacyId] = (counts[it.legacyId] || 0) + 1;
+      // Counted for the defect's own badge (it HAS a photo) but not for the
+      // "waiting to upload" banner — a temp job's photo is not waiting for
+      // anything, and a banner that never clears trains people to ignore it.
+      if (!isLocalOnlyDefect(it.legacyId)) waiting++;
+    }
     const changed = JSON.stringify(counts) !== JSON.stringify(pendingCounts);
     pendingCounts = counts;
-    updatePendingBanner(items.length);
+    updatePendingBanner(waiting);
     if (changed && typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
     return items.length;
   }
@@ -2363,6 +2417,7 @@
       await refreshPendingCounts();
       for (const it of items) {
         try {
+          if (isLocalOnlyDefect(it.legacyId)) continue;   // temp job — stays here
           // Pass the outbox key so the storage path is deterministic (retry-safe).
           const quiet = (photoFailCounts[it.key] || 0) > 0;
           const ok = await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays);
@@ -2402,6 +2457,11 @@
     try { await pendingPut(legacyId, fileOrBlob, keepDays); persisted = true; } catch (e) { /* IndexedDB unavailable */ }
     if (persisted) {
       await refreshPendingCounts();                       // badge + banner show it at once
+      // A temp job has no cloud row to attach to and never will, so committing
+      // and uploading would fail on every sweep, forever — a queue that never
+      // drains and a banner that never clears. It stays on the phone, which is
+      // the whole point of a temp job, and goes when the job is deleted.
+      if (isLocalOnlyDefect(legacyId)) return true;
       try { await commitDefect(legacyId); } catch (e) {}  // ensure the defect row exists to attach to
       uploadPendingPhotos().catch(() => {});              // try now; the loop retries if it fails
       return true;
@@ -2936,6 +2996,32 @@
   // the row-level policy on dm_defect_wordings is the security boundary, and it
   // checks the same flag. A supervisor who forced the buttons to appear would
   // still be refused by the database.
+  // The app's one "is this the admin" answer. Backed by profiles.is_wordings_admin
+  // because that is the column that exists — it was added for the wordings
+  // editor and now also gates temp jobs. If a second admin-only feature ever
+  // needs a DIFFERENT set of people, add a column then rather than pretending
+  // one flag means two things.
+  window.CloudAdmin = {
+    is: () => !!(wordingsAdmin || (cachedIdentity && cachedIdentity.wordingsAdmin)),
+    // Drop every photo this device is holding for these defects. Used when a
+    // temp job is deleted: those blobs were never uploaded, so this IS the
+    // delete — there is no cloud copy to chase.
+    dropLocalPhotos: async (legacyIds) => {
+      const want = new Set((legacyIds || []).map(Number));
+      if (!want.size) return 0;
+      let n = 0;
+      try {
+        const items = await pendingAll();
+        for (const it of items) {
+          if (!want.has(Number(it.legacyId))) continue;
+          try { await pendingDelete(it.key); n++; } catch (e) {}
+        }
+        await refreshPendingCounts();
+      } catch (e) {}
+      return n;
+    },
+  };
+
   window.CloudWordings = {
     ready: () => defectWordingsReady,
     list: () => defectWordings.slice(),

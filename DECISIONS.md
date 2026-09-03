@@ -2457,3 +2457,32 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
 - **Trade-off:** The old per-job "Show N completed" expand button was removed;
   Completed visibility is now driven by the filter (default hides it, so the
   everyday list is unchanged). Filter state is session-only (not persisted).
+
+## 2026-09-03
+- **Decision:** A **temp job** is a local-only address (`isTemp: true`, id drawn
+  from the `1_500_000_000`–`1_600_000_000` band) that the admin adds from the
+  bottom of the home screen. It is never uploaded, and deleting it deletes it.
+- **Why:** Spiro takes maintenance/warranty service calls that are not CH Tracker
+  jobs. He wanted to "take a defect dump and then get rid of the job… I wouldn't
+  want it in the database once it's been deleted".
+- **How it stays off the cloud — by rules that already existed, not new ones:**
+  addresses are CH Tracker jobs and are never pushed, and `pushDiff` already
+  drops any defect whose address has no cloud job. cloud-sync only had to *carry*
+  temp jobs across a pull (which rebuilds `db.data` from CH Tracker wholesale and
+  would otherwise wipe them within seconds) and keep their photos out of the
+  upload queue. `tests/tempjob.mjs` section C pins both rules, because either one
+  changing would silently start uploading a job that was promised to stay put.
+- **Trade-off:** A temp job lives on ONE handset. Lose the phone, lose the job —
+  which is the deal the feature makes, and the create dialog says so.
+
+- **Decision:** `renderMyJobsSection` now splits temp jobs out **before** its two
+  "is this data loaded yet?" probes, and appends them at the end of the list.
+- **Why:** The list shows all jobs when *no* job has a `jobStatus` (a cached row
+  set that predates the field) and filters strictly the moment any job has one —
+  same for `supervisorId`. A temp job carries both, so the one job the APP
+  invented could answer the probe for the whole list and hide every real job.
+  Found by `tests/tempjob.mjs`: the seeded real job vanished the moment a temp
+  job existed. A fixture that had been "tidied" to give every address a
+  `jobStatus` would have hidden this — the same lesson as the PDF-filename bugs.
+- **Trade-off:** Temp jobs no longer sort with the rest; they sit at the bottom,
+  next to the button that makes them.

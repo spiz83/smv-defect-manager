@@ -14,7 +14,31 @@ second editor anywhere would be the mistake.
 # Next Steps / Handover
 
 STATUS: Active
-LAST UPDATED: 2026-09-02
+LAST UPDATED: 2026-09-03
+
+## ✅ Temp jobs are LIVE — build `2026-09-03a`
+
+Admin only, at the bottom of the home screen: **🛠️ ＋ Add temp job · this phone
+only**. For a maintenance/warranty call that is not a CH Tracker job. It opens
+straight on Add Defects, shows a **TEMP** chip and a 🗑️ in the job list (real
+jobs get no bin), and sits at the BOTTOM of the list.
+
+**It never reaches the database.** Not "deleted afterwards" — it never goes in.
+Addresses are never pushed, and `pushDiff` drops any defect whose address has no
+cloud job, so a temp job and everything on it stay on the handset by rules that
+already existed. cloud-sync carries them across each pull and keeps their photos
+off the upload queue. Deleting removes the job, its defects and its local photos
+for good; there is no cloud row and nothing for another device to pull.
+
+Gated on `CloudAdmin.is()` (the `profiles.is_wordings_admin` flag), in the UI
+**and** inside `createTempJob` / `deleteTempJob` — hiding a button is not a gate.
+
+⚠️ **The trap this feature set, worth remembering:** a temp job carries
+`jobStatus` and `supervisorId`, and `renderMyJobsSection` decides "does ANY job
+have a status/supervisor yet?" before filtering on them. On a handset whose
+cached rows predate either field, adding one temp job hid every real job. Temp
+jobs are now split out before both probes. Anything else that answers a
+"is the data loaded?" question from the whole address list has the same trap.
 
 ## ✅ The defect-wordings editor is LIVE — build `2026-09-02b`
 
