@@ -2650,3 +2650,33 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
   fixtures. Worth repeating rather than reasoning about, if this ever needs
   retuning — the area relationship makes intuition unreliable, and two of the
   combinations that looked sensible came out at 6–8 MB.
+
+- **Decision:** Generate PDF Report now ATTACHES the PDF on iOS, via
+  `sharePdfOnTap` — the same fresh-tap route the supplier-email path has used
+  for weeks. The hosted link is the fallback, not the plan.
+- **Why:** Spiro, with a screenshot of a Mail draft holding nothing but a
+  go.html URL: "it basically sends as a link. It needs to attach as the PDF file
+  like previous occasions."
+- **This REVERSES an earlier on-device finding**, which is worth naming rather
+  than quietly overwriting. The old comment read: "CONFIRMED on-device: iOS
+  attaches the PDF's blob: object URL to the message body on EVERY file share —
+  even files-only… an Apple Web-Share bug with no web-side fix." Meanwhile the
+  supplier-email path attached a real file the whole time and Spiro was happy
+  with it. Whatever that bug was, sharing from a FRESH TAP is not hitting it —
+  which is the likely explanation, since `share()` needs a live user activation
+  and building a seven-page report has long since spent the tap that started it.
+  The old finding is kept in the comment so the next person knows it was tested,
+  not overlooked.
+- **Trade-off:** one extra tap. Worth it: the alternative silently downgraded
+  every report to a link, and a link is not what a supervisor is sending.
+
+- **Note:** `tests/reportshare.mjs` had to record its evidence in NODE (through
+  an exposed binding) rather than on `window`. The fallback ends in
+  `window.location.href = url`, and that navigation cannot be stopped from
+  inside the page — blocking it replaces the document and takes every counter
+  with it. The first version of the suite read `{}` and looked exactly as though
+  the app had done nothing. Two other traps in the same suite: `cloud-sync.js`
+  reassigns `window.CloudShare` when it boots, which silently replaced a plain
+  stub between the overlay appearing and the tap (fixed with a defineProperty
+  getter, the same fix `navigator.clipboard` needed in emailattach), and the
+  suite needs a real iPhone user agent because the whole branch is UA-gated.

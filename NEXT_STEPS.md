@@ -16,6 +16,23 @@ second editor anywhere would be the mistake.
 STATUS: Active
 LAST UPDATED: 2026-09-04
 
+## ✅ Generate PDF Report attaches the file again — build `2026-09-04f`
+
+It was hosting the PDF and sharing a LINK on iOS, so a Mail draft came out with
+nothing but a go.html URL in it. It now goes through `sharePdfOnTap` — the same
+fresh-tap route the supplier-email path uses — and attaches the real PDF. The
+hosted link is the fallback for a device that cannot share files, and it says so
+on screen when it takes it.
+
+This reverses an earlier on-device finding ("iOS attaches the blob: URL to the
+body on EVERY file share"). That note is kept in the code: whatever it was,
+sharing from a fresh tap does not hit it, and `share()` needs a live user
+activation that building a seven-page report has long since spent.
+
+`tests/reportshare.mjs` (suite 24) drives the real `generateDefectPDF` with
+jsPDF on an iPhone user agent and reads what reaches `navigator.share` — files,
+with the PDF's own bytes checked, and no `url` key.
+
 ## ✅ Report photo quality — build `2026-09-04e`
 
 `2026-09-04d` fixed the 28.5 MB report but overshot: a 2-up grid cell is ~43mm,
