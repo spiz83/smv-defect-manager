@@ -2578,3 +2578,15 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
   tall enough to stop clamping, and you arrived 94px down a screen you had just
   opened. The comment above that line already claimed the intended behaviour;
   now the code does it.
+
+- **Decision:** `pullAll` offers any temp job that has no `tempCloudId` to the
+  cloud before fetching, rather than leaving the push to `pushDiff`.
+- **Why:** `pushTempJobs` runs inside `pushDiff`, and `pushDiff` only fires from
+  `db.save()` → `runSync()` — a LOCAL EDIT. A temp job raised before the
+  migration was run is never edited again, so nothing would ever offer it. The
+  visible symptom would have been the worst kind: run the SQL, open the desktop,
+  see an empty list, no error anywhere. Caught by asking "what actually happens
+  to Spiro's existing Hermes job when he runs the migration?" rather than by a
+  test failing.
+- **Trade-off:** one extra upsert per unsynced temp job per pull. Bounded by the
+  handful of temp jobs a person has, and it stops as soon as each has an id.

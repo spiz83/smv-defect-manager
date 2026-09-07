@@ -34,7 +34,13 @@ navigation started landing part-way down. `render()` now scrolls to 0 explicitly
 on a key change. Anything that makes a screen taller could have found this.
 
 
-## ⚠️ RUN THIS SQL — temp jobs on the desktop, build `2026-09-04a`
+## ⚠️ RUN THIS SQL — temp jobs on the desktop, build `2026-09-04c`
+
+**Order matters.** Run the SQL, then open the app **on the device that holds the
+temp job** and let it sync — that is what uploads it. Opening only the other
+device shows an empty list, because the job is still sitting on the first one.
+
+### The migration file
 
 `supabase/migrations/2026-09-04_temp_jobs.sql` — paste the whole file into the
 Supabase SQL editor and run it, then reopen the app on both devices. Until it is

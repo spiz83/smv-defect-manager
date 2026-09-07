@@ -402,6 +402,47 @@ console.log('\n--- G · the table is not there yet ---');
   await ctx.close();
 }
 
+// ============ H. a job raised BEFORE the migration was run ==============
+// Spiro's actual position: the temp job exists on the phone, and the SQL gets
+// run afterwards. Nothing about that job changes, so nothing triggers a push —
+// which is how "I ran the migration and my job still isn't on the desktop"
+// happens, with no error anywhere to explain it.
+console.log('\n--- H · the migration is run after the job already exists ---');
+{
+  const { ctx, page, errs } = await boot({ uid: ME, hasTempTable: false });
+  await makeTempJob(page, '7 Hermes St — maintenance call');
+  await page.waitForTimeout(700);
+  check('it is on the phone, and nowhere else', await page.evaluate(() =>
+    (db.data.addresses || []).some(a => a.isTemp) && !(window.__stub.T.dm_temp_jobs || []).length));
+
+  // The SQL is run. The app is reopened — a fresh page on the SAME storage,
+  // which is what quitting and relaunching actually is.
+  const page2 = await ctx.newPage();
+  await page2.addInitScript(`(() => { window.__afterMigration = true; })();`);
+  await page2.addInitScript(stub({ uid: ME, hasTempTable: true }).replace(
+    /localStorage\.setItem\('defectTrackerDB'[^;]+;/, ''));   // keep what the phone already holds
+  await page2.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
+  await page2.waitForFunction(() => window.CloudAdmin && typeof window.render === 'function');
+  await page2.evaluate(async () => { await window.CloudSync.flush(); await window.CloudSync.pull(); });
+  await page2.waitForTimeout(900);
+  const up = await page2.evaluate(() => ({
+    rows: (window.__stub.T.dm_temp_jobs || []).map(r => r.name),
+    stillLocal: (db.data.addresses || []).some(a => a.isTemp),
+    hasCloudId: !!((db.data.addresses || []).find(a => a.isTemp) || {}).tempCloudId,
+    defects: ((window.__stub.T.dm_temp_jobs || [])[0] || {}).defects || [],
+  }));
+  console.log('after the migration:', JSON.stringify({ ...up, defects: up.defects.length }));
+  check('a job that existed BEFORE the migration uploads itself on the next sync',
+    up.rows.length === 1 && /Hermes/.test(up.rows[0]), JSON.stringify(up.rows));
+  check('…without anyone having to touch or re-edit it', up.hasCloudId, JSON.stringify(up));
+  check('…taking its defects up with it', up.defects.length === 1, String(up.defects.length));
+  check('…and it is still on the phone throughout', up.stillLocal);
+
+  const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]|does not exist/.test(e));
+  if (bad.length) { console.log('errors:', bad); fail.push('page errors (H)'); }
+  await ctx.close();
+}
+
 console.log(fail.length ? '\nFAILED: ' + fail.join(' | ') : '\nALL CHECKS PASSED');
 await browser.close();
 server.close();

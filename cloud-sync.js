@@ -925,6 +925,14 @@
     const localTempDefects = tempIds.size
       ? (db.data.defects || []).filter((d) => tempIds.has(Number(d.addressId))).map((d) => ({ ...d }))
       : [];
+    // A temp job raised BEFORE the table existed — or before this device ever
+    // synced one — has never been offered to the cloud. pushDiff only runs off
+    // a local edit (db.save -> runSync), so an untouched job would sit on the
+    // handset forever and running the migration would look like it did
+    // nothing: the desktop stays empty and there is no error anywhere to say
+    // why. Offer them on every pull, BEFORE fetching, so they come straight
+    // back down as cloud rows and merge normally. (Spiro 2026-09-04)
+    if (localTempAddresses.some(a => !a.tempCloudId)) await pushTempJobs();
     const cloudTempRows = await fetchTempJobs();
     const carryTemp = mergeTempJobs(localTempAddresses, localTempDefects, cloudTempRows);
 
