@@ -17,9 +17,13 @@
 - [x] **Temp jobs** — admin-only one-off maintenance jobs at the bottom of the
       home screen, local to the handset, never uploaded, permanently deleted.
       Build `2026-09-03a`, covered by `tests/tempjob.mjs` (suite 27).
-- [ ] **Try a temp job on the phone**: add one, dump a few defects with photos
-      onto it, mail the report, then delete it — and confirm nothing about it
-      appears on a second device after a sync on both.
+- [ ] **Run `supabase/migrations/2026-09-04_temp_jobs.sql`.** Until it is run,
+      temp jobs stay on one device and the button says "this device only".
+      Nothing breaks in the meantime.
+- [ ] **Then try a temp job across both devices**: raise one on the phone with
+      a couple of defects and photos, open it on the desktop, generate the PDF
+      there and check the photos are in it, then delete it from either one and
+      confirm it disappears from the other.
 - [ ] **Confirm Bricklayer, Tiler, Renderer and Landscaper exist as
       contractors / trade placeholders.** 8 of the 62 wordings sit under
       them; if the trades don't exist those wordings can never be reached by

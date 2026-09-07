@@ -89,7 +89,9 @@ console.log('\n--- A · only the admin sees it ---');
   console.log('button:', JSON.stringify(btn));
   check('the admin gets it', !!btn);
   check('…at the BOTTOM, under the job list', btn && btn.belowList, JSON.stringify(btn));
-  check('…saying it stays on this phone', /this phone only/i.test((btn || {}).text || ''), (btn || {}).text);
+  // No cloud in this harness, so temp jobs cannot sync here — and the button
+  // must say the honest one of the two things rather than the flattering one.
+  check('…saying where the job actually lives', /this device only/i.test((btn || {}).text || ''), (btn || {}).text);
 }
 
 // ================= B. create ===============================================
@@ -154,8 +156,8 @@ console.log('\n--- B · creating one ---');
   await page.waitForTimeout(250);
 }
 
-// ================= C. it never reaches the cloud ===========================
-console.log('\n--- C · nothing about it is pushed ---');
+// ================= C. it never touches dm_defects ==========================
+console.log('\n--- C · it stays out of dm_defects ---');
 {
   const tempId = await page.evaluate(() => (db.data.addresses || []).find(a => a.isTemp).id);
   await page.evaluate((tid) => {
@@ -163,23 +165,31 @@ console.log('\n--- C · nothing about it is pushed ---');
     db.save();
   }, tempId);
 
-  // The two rules that keep it off the cloud, asserted as behaviour rather than
-  // trusted as comments: addresses are never pushed, and a defect whose address
-  // has no cloud job is dropped from the push.
+  // A temp job DOES sync now — to its own table, tied to the login. That
+  // journey is tests/tempsync.mjs. What this section pins is the other half:
+  // that none of it goes anywhere near dm_defects. Three things about that
+  // table make it the wrong home (it is open by RLS on purpose, it carries a
+  // unique index temp rows would collide on, and it archives its deletes), and
+  // all three are shared with a live CH Tracker — so a change that quietly
+  // started routing temp defects through it would break the delete promise and
+  // could merge two unrelated maintenance calls. Asserted as the source rules
+  // rather than trusted as comments.
   const src = await page.evaluate(async () => (await (await fetch('cloud-sync.js')).text()));
   check('addresses are never pushed at all',
     /Addresses are CH Tracker jobs\s*—\s*read-only, never pushed/.test(src));
   check('…and a defect on an unmapped job is dropped from the push',
     /cur:\s*\(cur\.defects\s*\|\|\s*\[\]\)\.filter\(d\s*=>\s*idMap\.addresses\[d\.addressId\]\)/.test(src));
-  check('…its photos are kept off the upload queue', /isLocalOnlyDefect\(it\.legacyId\)\) continue/.test(src));
-  check('…and out of the "waiting to upload" banner', /if \(!isLocalOnlyDefect\(it\.legacyId\)\) waiting\+\+/.test(src));
+  check('…a temp defect is never committed into dm_defects',
+    /if \(isLocalOnlyDefect\(legacyId\)\) \{[\s\S]{0,200}?uploadPendingPhotos/.test(src));
+  check('…its photos go to the temp job\u2019s own folder instead of dm_defect_photos',
+    /isLocalOnlyDefect\(it\.legacyId\)\s*\?\s*await uploadTempPhoto/.test(src));
 
-  // A pull rebuilds addresses from CH Tracker wholesale. Without the carry-over
-  // the temp job would be gone seconds after it was typed.
-  check('a pull carries temp jobs and their defects across the rebuild',
-    /carryTempAddresses/.test(src) && /carryTempDefects/.test(src));
-  check('…and puts them back AFTER the cloud snapshot, so they are never diffed into a push',
-    /snapshot = cloneSnap\(db\.data\);[\s\S]{0,600}?carryTempAddresses\.length/.test(src));
+  // A pull rebuilds addresses from CH Tracker wholesale. Without the merge the
+  // temp job would be gone seconds after it was typed.
+  check('a pull merges temp jobs back in across the rebuild',
+    /mergeTempJobs\(/.test(src) && /localTempAddresses/.test(src));
+  check('…after the cloud snapshot, so the defect diff is never even offered them',
+    /snapshot = cloneSnap\(db\.data\);[\s\S]{0,700}?carryTemp\.addresses\.length/.test(src));
 }
 
 // ================= D. delete means gone ====================================
@@ -203,7 +213,7 @@ console.log('\n--- D · deleting it ---');
   check('the job is gone', !after.anyTemp);
   check('…and its defects with it', after.defects === before.defects - 1, `${before.defects} -> ${after.defects}`);
   check('…leaving no orphaned defects behind', after.orphans === 0, String(after.orphans));
-  check('…the local photos are dropped too — that IS the delete, there is no cloud copy',
+  check('…the photos this device is holding are dropped with it',
     Array.isArray(after.dropped) && after.dropped.length === 1 && after.dropped[0] === 9001, JSON.stringify(after.dropped));
   check('…and it is out of storage, not just the screen',
     !(after.stored.addresses || []).some(a => a.isTemp), JSON.stringify((after.stored.addresses || []).map(a => a.id)));

@@ -115,32 +115,50 @@
   let refreshCountsTimer = null;      // debounce for CloudPhotos.refreshCounts()
   let wordingsAdmin = false;          // profiles.is_wordings_admin — may edit the shared wordings
 
-  // ---- Temp jobs (Spiro 2026-09-02) ----------------------------------------
+  // ---- Temp jobs (Spiro 2026-09-02, made to sync 2026-09-04) ---------------
   // A one-off maintenance call: raise a job, dump the defects, print, delete.
-  // "I wouldn't want it in the database once it's been deleted, it can be
-  // permanently deleted."
   //
-  // So it NEVER reaches the cloud in the first place, which is a stronger
-  // guarantee than deleting it afterwards — there is nothing to purge, nothing
-  // in an audit table, and no window where another device could pull it. Two
-  // existing behaviours give that for free:
-  //   · addresses are CH Tracker jobs and are never pushed at all;
-  //   · a defect whose addressId is not in idMap.addresses is already dropped
-  //     from the push (it would fail the job_id RLS check anyway).
-  // A temp address has no cloud job, so it maps to nothing, so its defects are
-  // skipped. The only thing missing was surviving `db.data = newData`.
+  // It started local-only, because "I wouldn't want it in the database once
+  // it's been deleted". Then: "when I log in using the same details I can't
+  // load up the temp job… I need to be able to use it on my desktop — that
+  // temp job needs to be tied into my login."
+  //
+  // So it syncs now, through its OWN table (dm_temp_jobs) rather than through
+  // dm_defects. The reasons that table and not the obvious one are in
+  // supabase/migrations/2026-09-04_temp_jobs.sql; the short version is that
+  // dm_defects is open by RLS on purpose, carries a unique index temp rows
+  // would collide on, and archives its deletes — all three fight what a temp
+  // job is for, and all three are shared with a live CH Tracker.
+  //
+  // The delete promise survives the move: dm_temp_jobs has no archive trigger,
+  // so deleting the row is the end of it.
+  //
+  // NOTHING about a temp job goes near dm_defects. The two rules that kept it
+  // out still hold and are still what stops a leak: addresses are never pushed,
+  // and pushDiff drops any defect whose address has no cloud job.
   const isTempAddress = (a) => !!(a && a.isTemp);
   function tempAddressIds() {
     const out = new Set();
     ((db && db.data && db.data.addresses) || []).forEach(a => { if (isTempAddress(a)) out.add(Number(a.id)); });
     return out;
   }
-  // Is this defect on a temp job? Used to keep its photos off the upload queue.
+  // Is this defect on a temp job? Its photos take the temp-job route (their own
+  // storage folder, listed on the job row) instead of dm_defect_photos.
   function isLocalOnlyDefect(legacyId) {
     const d = ((db && db.data && db.data.defects) || []).find(x => Number(x.id) === Number(legacyId));
     if (!d) return false;
     return tempAddressIds().has(Number(d.addressId));
   }
+  const tempJobFor = (legacyDefectId) => {
+    const d = ((db && db.data && db.data.defects) || []).find(x => Number(x.id) === Number(legacyDefectId));
+    if (!d) return null;
+    const a = ((db && db.data && db.data.addresses) || []).find(x => Number(x.id) === Number(d.addressId));
+    return isTempAddress(a) ? a : null;
+  };
+  // uuid of a temp job's cloud row, once it has one. Until the row exists the
+  // job is on this device only, which is also the pre-migration state.
+  const tempUuid = {};                // local temp job id -> dm_temp_jobs.id
+  let tempJobsTable = null;           // null = not probed, false = migration not run
   const defectUuidToLegacy = {};      // cloud uuid -> legacy defect id
 
   // Framework call-up (BPI import): address legacy id -> the job's Order Profile
@@ -896,17 +914,19 @@
           .map((d) => ({ ...d }))
       : [];
 
-    // Temp jobs and their defects live ONLY on this device, so the rebuild from
-    // CH Tracker's jobs would wipe them on the next pull — which, on a phone
-    // that syncs on focus, is seconds after they are typed. Carried across the
-    // same way un-pushed defects are.
+    // Temp jobs are not CH Tracker jobs, so the rebuild below would wipe them —
+    // on a phone that syncs on focus, seconds after they were typed. They are
+    // re-added after the snapshot, merged with whatever this login owns in the
+    // cloud so a job raised on the desktop turns up on the phone and back.
     const tempIds = tempAddressIds();
-    const carryTempAddresses = tempIds.size
+    const localTempAddresses = tempIds.size
       ? (db.data.addresses || []).filter(isTempAddress).map((a) => ({ ...a }))
       : [];
-    const carryTempDefects = tempIds.size
+    const localTempDefects = tempIds.size
       ? (db.data.defects || []).filter((d) => tempIds.has(Number(d.addressId))).map((d) => ({ ...d }))
       : [];
+    const cloudTempRows = await fetchTempJobs();
+    const carryTemp = mergeTempJobs(localTempAddresses, localTempDefects, cloudTempRows);
 
     // Addresses are CH Tracker jobs (read-only). Everything else is scoped by
     // RLS to what this user may see — no explicit workspace filter.
@@ -1160,13 +1180,14 @@
     // Baseline = the CLOUD state, taken BEFORE re-adding un-pushed rows, so the
     // diff engine still sees those as un-synced and keeps trying to push them.
     snapshot = cloneSnap(db.data);
-    // AFTER the snapshot, deliberately: the snapshot is the cloud's state, and
-    // these rows are not in the cloud and must never be pushed there. The
-    // address filter in pushDiff already drops their defects, so this is belt
-    // and braces rather than the only guard.
-    if (carryTempAddresses.length) {
-      db.data.addresses = (db.data.addresses || []).concat(carryTempAddresses);
-      db.data.defects = (db.data.defects || []).concat(carryTempDefects);
+    // AFTER the snapshot, deliberately. A temp job belongs to dm_temp_jobs, and
+    // the snapshot is what the DEFECT diff is measured against — putting these
+    // in it would offer them to pushDiff as ordinary jobs. They cannot get
+    // through (their address never maps to a cloud job) but the diff should
+    // never be asked the question in the first place.
+    if (carryTemp.addresses.length) {
+      db.data.addresses = (db.data.addresses || []).concat(carryTemp.addresses);
+      db.data.defects = (db.data.defects || []).concat(carryTemp.defects);
     }
     if (carryOver.length) {
       // These rows have a local edit that has NOT reached the cloud yet, so the
@@ -1323,6 +1344,11 @@
     });
 
     // Addresses are CH Tracker jobs — read-only, never pushed.
+
+    // ---- Temp jobs ---- their own table, nothing to do with dm_defects.
+    // Deliberately before defects: a temp job needs its row to exist before a
+    // photo can be filed under it.
+    await pushTempJobs();
 
     // ---- Defects ---- (depend on address/contractor maps, so go last).
     // Defects whose address (job) couldn't be mapped are skipped — they would
@@ -2136,6 +2162,39 @@
   }
 
   let _galleryUrls = [];   // object URLs to revoke on the next gallery render
+  // Thumbnails for a temp defect: signed links to its job's own folder.
+  async function tempGalleryHtml(rows) {
+    if (!rows.length) return '';
+    let signed = [];
+    try {
+      const res = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(rows.map(r => r.storage_path), 600);
+      signed = res.data || [];
+    } catch (e) { signed = []; }
+    return rows.map((r, i) => {
+      const url = (signed[i] && signed[i].signedUrl) || '';
+      if (!url) return '';
+      return `<div class="cs-photo">
+        <a href="${url}" target="_blank" rel="noopener"><img src="${url}" loading="lazy"></a>
+        <div class="cs-photo-meta">
+          <span style="color:#16a34a">\u2713 saved</span>
+          <button data-temp-path="${_escAttr(r.storage_path)}" class="cs-photo-del" title="Delete this photo">\ud83d\uddd1\ufe0f</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Remove one temp photo: the object, then its entry on the job row.
+  async function deleteTempPhoto(legacyId, path) {
+    const a = tempJobFor(legacyId);
+    if (!a || !path) return false;
+    try { await sb.storage.from(PHOTO_BUCKET).remove([path]); }
+    catch (e) { console.warn('[CloudSync] temp photo delete', e && e.message); return false; }
+    a.tempPhotos = (Array.isArray(a.tempPhotos) ? a.tempPhotos : []).filter(p => !(p && p.path === path));
+    db.save();
+    await pushTempJobs();
+    return true;
+  }
+
   async function renderGalleryBody(legacyId) {
     const body = document.getElementById('cs-gallery-body');
     if (!body) return;
@@ -2160,8 +2219,36 @@
       </div>`;
     }).join('');
 
-    // 2) Photos confirmed in the cloud.
+    // 2) Photos confirmed in the cloud. A temp defect's live under its job's
+    //    own folder and are listed on the job row — dm_defect_photos is keyed
+    //    to a dm_defects row, which a temp defect deliberately does not have.
     let rows = null, cloudErr = null;
+    if (isLocalOnlyDefect(legacyId)) {
+      const paths = tempPhotoPaths(legacyId);
+      rows = paths.map((path, i) => ({ id: 'temp-' + i, storage_path: path, created_at: null, expires_at: null }));
+      photoCounts[legacyId] = rows.length;
+      const html = await tempGalleryHtml(rows);
+      body.innerHTML = (pendHtml || html)
+        ? '<div id="cs-gallery-grid">' + pendHtml + html + '</div>'
+        : '<div style="padding:24px;text-align:center;color:#888">No photos yet.<br>Use the button below to add one.</div>';
+      body.querySelectorAll('.cs-photo-del[data-pkey]').forEach(btn => {
+        btn.onclick = async () => {
+          if (!confirm('Discard this photo? It hasn\u2019t uploaded yet.')) return;
+          try { await pendingDelete(btn.getAttribute('data-pkey')); } catch (e) {}
+          await refreshPendingCounts();
+          await renderGalleryBody(legacyId);
+        };
+      });
+      body.querySelectorAll('.cs-photo-del[data-temp-path]').forEach(btn => {
+        btn.onclick = async () => {
+          if (!confirm('Delete this photo?')) return;
+          await deleteTempPhoto(legacyId, btn.getAttribute('data-temp-path'));
+          await renderGalleryBody(legacyId);
+        };
+      });
+      if (typeof render === 'function') render();
+      return;
+    }
     try {
       // Look up by the defect's uuid. Matching on legacy_id found NOTHING for a
       // defect created in CH Tracker, because those rows carry legacy_id = NULL
@@ -2281,8 +2368,27 @@
     } catch (e) { /* IndexedDB unavailable — the cloud copy below still works */ }
     if (out.length >= limit) return out;
 
+    // A temp defect's photos are listed on its JOB row, not in dm_defect_photos.
+    // This is what makes the report carry them on the OTHER device, where the
+    // outbox above is empty because the photo was taken on the phone.
+    if (sb && isLocalOnlyDefect(legacyId)) {
+      const paths = tempPhotoPaths(legacyId).slice(0, limit - out.length);
+      if (!paths.length) return out;
+      try {
+        const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(paths, 600);
+        for (const sg of (signed || [])) {
+          if (!sg.signedUrl) continue;
+          try {
+            const img = await photoToPdfImage(await (await fetch(sg.signedUrl)).blob());
+            if (img) out.push(img);
+          } catch (e) { /* skip a bad image */ }
+        }
+      } catch (e) { /* no reception — the outbox copy above still goes in */ }
+      return out;
+    }
+
     const uuid = idMap.defects[legacyId];
-    if (!uuid || !sb) return out;                       // local-only defect, or signed out
+    if (!uuid || !sb) return out;                       // not in the cloud, or signed out
     try {
       const { data: rows } = await sb.from('dm_defect_photos')
         .select('storage_path').eq('defect_id', uuid).limit(limit - out.length);
@@ -2407,10 +2513,10 @@
     let waiting = 0;
     for (const it of items) {
       counts[it.legacyId] = (counts[it.legacyId] || 0) + 1;
-      // Counted for the defect's own badge (it HAS a photo) but not for the
-      // "waiting to upload" banner — a temp job's photo is not waiting for
-      // anything, and a banner that never clears trains people to ignore it.
-      if (!isLocalOnlyDefect(it.legacyId)) waiting++;
+      // A temp job's photo IS waiting to upload now, like any other — unless
+      // the migration has not been run, in which case it never will be and a
+      // banner that never clears would just train people to ignore it.
+      if (tempJobsTable !== false || !isLocalOnlyDefect(it.legacyId)) waiting++;
     }
     const changed = JSON.stringify(counts) !== JSON.stringify(pendingCounts);
     pendingCounts = counts;
@@ -2461,10 +2567,15 @@
       await refreshPendingCounts();
       for (const it of items) {
         try {
-          if (isLocalOnlyDefect(it.legacyId)) continue;   // temp job — stays here
           // Pass the outbox key so the storage path is deterministic (retry-safe).
           const quiet = (photoFailCounts[it.key] || 0) > 0;
-          const ok = await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays);
+          // A temp defect has no dm_defects row to attach to, so its photo goes
+          // under its JOB's folder and is recorded on the job row. Before the
+          // migration is run this returns false and the photo simply stays in
+          // the outbox, which is the old local-only behaviour.
+          const ok = isLocalOnlyDefect(it.legacyId)
+            ? await uploadTempPhoto(it.legacyId, it.blob, it.key)
+            : await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays);
           if (ok) { delete photoFailCounts[it.key]; await pendingDelete(it.key); await refreshPendingCounts(); }
           else photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1;
         } catch (e) { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; /* leave it queued; next sweep retries */ }
@@ -2501,11 +2612,12 @@
     try { await pendingPut(legacyId, fileOrBlob, keepDays); persisted = true; } catch (e) { /* IndexedDB unavailable */ }
     if (persisted) {
       await refreshPendingCounts();                       // badge + banner show it at once
-      // A temp job has no cloud row to attach to and never will, so committing
-      // and uploading would fail on every sweep, forever — a queue that never
-      // drains and a banner that never clears. It stays on the phone, which is
-      // the whole point of a temp job, and goes when the job is deleted.
-      if (isLocalOnlyDefect(legacyId)) return true;
+      // A temp defect must NOT be committed to dm_defects — it has no job there
+      // and never will. Its photo goes up under the temp job's own folder.
+      if (isLocalOnlyDefect(legacyId)) {
+        uploadPendingPhotos().catch(() => {});
+        return true;
+      }
       try { await commitDefect(legacyId); } catch (e) {}  // ensure the defect row exists to attach to
       uploadPendingPhotos().catch(() => {});              // try now; the loop retries if it fails
       return true;
@@ -3040,6 +3152,180 @@
   // the row-level policy on dm_defect_wordings is the security boundary, and it
   // checks the same flag. A supervisor who forced the buttons to appear would
   // still be refused by the database.
+  // ══ Temp jobs: the cloud side ═══════════════════════════════════════════
+  // One row per job in dm_temp_jobs, carrying its defects as JSON. Whole-job
+  // replace on write. Private to the owner by RLS — not even another manager
+  // sees it, which is how "only to be seen by admin" survives the move off the
+  // handset. See supabase/migrations/2026-09-04_temp_jobs.sql.
+
+  const tempSig = {};                 // local temp job id -> last pushed shape
+
+  // Is the table there? The migration is run by hand, so until it has been this
+  // must degrade to exactly the old behaviour (job stays on this device) rather
+  // than erroring on every sync. A "no" is cached; an offline probe is not,
+  // because that answer would be wrong the moment signal returns.
+  async function tempJobsAvailable() {
+    if (tempJobsTable !== null) return tempJobsTable;
+    if (!sb || !userId) return false;
+    try {
+      // Scoped to this login even though it is only a probe: RLS would hide
+      // everyone else's rows anyway, but no read in the app should be written
+      // as though that is the only thing standing between logins.
+      const { error } = await sb.from('dm_temp_jobs').select('id').eq('owner_id', userId).limit(1);
+      if (error && (error.code === '42P01' || /relation .* does not exist|could not find the table/i.test(error.message || ''))) {
+        tempJobsTable = false;
+        console.warn('[CloudSync] dm_temp_jobs is missing — temp jobs stay on this device until 2026-09-04_temp_jobs.sql is run');
+        return false;
+      }
+      if (error) return false;                 // transient — probe again next time
+      tempJobsTable = true;
+    } catch (e) { return false; }
+    return tempJobsTable;
+  }
+
+  // The job and its defects, as the row is stored.
+  function tempRowFor(a) {
+    return {
+      owner_id: userId,
+      legacy_id: Number(a.id),
+      name: a.street || '',
+      suburb: a.suburb || '',
+      reference: a.propertyNumber || '',
+      defects: (db.data.defects || []).filter(d => Number(d.addressId) === Number(a.id)),
+      photos: Array.isArray(a.tempPhotos) ? a.tempPhotos : [],
+    };
+  }
+
+  // Push every temp job whose shape changed. Runs inside pushDiff, so it goes
+  // BEFORE any pull — which is what makes "the cloud copy wins" safe below.
+  async function pushTempJobs() {
+    if (!(await tempJobsAvailable())) return;
+    for (const a of (db.data.addresses || []).filter(isTempAddress)) {
+      const row = tempRowFor(a);
+      const sig = JSON.stringify(row);
+      if (tempSig[a.id] === sig && a.tempCloudId) continue;
+      try {
+        const { data, error } = await sb.from('dm_temp_jobs')
+          .upsert(row, { onConflict: 'owner_id,legacy_id' })
+          .select('id,updated_at').maybeSingle();
+        if (error) { console.warn('[CloudSync] temp job push', error.message || error); continue; }
+        if (data && data.id) { tempUuid[a.id] = data.id; a.tempCloudId = data.id; a.tempUpdatedAt = data.updated_at; }
+        tempSig[a.id] = sig;
+      } catch (e) { /* offline — retried on the next push */ }
+    }
+  }
+
+  // Everything this login owns, on any device.
+  async function fetchTempJobs() {
+    if (!(await tempJobsAvailable())) return null;
+    try {
+      const { data, error } = await sb.from('dm_temp_jobs').select('*').eq('owner_id', userId);
+      if (error) { console.warn('[CloudSync] temp job pull', error.message || error); return null; }
+      return data || [];
+    } catch (e) { return null; }
+  }
+
+  // Merge the cloud's temp jobs with what this device holds, for the rebuild in
+  // pullAll. Returns { addresses, defects } to re-add after the snapshot.
+  //
+  // The cloud copy wins where both exist: a push runs first, so anything local
+  // and newer is already up there. A job this device has NEVER pushed is kept
+  // (it is either mid-push or pre-migration). A job it HAS pushed — it carries
+  // tempCloudId — that the cloud no longer lists was deleted on another device,
+  // so it goes here too. Without that last rule a delete on the desktop would
+  // never reach the phone, and the phone would push it back.
+  function mergeTempJobs(localAddrs, localDefects, cloudRows) {
+    if (!cloudRows) {                       // no reception, or migration not run
+      return { addresses: localAddrs, defects: localDefects };
+    }
+    const byLegacy = new Map(cloudRows.map(r => [Number(r.legacy_id), r]));
+    const addresses = [], defects = [];
+    for (const a of localAddrs) {
+      if (byLegacy.has(Number(a.id))) continue;        // cloud copy used instead
+      if (a.tempCloudId) continue;                     // deleted on another device
+      addresses.push(a);
+      defects.push(...localDefects.filter(d => Number(d.addressId) === Number(a.id)));
+    }
+    for (const r of cloudRows) {
+      const prev = localAddrs.find(a => Number(a.id) === Number(r.legacy_id));
+      addresses.push({
+        id: Number(r.legacy_id),
+        street: r.name || '',
+        suburb: r.suburb || '',
+        propertyNumber: r.reference || '',
+        isTemp: true,
+        tempBy: r.owner_id || null,
+        tempCloudId: r.id,
+        tempUpdatedAt: r.updated_at || null,
+        tempPhotos: Array.isArray(r.photos) ? r.photos : [],
+        createdAt: r.created_at || (prev && prev.createdAt) || null,
+        supervisorId: r.owner_id || null,
+        jobStatus: 'active',
+        active: true,
+      });
+      (Array.isArray(r.defects) ? r.defects : []).forEach(d => defects.push({ ...d, addressId: Number(r.legacy_id) }));
+      tempUuid[Number(r.legacy_id)] = r.id;
+    }
+    return { addresses, defects };
+  }
+
+  // Delete for good: the storage objects, then the row. No archive trigger on
+  // that table, so once the row goes there is nothing left anywhere.
+  async function deleteTempJobCloud(legacyJobId) {
+    const a = (db.data.addresses || []).find(x => Number(x.id) === Number(legacyJobId));
+    const uuid = (a && a.tempCloudId) || tempUuid[legacyJobId];
+    if (!uuid || !(await tempJobsAvailable())) return true;   // never reached the cloud
+    let ok = true;
+    const paths = ((a && Array.isArray(a.tempPhotos)) ? a.tempPhotos : []).map(p => p && p.path).filter(Boolean);
+    if (paths.length) {
+      try { await sb.storage.from(PHOTO_BUCKET).remove(paths); }
+      catch (e) { ok = false; console.warn('[CloudSync] temp photo delete', e && e.message); }
+    }
+    try {
+      const { error } = await sb.from('dm_temp_jobs').delete().eq('id', uuid);
+      if (error) { ok = false; console.warn('[CloudSync] temp job delete', error.message || error); }
+    } catch (e) { ok = false; }
+    if (ok) { delete tempUuid[legacyJobId]; delete tempSig[legacyJobId]; }
+    return ok;
+  }
+
+  // A temp defect's photo goes under its JOB's folder, and is recorded on the
+  // job row rather than in dm_defect_photos — that table is keyed to a defect
+  // in dm_defects, and a temp defect deliberately has no row there.
+  async function uploadTempPhoto(legacyId, file, idKey) {
+    const a = tempJobFor(legacyId);
+    if (!a) return false;
+    if (!(await tempJobsAvailable())) return false;    // pre-migration: stays put
+    if (!a.tempCloudId) await pushTempJobs();          // needs a row to hang off
+    const folder = a.tempCloudId || tempUuid[a.id];
+    if (!folder) return false;                         // push failed — retry later
+    let blob = null;
+    try { blob = await compressImage(file); } catch (e) { blob = null; }
+    if (!blob) blob = file;
+    const name = idKey ? (String(idKey).replace(/[^a-z0-9]+/gi, '_').slice(0, 60) + '.jpg') : randName();
+    const path = `${folder}/${legacyId}/${name}`;
+    try {
+      const up = await withTimeout(
+        sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: true }),
+        60000, 'temp photo upload');
+      if (up.error) { console.warn('[CloudSync] temp photo upload', up.error.message || up.error); return false; }
+    } catch (e) { return false; }
+    a.tempPhotos = Array.isArray(a.tempPhotos) ? a.tempPhotos : [];
+    if (!a.tempPhotos.some(p => p && p.path === path)) {
+      a.tempPhotos.push({ defectId: Number(legacyId), path });
+    }
+    db.save();
+    await pushTempJobs();                              // the list of paths IS the record
+    return true;
+  }
+
+  // The storage paths held for one temp defect, newest last.
+  function tempPhotoPaths(legacyId) {
+    const a = tempJobFor(legacyId);
+    if (!a || !Array.isArray(a.tempPhotos)) return [];
+    return a.tempPhotos.filter(p => p && Number(p.defectId) === Number(legacyId) && p.path).map(p => p.path);
+  }
+
   // The app's one "is this the admin" answer. Backed by profiles.is_wordings_admin
   // because that is the column that exists — it was added for the wordings
   // editor and now also gates temp jobs. If a second admin-only feature ever
@@ -3047,9 +3333,18 @@
   // one flag means two things.
   window.CloudAdmin = {
     is: () => !!(wordingsAdmin || (cachedIdentity && cachedIdentity.wordingsAdmin)),
-    // Drop every photo this device is holding for these defects. Used when a
-    // temp job is deleted: those blobs were never uploaded, so this IS the
-    // delete — there is no cloud copy to chase.
+    // Delete a temp job everywhere: its storage objects and its dm_temp_jobs
+    // row (which has no archive trigger, so that really is the end of it),
+    // then whatever this device still holds in the outbox. Returns false if
+    // the cloud side failed, so the caller can keep the job rather than
+    // leaving an orphan up there that the next pull would bring straight back.
+    deleteTempJob: (legacyJobId) => deleteTempJobCloud(legacyJobId),
+    // Does a temp job follow this login onto other devices yet? False until
+    // 2026-09-04_temp_jobs.sql has been run — the wording on screen follows
+    // this rather than promising whichever answer happens to be wrong.
+    tempSyncReady: () => tempJobsTable === true,
+    // Drop every photo this device is holding for these defects, from the
+    // outbox. Pairs with deleteTempJob for the cloud side.
     dropLocalPhotos: async (legacyIds) => {
       const want = new Set((legacyIds || []).map(Number));
       if (!want.size) return 0;

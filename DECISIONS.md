@@ -2504,3 +2504,47 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
 - **Note:** the cap is still 3 photos per defect, while the PDF's card layout is
   written to fit "every photo". Left as-is — it is long-standing behaviour for
   every job, not part of this bug.
+
+## 2026-09-04
+- **Decision:** A temp job now **syncs, tied to the login**, through its own
+  table `dm_temp_jobs` — one row per job, carrying its defects as JSON, private
+  to `owner_id` by RLS. Photos go to the existing bucket under the temp job's
+  own uuid folder and are listed on the job row.
+- **Why:** Spiro: "when I log in using the same details I can't load up the temp
+  job… I need to be able to use it on my desktop — that temp job needs to be
+  tied into my login." This reverses the local-only design of 2026-09-03a, two
+  days old, which was built to the earlier instruction that it never enter the
+  database.
+- **Why NOT a row in `dm_defects` with a null `job_id`,** which is the obvious
+  design. Three things already true of that table, all shared with a live CH
+  Tracker, make it the wrong home:
+  - migration **072** deliberately opened it to `using (true)` after a
+    supervisor-scoping policy silently froze devices mid-push. A temp job must
+    be private, and re-tightening that table to get it risks that incident;
+  - migration **105** has a UNIQUE index on
+    `(job_id, description, contractor_id) NULLS NOT DISTINCT`. Temp defects have
+    `job_id` NULL, so two maintenance calls both saying "Reseal shower base"
+    against the same plumber collide — and cloud-sync's 23505 handler *adopts*
+    the row it collided with, silently merging two unrelated jobs;
+  - migration **080** archives every deleted `dm_defects` row, which is the
+    opposite of the permanent delete this feature promises.
+  Its own table gets all three right by construction and keeps the blast radius
+  to one table.
+- **Trade-off:** Two devices editing the SAME temp job at once is last-write-wins
+  on the whole job. Right shape for one person doing one maintenance call, and
+  the alternative (per-defect diffing) is the machinery this design exists to
+  avoid.
+- **What changed in the promise, and it must be said out loud:** it is in the
+  database now. Other managers cannot see it (owner-scoped RLS, the one place in
+  this schema where a manager does not see everything), but a Supabase admin or
+  the service role can, and the photo objects are manager-readable like every
+  other defect photo. "Never leaves the handset" is no longer true and the UI no
+  longer says it.
+
+- **Decision:** Every promise on screen about where a temp job lives is worded
+  off `CloudAdmin.tempSyncReady()`, not hardcoded.
+- **Why:** the migration is run by hand, so between this deploy and that SQL the
+  app is genuinely local-only. Saying "follows your login" then would be a lie,
+  and saying "this device only" afterwards would be a different lie. The button,
+  the create dialog, the toast and the delete confirmation all read the flag.
+- **Trade-off:** the wording can flip once, on the first sync after boot.

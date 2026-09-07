@@ -14,7 +14,34 @@ second editor anywhere would be the mistake.
 # Next Steps / Handover
 
 STATUS: Active
-LAST UPDATED: 2026-09-03
+LAST UPDATED: 2026-09-04
+
+## ⚠️ RUN THIS SQL — temp jobs on the desktop, build `2026-09-04a`
+
+`supabase/migrations/2026-09-04_temp_jobs.sql` — paste the whole file into the
+Supabase SQL editor and run it, then reopen the app on both devices. Until it is
+run the app is **unchanged**: temp jobs work exactly as they did, on one device,
+and the button says "this device only" instead of "private to your login".
+Nothing errors and nothing is lost — the capability probe reads 42P01 and falls
+back. Run the check at the bottom of the file afterwards; every column must be
+true.
+
+A temp job is now a row in **`dm_temp_jobs`**, private to `owner_id`, carrying
+its defects as JSON, with its photos under its own uuid folder in the existing
+bucket and listed on the row. It is deliberately NOT a `dm_defects` row — the
+reasons are in the migration's header and in DECISIONS; the short version is
+that dm_defects is open by RLS on purpose (072), has a unique index temp rows
+would collide on (105), and archives its deletes (080).
+
+**The privacy promise changed** and the wording on screen changed with it. It is
+in the database now. No other manager can see it, but a Supabase admin can —
+"never leaves the handset" is no longer true.
+
+`tests/tempsync.mjs` (suite 29) runs it across two browser contexts: raised on
+one, loaded on the other, invisible to a second login, photos travelling both
+ways, a delete that lands everywhere and archives nothing, and the pre-migration
+fallback.
+
 
 ## ✅ PDF reports include photos still on the phone — build `2026-09-03b`
 

@@ -69,10 +69,18 @@ const stub = (uploadFails) => `(() => {
     profiles: [{ id: UID, role: 'manager', is_wordings_admin: true }],
   };
   window.__stub = { T, signedFor: [], uploads: 0 };
+  // dm_temp_jobs is deliberately ABSENT here: this suite is about reading
+  // photos back for a report, and the pre-migration device is the cleanest
+  // version of "there is no cloud copy of this photo, anywhere". The two-device
+  // path is tests/tempsync.mjs.
+  const MISSING = { code: '42P01', message: 'relation "public.dm_temp_jobs" does not exist' };
   function q(table, cols) {
     const st = { table, cols, filters: [], single: false, rangeFrom: 0, rangeTo: 1e9 };
     const rows = () => { let r = (T[table] || []).slice(); for (const f of st.filters) r = r.filter(f); return r.slice(st.rangeFrom, st.rangeTo + 1); };
-    const res = async () => { const r = rows(); return st.single ? { data: r[0] || null, error: null } : { data: r, error: null }; };
+    const res = async () => {
+      if (table === 'dm_temp_jobs') return { data: null, error: MISSING };
+      const r = rows(); return st.single ? { data: r[0] || null, error: null } : { data: r, error: null };
+    };
     const api = {
       select(c) { if (c) st.cols = c; return api; },
       order() { return api; }, limit(n) { st.rangeTo = st.rangeFrom + n - 1; return api; },
@@ -154,6 +162,8 @@ async function boot(uploadFails) {
 const grab = `(async () => (await (await fetch(${JSON.stringify(IMG)})).blob()))()`;
 
 // ============ A. the bug: a temp job's photos are on the phone only =========
+// Run against a device where temp jobs cannot sync (the table is absent from
+// the stub), so the photo genuinely exists nowhere but this handset.
 console.log('\n--- A · a temp job report ---');
 {
   const { ctx, page, errs } = await boot(false);
@@ -178,9 +188,10 @@ console.log('\n--- A · a temp job report ---');
     got[0] && got[0].isData && got[0].len > 1000, JSON.stringify(got[0]));
   check('…with the real pixel dimensions, so the layout can size it',
     got[0] && got[0].w === LOGO_W && got[0].h === LOGO_H, JSON.stringify(got[0]));
-  check('…and nothing was asked of storage for it',
+  check('…without asking storage for anything, since there is nothing up there',
     await page.evaluate(() => window.__stub.signedFor.length === 0));
-  check('…and it was never uploaded either', await page.evaluate(() => window.__stub.uploads === 0));
+  check('…and nothing was uploaded from a device that cannot sync temp jobs',
+    await page.evaluate(() => window.__stub.uploads === 0));
 
   const bad = errs.filter(e => !/supabase-js|Failed to load resource|Service Worker|SW\]/.test(e));
   if (bad.length) { console.log('errors:', bad); fail.push('page errors (A)'); }

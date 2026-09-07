@@ -3981,8 +3981,9 @@
             impOverlay(`<div id="imp-head"><strong>🛠️ Add temp job</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">
                     <p style="font-size:13px;color:var(--text-secondary);margin:0 0 12px;line-height:1.5;">
-                        For a one-off maintenance call. It stays on <b>this phone</b> — it is never
-                        uploaded, nobody else sees it, and deleting it deletes it for good.
+                        For a one-off maintenance call. ${tempSyncOn()
+                            ? 'It follows <b>your login</b> onto any device you sign in on, and nobody else can see it — not even another manager. Deleting it deletes it everywhere, for good.'
+                            : 'It stays on <b>this device</b> — it is never uploaded, nobody else sees it, and deleting it deletes it for good.'}
                     </p>
                     <input id="tj-name" type="text" placeholder="Address or job name"
                            style="width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--border-color,#ccc);border-radius:9px;font-size:16px;margin-bottom:9px;">
@@ -4013,24 +4014,38 @@
                 db.data.addresses.push(a);
                 db.save();
                 impClose();
-                showToast('🛠️ Temp job created — this phone only');
+                showToast(tempSyncOn() ? '🛠️ Temp job created — private to your login' : '🛠️ Temp job created — this device only');
                 startDefectsForJob(a.id);
             };
         }
 
-        // Deleting IS the delete. Nothing was ever uploaded, so there is no
-        // cloud row, no archive row and nothing for another device to pull —
+        // Deleting IS the delete. A temp job lives in its own table with no
+        // archive trigger, so once its row and its photos are gone there is
+        // nothing left in the database and nothing for another device to pull —
         // which is what "permanently deleted" has to mean to be worth saying.
+        //
+        // The CLOUD side goes first and its result is honoured. Deleting
+        // locally on a failed cloud delete would look like it worked and then
+        // undo itself: the row is still up there, and the next pull brings the
+        // whole job back. (Spiro 2026-09-04)
         async function deleteTempJob(addressId) {
             const a = db.getAddress(addressId);
             if (!a || !isTempJob(a)) { showToast('That is not a temp job', true); return; }
             if (!isAppAdmin()) { showToast('Admins only', true); return; }
             const items = (db.data.defects || []).filter(d => Number(d.addressId) === Number(addressId));
+            const synced = !!a.tempCloudId;
             const ok = confirm(
                 'Delete the temp job "' + a.street + '"?\n\n' +
-                items.length + ' defect(s) and any photos on them are deleted from this phone for good.\n\n' +
-                'Nothing was ever uploaded, so there is nothing left anywhere else.');
+                items.length + ' defect(s) and any photos on them are deleted for good.\n\n' +
+                (synced
+                    ? 'This removes it from every device you are signed in on. It is not archived and cannot be recovered.'
+                    : 'It never left this device, so there is nothing left anywhere else.'));
             if (!ok) return;
+            if (synced && window.CloudAdmin && window.CloudAdmin.deleteTempJob) {
+                let gone = false;
+                try { gone = await window.CloudAdmin.deleteTempJob(addressId); } catch (e) { gone = false; }
+                if (!gone) { showToast('Could not delete it from the cloud — still there, try again with signal', true); return; }
+            }
             const ids = items.map(d => d.id);
             try { if (window.CloudAdmin && window.CloudAdmin.dropLocalPhotos) await window.CloudAdmin.dropLocalPhotos(ids); } catch (e) {}
             db.data.defects = (db.data.defects || []).filter(d => Number(d.addressId) !== Number(addressId));
@@ -4043,6 +4058,12 @@
 
         function isAppAdmin() {
             return !!(window.CloudAdmin && window.CloudAdmin.is && window.CloudAdmin.is());
+        }
+        // Do temp jobs follow the login across devices yet? False until the
+        // 2026-09-04 migration has been run, and every promise made on screen
+        // about where a temp job lives is worded off this.
+        function tempSyncOn() {
+            return !!(window.CloudAdmin && window.CloudAdmin.tempSyncReady && window.CloudAdmin.tempSyncReady());
         }
         function isTempJob(a) { return !!(a && a.isTemp); }
 
@@ -9271,7 +9292,7 @@
             const tempBtn = isAppAdmin() ? `
                 <div onclick="createTempJob()" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:-8px 0 18px;padding:10px 12px;border:1px dashed var(--border-color,#ccc);border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text-secondary,#777);">
                     🛠️ ＋ Add temp job
-                    <span style="font-weight:400;font-size:12px;opacity:.8;">· this phone only</span>
+                    <span style="font-weight:400;font-size:12px;opacity:.8;">· ${tempSyncOn() ? 'private to your login' : 'this device only'}</span>
                 </div>` : '';
             return `
                 <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
@@ -13827,7 +13848,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-03b';
+        const APP_VERSION = '2026-09-04a';
 
         // Floating "refresh / get latest version" button — a manual escape hatch
         // to force the newest deploy (cache-busts the URL) if the auto-update
@@ -13901,7 +13922,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-03b"></script>
+    <script src="cloud-sync.js?v=2026-09-04a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
