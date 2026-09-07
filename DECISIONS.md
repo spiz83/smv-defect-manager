@@ -2486,3 +2486,21 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
   `jobStatus` would have hidden this — the same lesson as the PDF-filename bugs.
 - **Trade-off:** Temp jobs no longer sort with the rest; they sit at the bottom,
   next to the button that makes them.
+
+- **Decision:** `photoDataUrlsForDefect` (→ `CloudPhotos.getForPdf`) now reads the
+  **local outbox first**, and reaches the cloud only to top up. It no longer
+  starts from the defect's cloud uuid and give up when there isn't one.
+- **Why:** Spiro: "with the temp job feature, when I generate the PDF report it
+  doesn't actually show the photos, just shows the items." A temp job's photos
+  are deliberately never uploaded, so a cloud-only read found nothing and every
+  temp-job report came out as text. The same hole hit ordinary jobs: a photo
+  taken in a dead spot sits in the outbox, so it was missing from the report
+  being printed right then and only turned up in some later one — the report
+  built on site, which is the one that matters most, was the one losing photos.
+- **Trade-off:** None found. An upload deletes the outbox entry, so a photo is
+  in one place or the other and cannot be counted twice; the `limit` caps the
+  merged list either way. The outbox needs no reception, so it is also the
+  faster path.
+- **Note:** the cap is still 3 photos per defect, while the PDF's card layout is
+  written to fit "every photo". Left as-is — it is long-standing behaviour for
+  every job, not part of this bug.

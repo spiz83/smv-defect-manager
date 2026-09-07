@@ -2234,25 +2234,69 @@
   }
   function _escAttr(s) { return String(s == null ? '' : s).replace(/[&"<>]/g, m => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[m])); }
 
+  // One photo blob -> what the PDF needs to place it. Null if it won't decode.
+  async function photoToPdfImage(blob) {
+    if (!blob) return null;
+    try {
+      const dataUrl = await new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res(fr.result);
+        fr.onerror = () => rej(fr.error);
+        fr.readAsDataURL(blob);
+      });
+      const dim = await new Promise(res => {
+        const im = new Image();
+        im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight });
+        im.onerror = () => res({ w: 0, h: 0 });
+        im.src = dataUrl;
+      });
+      return { dataUrl, w: dim.w, h: dim.h };
+    } catch (e) { return null; }
+  }
+
   // Fetch a defect's photos as data URLs (for embedding into a PDF report).
+  //
+  // PHOTOS ON THIS PHONE COME FIRST, and are read whether or not the defect has
+  // ever reached the cloud (Spiro 2026-09-03). This used to start with
+  // `idMap.defects[legacyId]` and give up when there was no cloud uuid, so the
+  // report was built purely from what the server already held. That dropped
+  // photos in the two cases where the report matters most:
+  //   · a TEMP job — its photos are deliberately never uploaded, so the cloud
+  //     had nothing and every report came out as text with no images at all;
+  //   · any job in a dead spot — the photo taken five minutes ago is still in
+  //     the outbox, so it was missing from the report being printed right now
+  //     and only appeared in some later one.
+  // The outbox is the freshest copy and needs no reception, so it is the first
+  // place to look, not the fallback. An upload deletes the outbox entry, so a
+  // photo is in one place or the other and cannot be counted twice.
   async function photoDataUrlsForDefect(legacyId, limit = 3) {
-    const uuid = idMap.defects[legacyId];
-    if (!uuid) return [];
-    const { data: rows } = await sb.from('dm_defect_photos')
-      .select('storage_path').eq('defect_id', uuid).limit(limit);
-    if (!rows || !rows.length) return [];
-    const { data: signed } = await sb.storage.from(PHOTO_BUCKET)
-      .createSignedUrls(rows.map(r => r.storage_path), 600);
     const out = [];
-    for (const s of (signed || [])) {
-      if (!s.signedUrl) continue;
-      try {
-        const blob = await (await fetch(s.signedUrl)).blob();
-        const dataUrl = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
-        const dim = await new Promise(res => { const im = new Image(); im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = () => res({ w: 0, h: 0 }); im.src = dataUrl; });
-        out.push({ dataUrl, w: dim.w, h: dim.h });
-      } catch (e) { /* skip a bad image */ }
-    }
+    try {
+      const pend = (await pendingAll()).filter(it => Number(it.legacyId) === Number(legacyId));
+      for (const it of pend) {
+        if (out.length >= limit) break;
+        const img = await photoToPdfImage(it.blob);
+        if (img) out.push(img);
+      }
+    } catch (e) { /* IndexedDB unavailable — the cloud copy below still works */ }
+    if (out.length >= limit) return out;
+
+    const uuid = idMap.defects[legacyId];
+    if (!uuid || !sb) return out;                       // local-only defect, or signed out
+    try {
+      const { data: rows } = await sb.from('dm_defect_photos')
+        .select('storage_path').eq('defect_id', uuid).limit(limit - out.length);
+      if (!rows || !rows.length) return out;
+      const { data: signed } = await sb.storage.from(PHOTO_BUCKET)
+        .createSignedUrls(rows.map(r => r.storage_path), 600);
+      for (const s of (signed || [])) {
+        if (!s.signedUrl) continue;
+        try {
+          const img = await photoToPdfImage(await (await fetch(s.signedUrl)).blob());
+          if (img) out.push(img);
+        } catch (e) { /* skip a bad image */ }
+      }
+    } catch (e) { /* no reception — whatever is on the phone still goes in */ }
     return out;
   }
 

@@ -16,6 +16,23 @@ second editor anywhere would be the mistake.
 STATUS: Active
 LAST UPDATED: 2026-09-03
 
+## ✅ PDF reports include photos still on the phone — build `2026-09-03b`
+
+`CloudPhotos.getForPdf` reads the **outbox first**, then tops up from the cloud.
+It used to be cloud-only, which lost photos in the two places a report matters
+most: a temp job (never uploaded, so the report was pure text — the bug Spiro
+reported) and any job in a dead spot (the photo taken minutes ago was still
+queued, so it missed the report being printed on site).
+
+`tests/pdfphoto.mjs` (suite 17) boots the REAL cloud-sync on a stubbed Supabase
+so the outbox is a real IndexedDB — a mocked `getForPdf` would have passed
+happily while the bug was live. Verified by reverting the fix: sections A and B
+both go red, section C (the cloud path) stays green.
+
+⚠️ Still capped at **3 photos per defect** in a report, though the card layout
+is written to fit every one of them. Long-standing, applies to every job, and
+nobody has asked yet — but it is the next thing someone will notice.
+
 ## ✅ Temp jobs are LIVE — build `2026-09-03a`
 
 Admin only, at the bottom of the home screen: **🛠️ ＋ Add temp job · this phone
