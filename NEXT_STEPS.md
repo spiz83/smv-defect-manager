@@ -16,6 +16,22 @@ second editor anywhere would be the mistake.
 STATUS: Active
 LAST UPDATED: 2026-09-04
 
+## ✅ Report photo quality — build `2026-09-04e`
+
+`2026-09-04d` fixed the 28.5 MB report but overshot: a 2-up grid cell is ~43mm,
+which at 150 dpi is 245px, and the photos looked pixelated when zoomed. Photos
+now have a **600px floor on the long edge** as well as a printed-size target
+(200 dpi, q0.80), because nobody prints these — they zoom into the defect.
+
+Grid photos: **245px → 600px** (6× the pixels). A 50-photo report: **2.34 MB**,
+against Spiro's stated budget of 2.5 MB and the 28.5 MB original. Real photos
+compress better than the noise fixtures, so a real report lands lower.
+
+Numbers chosen by sweeping dpi × quality × floor against real encoded bytes.
+Worth redoing that sweep rather than reasoning about it if it ever needs
+retuning: bytes scale with AREA, so 4× the file is only 2× the linear detail,
+and two combinations that looked sensible came out at 6–8 MB.
+
 ## ✅ Reports are ~0.5 MB instead of 28.5 MB — build `2026-09-04d`
 
 Photos were embedded at source resolution — 1280px from the cloud, and the FULL

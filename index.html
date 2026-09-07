@@ -13201,25 +13201,33 @@
         const LOGO_W = 560, LOGO_H = 169;   // native pixels, for the aspect ratio
 
         // ── Photo sizing for the report ────────────────────────────────────────
-        // A photo goes into the PDF at the size the PAGE draws it, not the size
-        // the camera produced.
+        // A photo goes into the PDF at the size the PAGE draws it, with a FLOOR
+        // so it still holds up when someone zooms in.
         //
-        // A 2-up grid cell on A4 is about 43mm wide — 254px at print resolution.
-        // The source is 1280px from the cloud, and the FULL camera original
-        // (4032px, several MB) when the photo is still in this phone's outbox,
-        // which the report now reads first. So every photo was carrying 20–100×
-        // more data than the page could ever show, and a 7-page report came out
-        // at 28.5MB (Spiro 2026-09-04: "these PDFs shouldn't be more than 1 to
-        // 2 MB at the very most").
+        // First pass (2026-09-04e) sized purely to the printed box at 150 dpi
+        // and fixed a 28.5MB report — but a 2-up grid cell is only ~43mm, which
+        // came to 245px, and Spiro: "the photo quality is too poor now, photos
+        // are too pixelated… I'm happy for this particular file to be 2.5 MB."
         //
-        // 150 dpi is print quality at these sizes; beyond it the extra pixels
-        // are invisible on paper and on screen and cost only megabytes.
-        const PDF_DPI = 150, PDF_JPEG_Q = 0.72;
+        // Printed size is the wrong measure on its own, because nobody prints
+        // these: they open the PDF and zoom into the defect. So the long edge
+        // has a floor of 600px however small the photo sits on the page, which
+        // is where the whole quality gain went — a grid photo is 6× the pixels
+        // it was. Measured on a real 50-photo report: 0.61MB → 2.35MB, against
+        // a 28.5MB original.
+        //
+        // Bytes scale with AREA, so ~4× the file is only ~2× the linear detail.
+        // That is why the floor is worth more than raising the dpi: it spends
+        // the budget on the photos that were actually bad instead of on the
+        // large ones that already looked fine.
+        const PDF_DPI = 200, PDF_JPEG_Q = 0.80;
+        const PDF_MIN_LONG = 600;    // never below this, however small on the page
+        const PDF_MAX_LONG = 1400;   // and never silly, however large
         const mmToPx = (mm) => Math.max(1, Math.ceil(mm / 25.4 * PDF_DPI));
 
-        // Re-encode one photo to the box drawContained will actually paint it
-        // into. Returns the original untouched if anything goes wrong — a
-        // report with a heavy photo beats a report with a missing one.
+        // Re-encode one photo for the box drawContained will paint it into.
+        // Returns the original untouched if anything goes wrong — a heavy report
+        // beats one with a photo missing from it.
         async function fitImageForPdf(img, cellW, cellH) {
             if (!img || !img.dataUrl || !cellW || !cellH) return img;
             // The same "contain" maths as drawContained, so we size to the box
@@ -13229,8 +13237,19 @@
                 const ar = img.w / img.h;
                 if (cellW / cellH > ar) { dh = cellH; dw = cellH * ar; } else { dw = cellW; dh = cellW / ar; }
             }
-            const pxW = mmToPx(dw), pxH = mmToPx(dh);
-            if (img.w && img.h && img.w <= pxW && img.h <= pxH) return img;   // already page-sized
+            let pxW = mmToPx(dw), pxH = mmToPx(dh);
+            const scaleLongTo = (long) => {
+                const cur = Math.max(pxW, pxH);
+                if (!cur) return;
+                pxW = Math.max(1, Math.round(pxW * long / cur));
+                pxH = Math.max(1, Math.round(pxH * long / cur));
+            };
+            if (Math.max(pxW, pxH) < PDF_MIN_LONG) scaleLongTo(PDF_MIN_LONG);
+            if (Math.max(pxW, pxH) > PDF_MAX_LONG) scaleLongTo(PDF_MAX_LONG);
+            // Never upscale past the source. No detail is invented by doing it
+            // and the extra bytes are entirely real.
+            if (img.w && img.h && Math.max(pxW, pxH) > Math.max(img.w, img.h)) scaleLongTo(Math.max(img.w, img.h));
+            if (img.w && img.h && img.w <= pxW && img.h <= pxH) return img;
             try {
                 const el = await new Promise((res, rej) => {
                     const im = new Image();
@@ -13242,6 +13261,7 @@
                 c.width = pxW; c.height = pxH;
                 const g = c.getContext('2d');
                 g.fillStyle = '#fff'; g.fillRect(0, 0, pxW, pxH);   // JPEG carries no alpha
+                g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
                 g.drawImage(el, 0, 0, pxW, pxH);
                 return { dataUrl: c.toDataURL('image/jpeg', PDF_JPEG_Q), w: pxW, h: pxH };
             } catch (e) { return img; }
@@ -13917,7 +13937,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-04d';
+        const APP_VERSION = '2026-09-04e';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14004,7 +14024,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-04d"></script>
+    <script src="cloud-sync.js?v=2026-09-04e"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

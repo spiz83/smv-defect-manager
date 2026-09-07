@@ -2626,3 +2626,27 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
   as the ENTIRE dependency set and prunes everything else — installing jspdf
   silently deleted playwright and eslint and the gates stopped running. Every
   test dependency must go in the single command in `tests/setup.sh`.
+
+- **Decision:** Report photos get a **floor** on the long edge (600px) as well as
+  a printed-size target, at 200 dpi / JPEG q0.80. Grid photos went from 245px to
+  600px; a 50-photo report goes from 0.61 MB to 2.35 MB.
+- **Why:** `2026-09-04d` sized photos purely to the printed box at 150 dpi and
+  killed the 28.5 MB report — but a 2-up grid cell is only ~43mm, which came to
+  245px, and Spiro: "the photo quality is too poor now, photos are too
+  pixelated… I'm happy for this particular file to be 2.5 MB." Printed size is
+  the wrong measure on its own, because nobody prints these — they open the PDF
+  and zoom into the defect.
+- **Where the budget went, and why:** bytes scale with AREA, so ~4× the file is
+  only ~2× the linear detail. Spending it on a floor rather than on dpi puts all
+  of it into the photos that were actually bad (small grid cells, 6× the pixels)
+  and none into the large ones that already looked fine. Chosen by sweeping
+  dpi × quality × floor against real encoded bytes rather than by guessing —
+  `200/0.80/600` landed on his stated 2.5 MB budget.
+- **Trade-off:** a photo whose SOURCE is smaller than the floor is never upscaled
+  to meet it; inventing pixels costs real bytes and adds no detail.
+
+- **Note on how the number was picked:** a parameter sweep printed encoded bytes
+  and output pixel sizes for ten dpi/quality/floor combinations against the same
+  fixtures. Worth repeating rather than reasoning about, if this ever needs
+  retuning — the area relationship makes intuition unreliable, and two of the
+  combinations that looked sensible came out at 6–8 MB.

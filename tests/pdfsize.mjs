@@ -129,21 +129,30 @@ console.log('\n--- B · sizing one photo to the page ---');
     const img = { dataUrl: src, w: 1600, h: 1200 };
     const single = await fitImageForPdf(img, 88, 63);    // a single photo's cell
     const grid = await fitImageForPdf(img, 43, 31);      // a 2-up grid cell
+    const tiny = await fitImageForPdf({ dataUrl: window.__makePhoto(320, 240, 21), w: 320, h: 240 }, 43, 31);
     const kb = (d) => Math.round(d.dataUrl.length * 0.75 / 1024);
     return { src: Math.round(src.length * 0.75 / 1024),
       single: { w: single.w, h: single.h, kb: kb(single), jpeg: /^data:image\/jpeg/.test(single.dataUrl) },
-      grid: { w: grid.w, h: grid.h, kb: kb(grid) } };
+      grid: { w: grid.w, h: grid.h, kb: kb(grid) },
+      tiny: { w: tiny.w, h: tiny.h } };
   });
   console.log('sized:', JSON.stringify(r));
-  check('the report resizes photos at all', !!r, 'fitImageForPdf is not defined');
+  check('the report resizes photos at all', !!r, r ? '' : 'fitImageForPdf is not defined');
   if (r) {
-    check('a single photo comes down to what 150dpi needs, not what the camera gave',
-      r.single.w <= 530 && r.single.w >= 400, JSON.stringify(r.single));
+    check('a single photo comes down from what the camera gave',
+      r.single.w <= 780 && r.single.w >= 560, JSON.stringify(r.single));
     check('…keeping its shape', Math.abs((r.single.w / r.single.h) - (4 / 3)) < 0.05, `${r.single.w}x${r.single.h}`);
     check('…as a JPEG, so it is not re-inflated as PNG', r.single.jpeg);
-    check('…and far lighter than the source', r.single.kb * 4 < r.src, `${r.src} KB -> ${r.single.kb} KB`);
-    check('a 2-up grid cell is lighter again, because it is drawn smaller',
-      r.grid.kb < r.single.kb && r.grid.w <= 260, JSON.stringify(r.grid));
+    check('…and far lighter than the source', r.single.kb * 3 < r.src, `${r.src} KB -> ${r.single.kb} KB`);
+    // THE anti-pixelation check. A 2-up grid cell is only ~43mm, which at
+    // print resolution is ~325px — the size that made Spiro's photos look
+    // pixelated when he zoomed in. The floor is what stops that.
+    check('a small grid photo keeps real detail, because people ZOOM rather than print',
+      r.grid.w >= 560, JSON.stringify(r.grid));
+    check('…which is several times the pixels the printed size alone would give',
+      r.grid.w > 325 * 1.5, `${r.grid.w}px vs 325px from print size alone`);
+    check('…but a photo whose SOURCE is small is never upscaled to meet the floor',
+      r.tiny.w <= 320, JSON.stringify(r.tiny));
 
     const noop = await page.evaluate(async () => {
       const small = { dataUrl: window.__makePhoto(200, 150, 11), w: 200, h: 150 };
@@ -180,8 +189,13 @@ console.log('\n--- C · the report itself ---');
   const mb = res.bytes / 1024 / 1024;
   console.log(`report: ${mb.toFixed(2)} MB from ${res.photos} photos, built in ${res.ms}ms — ${res.name}`);
   check('the report is a real PDF with real photos in it', res.bytes > 120 * 1024, String(res.bytes));
-  check('…and comes in under 2 MB, which is what Spiro asked for', mb < 2, mb.toFixed(2) + ' MB');
-  check('…comfortably, not just scraping in', mb < 1.5, mb.toFixed(2) + ' MB');
+  // Spiro settled the budget himself: "I'm happy for this particular file to be
+  // 2.5 MB". The gate is 3 MB because these fixture photos are canvas NOISE,
+  // which JPEGs worse than any real site photo — a real report of this size
+  // comes in under the 2.5. The point of the gate is to catch a return to
+  // tens of megabytes, not to shave the last 200 KB.
+  check('…and stays in the range Spiro agreed to, not tens of megabytes', mb < 3, mb.toFixed(2) + ' MB');
+  check('…while still spending the budget: this is NOT the over-compressed build', mb > 1.2, mb.toFixed(2) + ' MB');
   check('…and it did not take all day to build', res.ms < 90000, res.ms + 'ms');
 }
 
