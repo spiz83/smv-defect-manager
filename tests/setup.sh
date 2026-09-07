@@ -8,13 +8,18 @@
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# pdfjs-dist must be pinned to the version index.html loads from the CDN, or
-# deep.mjs and pvphoto.mjs are testing a different PDF engine than the app uses.
+# INSTALL THEM ALL IN ONE COMMAND. With no package.json, `npm i --no-save X`
+# treats X as the entire dependency set and PRUNES everything else — adding one
+# package this way silently deletes playwright and the gates stop running.
+#
+# pdfjs-dist and jspdf must both be pinned to the versions index.html loads from
+# the CDN, or the suites are testing a different engine than the app ships.
 npm i --no-save --silent \
   playwright@1 \
   eslint@9 \
   globals \
-  pdfjs-dist@3.11.174
+  pdfjs-dist@3.11.174 \
+  jspdf@2.5.1
 
 echo "Installed. Chromium is expected at /opt/pw-browsers/chromium"
 echo "(set PLAYWRIGHT_BROWSERS_PATH, or edit executablePath in the suites)."

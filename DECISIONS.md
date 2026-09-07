@@ -2590,3 +2590,39 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
   test failing.
 - **Trade-off:** one extra upsert per unsynced temp job per pull. Bounded by the
   handful of temp jobs a person has, and it stops as soon as each has an id.
+
+- **Decision:** Photos are re-encoded to the pixel size the PAGE draws them at
+  (`fitImageForPdf`, 150 dpi, JPEG q0.72) immediately before they go into the
+  PDF, sized per-cell — a 2-up grid cell gets a quarter the pixels of a single
+  photo. `compress: true` on the jsPDF document as well.
+- **Why:** Spiro sent a 7-page report at **28.5 MB**: "absolutely insane…
+  these PDFs shouldn't be more than between 1 to 2 MB at the very most." The
+  cause was resolution, not the PDF format. A grid cell on A4 is ~43mm — 254px
+  at 150 dpi — while the source was 1280px from the cloud and the **full camera
+  original** when the photo was still in the outbox, which the report started
+  reading first in `2026-09-03b`. Every photo carried 20–100× more data than the
+  page could show. Measured on a real 50-photo report: **47.18 MB → 0.54 MB.**
+- **Trade-off:** photos in the PDF are now capped at print quality for the size
+  they appear at. Zooming into a report photo on screen will show less detail
+  than the original — the original is still in the app and in cloud storage, and
+  is what the gallery and the photo editor use. Only the report copy is sized.
+- **Note:** the resize is wrapped so a decode failure returns the original
+  untouched. A heavy report beats a report with a photo missing from it.
+
+- **Decision:** `tests/pdfsize.mjs` builds a REAL PDF with jsPDF served from
+  `tests/node_modules` and asserts its byte size.
+- **Why:** jsPDF comes from cdnjs, which this sandbox blocks, so every earlier
+  PDF suite worked on the layout maths alone and none of them could have caught
+  this — the file size is the only thing that was wrong. npm IS reachable, so
+  the library is a test dependency now. The fixture photos are canvas noise, not
+  flat colour, because flat colour compresses to nothing and would let the bug
+  straight through; section A asserts the fixture is heavy before anything else
+  runs.
+- **Trade-off:** one more pinned test dependency to keep in step with the CDN
+  version in index.html. `tests/setup.sh` says so, next to the same warning for
+  pdfjs-dist.
+
+- **Note (cost me an hour):** with no package.json, `npm i --no-save X` treats X
+  as the ENTIRE dependency set and prunes everything else — installing jspdf
+  silently deleted playwright and eslint and the gates stopped running. Every
+  test dependency must go in the single command in `tests/setup.sh`.

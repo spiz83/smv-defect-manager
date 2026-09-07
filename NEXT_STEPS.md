@@ -16,6 +16,27 @@ second editor anywhere would be the mistake.
 STATUS: Active
 LAST UPDATED: 2026-09-04
 
+## ✅ Reports are ~0.5 MB instead of 28.5 MB — build `2026-09-04d`
+
+Photos were embedded at source resolution — 1280px from the cloud, and the FULL
+camera original when the photo was still in the outbox (which the report started
+reading first in `2026-09-03b`). A 2-up grid cell on A4 is ~43mm, or 254px at
+150 dpi, so every photo carried 20–100× more data than the page could show.
+
+`fitImageForPdf` now re-encodes each photo to the box `drawContained` will paint
+it into, at 150 dpi / JPEG q0.72, sized PER CELL. Measured on a real 50-photo
+report: **47.18 MB → 0.54 MB**.
+
+`tests/pdfsize.mjs` (suite 18) builds an actual PDF and weighs it. jsPDF is a
+pinned test dependency now (`tests/setup.sh`) because cdnjs is unreachable from
+the sandbox — every earlier PDF suite could only check layout maths, which is
+why none of them caught a file-size bug.
+
+⚠️ **`npm i --no-save X` with no package.json PRUNES everything else.** Adding
+jspdf that way deleted playwright and eslint and the gates stopped running. Add
+test dependencies to the single command in `tests/setup.sh`, never ad hoc.
+
+
 ## ✅ The ↻ button is below the content now — build `2026-09-04b`
 
 It was `position: fixed` bottom-left and sat on top of defect rows, their ⋯

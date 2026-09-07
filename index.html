@@ -13200,10 +13200,60 @@
         }
         const LOGO_W = 560, LOGO_H = 169;   // native pixels, for the aspect ratio
 
+        // ── Photo sizing for the report ────────────────────────────────────────
+        // A photo goes into the PDF at the size the PAGE draws it, not the size
+        // the camera produced.
+        //
+        // A 2-up grid cell on A4 is about 43mm wide — 254px at print resolution.
+        // The source is 1280px from the cloud, and the FULL camera original
+        // (4032px, several MB) when the photo is still in this phone's outbox,
+        // which the report now reads first. So every photo was carrying 20–100×
+        // more data than the page could ever show, and a 7-page report came out
+        // at 28.5MB (Spiro 2026-09-04: "these PDFs shouldn't be more than 1 to
+        // 2 MB at the very most").
+        //
+        // 150 dpi is print quality at these sizes; beyond it the extra pixels
+        // are invisible on paper and on screen and cost only megabytes.
+        const PDF_DPI = 150, PDF_JPEG_Q = 0.72;
+        const mmToPx = (mm) => Math.max(1, Math.ceil(mm / 25.4 * PDF_DPI));
+
+        // Re-encode one photo to the box drawContained will actually paint it
+        // into. Returns the original untouched if anything goes wrong — a
+        // report with a heavy photo beats a report with a missing one.
+        async function fitImageForPdf(img, cellW, cellH) {
+            if (!img || !img.dataUrl || !cellW || !cellH) return img;
+            // The same "contain" maths as drawContained, so we size to the box
+            // that gets painted rather than to the whole cell.
+            let dw = cellW, dh = cellH;
+            if (img.w && img.h) {
+                const ar = img.w / img.h;
+                if (cellW / cellH > ar) { dh = cellH; dw = cellH * ar; } else { dw = cellW; dh = cellW / ar; }
+            }
+            const pxW = mmToPx(dw), pxH = mmToPx(dh);
+            if (img.w && img.h && img.w <= pxW && img.h <= pxH) return img;   // already page-sized
+            try {
+                const el = await new Promise((res, rej) => {
+                    const im = new Image();
+                    im.onload = () => res(im);
+                    im.onerror = () => rej(new Error('decode'));
+                    im.src = img.dataUrl;
+                });
+                const c = document.createElement('canvas');
+                c.width = pxW; c.height = pxH;
+                const g = c.getContext('2d');
+                g.fillStyle = '#fff'; g.fillRect(0, 0, pxW, pxH);   // JPEG carries no alpha
+                g.drawImage(el, 0, 0, pxW, pxH);
+                return { dataUrl: c.toDataURL('image/jpeg', PDF_JPEG_Q), w: pxW, h: pxH };
+            } catch (e) { return img; }
+        }
+
         async function generateDefectPDF(list, opts) {
             await ensureJsPdf();
             const { jsPDF } = window.jspdf;
-            const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+            // compress: flate the content streams. Does nothing for the JPEGs
+            // (already compressed) but takes a chunk off the text and vectors,
+            // which on a 7-page report is not nothing.
+            const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
             const pageW = 210, pageH = 297, M = 11, contentW = pageW - 2 * M;
             const now = new Date();
             const niceDate = now.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -13299,7 +13349,17 @@
 
             const photosFor = async (d) => {
                 if (!opts.photos || !window.CloudPhotos) return [];
-                try { return await window.CloudPhotos.getForPdf(d.id); } catch (e) { return []; }
+                let imgs = [];
+                try { imgs = await window.CloudPhotos.getForPdf(d.id); } catch (e) { return []; }
+                if (!imgs.length) return imgs;
+                // Size each photo to the cell it will occupy. A 2-up grid cell
+                // is a quarter of the area of a single photo, so this is a
+                // quarter of the bytes — the count decides the layout, and the
+                // count is known here.
+                const pb = photoBlock(imgs);
+                const out = [];
+                for (const im of imgs) out.push(await fitImageForPdf(im, pb.cellW, pb.cellH));
+                return out;
             };
             // Photo layout for a card: a single big photo, or a 2-column grid
             // when a defect has several. EVERY photo is shown (nothing is dropped)
@@ -13857,7 +13917,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-04c';
+        const APP_VERSION = '2026-09-04d';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -13944,7 +14004,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-04c"></script>
+    <script src="cloud-sync.js?v=2026-09-04d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
