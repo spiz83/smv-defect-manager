@@ -2548,3 +2548,33 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
   and saying "this device only" afterwards would be a different lie. The button,
   the create dialog, the toast and the delete confirmation all read the flag.
 - **Trade-off:** the wording can flip once, on the first sync after boot.
+
+- **Decision:** The ↻ refresh button and the build stamp are no longer
+  `position: fixed`. They are a footer laid out at the end of the content,
+  rendered by `appFooterHtml()` inside `render()`, with bottom padding that
+  clears the fixed sync banner.
+- **Why:** Spiro sent a screenshot of it sitting on top of a PLASTERER defect
+  row and the sync banner: "the refresh button is sometimes in the way of
+  buttons that I need to access… have this button below everything so if
+  there's a defect on there it goes below the defect." It floated over the
+  bottom-left corner of every screen, which on a long defect list is always
+  a row and often that row's ⋯ menu.
+- **Trade-off:** it is no longer visible without scrolling. That is the point —
+  it is a recovery button, not a primary action, and the two empty-state
+  messages that pointed at "(bottom-left)" now say "at the bottom of this
+  screen". `tests/footer.mjs` asserts it by geometry (`elementFromPoint` at
+  five points of the button, and its top against the lowest defect row),
+  because "the element exists and the CSS looks right" is exactly what would
+  have passed while this was live on the phone.
+- **Third time**: a floating control in this app has had to become a laid-out
+  one. The pattern is settled — if it CAN overlap content, eventually it does.
+
+- **Decision:** `render()` now calls `window.scrollTo(0, 0)` explicitly when the
+  render key changes (a navigation), instead of leaving it to the browser.
+- **Why:** found by `tests/pvstable.mjs` going red on the footer change. Landing
+  at the top of a new screen was working by accident: navigating from a long
+  screen to a short one, the browser clamped the scroll to the new page's
+  height, which happened to be 0. Adding ~100px of footer made the home screen
+  tall enough to stop clamping, and you arrived 94px down a screen you had just
+  opened. The comment above that line already claimed the intended behaviour;
+  now the code does it.

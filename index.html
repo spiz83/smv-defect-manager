@@ -8966,6 +8966,7 @@
 
             app.innerHTML = `
                 ${content}
+                ${appFooterHtml()}
                 ${createModals()}
             `;
             _lastRenderKey = key;
@@ -8974,6 +8975,14 @@
             // height they last painted at, so the page is already tall enough for
             // this to land on the right row rather than clamping short.
             if (keepScroll && wasY) window.scrollTo(0, wasY);
+            // A NEW screen starts at the top, said out loud rather than left to
+            // the browser. It used to work by accident: navigating from a long
+            // screen to a short one, the browser clamped the scroll to that
+            // page's height, which happened to be 0. The moment the home screen
+            // grew past the old offset — adding the refresh footer was enough —
+            // it stopped clamping and you landed part-way down a screen you had
+            // just opened. (Spiro 2026-09-04)
+            else if (!keepScroll) window.scrollTo(0, 0);
 
             if (state.currentView === 'home') {
                 // No need for multi-select rendering in new design
@@ -9280,10 +9289,10 @@
             }).join('');
             const title = isMgr ? 'All Active Jobs' : 'My Jobs';
             const emptyMsg = isMgr
-                ? 'Loading jobs… if this stays empty, tap ↻ (bottom-left) to refresh.'
+                ? 'Loading jobs… if this stays empty, tap ↻ Refresh at the bottom of this screen.'
                 : (!uid
                     ? 'Loading your jobs…'
-                    : 'No jobs allocated to you yet. Use the search at the top, or tap ↻ (bottom-left) to refresh.');
+                    : 'No jobs allocated to you yet. Use the search at the top, or tap ↻ Refresh at the bottom of this screen.');
             const body = list.length ? rows : `<div style="padding:16px;opacity:.7;font-size:13px;">${emptyMsg}</div>`;
             // Under the list, admin only. A maintenance call is not a CH Tracker
             // job and never becomes one, so it does not belong anywhere in the
@@ -13848,53 +13857,67 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-04a';
+        const APP_VERSION = '2026-09-04b';
 
-        // Floating "refresh / get latest version" button — a manual escape hatch
-        // to force the newest deploy (cache-busts the URL) if the auto-update
-        // hasn't kicked in yet.
-        function mountRefreshButton() {
-            if (document.getElementById('app-refresh')) return;
-            const b = document.createElement('button');
-            b.id = 'app-refresh';
-            b.innerHTML = '↻';
-            b.title = 'Refresh — load the latest version';
-            b.setAttribute('aria-label', 'Refresh app');
-            b.onclick = async function () {
-                // Pull-WINS recovery for a phone that's showing out-of-date items.
-                // Crucially we do NOT push the local copy first — a stale push can
-                // revert a completion done in the CH Tracker / on another phone.
-                // We just drop the local sync baseline so the reload does a clean
-                // pull and ADOPTS the cloud truth. Unsynced local-only edits are
-                // replaced by the server's version, so confirm before doing it.
-                if (!confirm('Reload the latest defects from the server?\n\nUse this if items look out of date or keep reappearing. Any changes on THIS phone that haven’t uploaded yet will be replaced by the server’s version.')) return;
-                b.disabled = true; b.style.opacity = '0.5';
-                try {
-                    localStorage.setItem('cs_dirty', '0');
-                    localStorage.removeItem('cs_snapshot');
-                    localStorage.removeItem('cs_idmap');
-                } catch (e) {}
-                // Force the NEWEST code, not just the newest data. The service
-                // worker serves a cached shell within 3.5s in poor reception /
-                // Low-Power-Mode, so a plain reload can keep booting old code.
-                // Nuke every cache + unregister the SW so the reload fetches a
-                // fresh index.html straight from the network.
-                try { if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } } catch (e) {}
-                try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r => r.unregister())); } } catch (e) {}
-                const u = new URL(window.location.href);
-                u.searchParams.set('_r', Date.now().toString());
-                window.location.replace(u.toString());
-            };
-            b.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99999;width:42px;height:42px;border-radius:50%;border:1px solid var(--brd,#bbb);background:var(--sur,#fff);color:var(--t1,#111);font-size:20px;line-height:1;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;';
-            document.body.appendChild(b);
-            // Tiny build stamp under the refresh button so it's obvious at a
-            // glance which version this phone is actually running — turns "is it
-            // updated?" into a fact you can read.
-            const ver = document.createElement('div');
-            ver.textContent = 'v' + APP_VERSION;
-            ver.title = 'App version loaded on this device';
-            ver.style.cssText = 'position:fixed;left:8px;bottom:56px;z-index:99999;font-size:9px;color:var(--t3,#999);background:var(--sur,#fff);opacity:.75;padding:1px 4px;border-radius:4px;pointer-events:none;font-family:monospace;';
-            document.body.appendChild(ver);
+        // "Refresh / get latest version" — a manual escape hatch to force the
+        // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
+        // in yet.
+        //
+        // It USED to float, position:fixed at the bottom-left, and it sat on top
+        // of whatever was underneath — a defect row, the ⋯ menu on it, and the
+        // sync banner (Spiro 2026-09-04, with a screenshot of it over a PLASTERER
+        // item: "the refresh button is sometimes in the way of buttons that I
+        // need to access… have this button below everything so if there's a
+        // defect on there it goes below the defect").
+        //
+        // So it is ANCHORED IN THE DOM at the end of the content instead. Below
+        // the last defect on a long screen, below the last card on a short one,
+        // never over either. Third time a floating control in this app has had
+        // to become a laid-out one: if it CAN overlap content, eventually it does.
+        //
+        // The bottom padding clears the fixed sync banner (#cs-banner), which
+        // slides up over the bottom of the page while a push is running — the
+        // footer would otherwise sit under it exactly when someone reaches for it.
+        function appFooterHtml() {
+            return `
+                <div id="app-foot" style="display:flex;align-items:center;justify-content:center;gap:10px;
+                            padding:18px 12px calc(64px + env(safe-area-inset-bottom, 0px));">
+                    <button id="app-refresh" onclick="appHardRefresh(this)" aria-label="Refresh app"
+                            title="Refresh — load the latest version"
+                            style="display:flex;align-items:center;gap:7px;padding:9px 15px;border-radius:22px;
+                                   border:1px solid var(--brd,#bbb);background:var(--sur,#fff);color:var(--t1,#111);
+                                   font:600 13px/1 -apple-system,Segoe UI,Roboto,sans-serif;cursor:pointer;">
+                        <span style="font-size:16px;line-height:1">↻</span> Refresh
+                    </button>
+                    <span id="app-ver" title="App version loaded on this device"
+                          style="font:9px/1 monospace;color:var(--t3,#999);opacity:.75;">v${APP_VERSION}</span>
+                </div>`;
+        }
+
+        async function appHardRefresh(b) {
+            // Pull-WINS recovery for a phone that's showing out-of-date items.
+            // Crucially we do NOT push the local copy first — a stale push can
+            // revert a completion done in the CH Tracker / on another phone.
+            // We just drop the local sync baseline so the reload does a clean
+            // pull and ADOPTS the cloud truth. Unsynced local-only edits are
+            // replaced by the server's version, so confirm before doing it.
+            if (!confirm('Reload the latest defects from the server?\n\nUse this if items look out of date or keep reappearing. Any changes on THIS phone that haven’t uploaded yet will be replaced by the server’s version.')) return;
+            if (b) { b.disabled = true; b.style.opacity = '0.5'; }
+            try {
+                localStorage.setItem('cs_dirty', '0');
+                localStorage.removeItem('cs_snapshot');
+                localStorage.removeItem('cs_idmap');
+            } catch (e) {}
+            // Force the NEWEST code, not just the newest data. The service
+            // worker serves a cached shell within 3.5s in poor reception /
+            // Low-Power-Mode, so a plain reload can keep booting old code.
+            // Nuke every cache + unregister the SW so the reload fetches a
+            // fresh index.html straight from the network.
+            try { if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } } catch (e) {}
+            try { if (navigator.serviceWorker) { const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r => r.unregister())); } } catch (e) {}
+            const u = new URL(window.location.href);
+            u.searchParams.set('_r', Date.now().toString());
+            window.location.replace(u.toString());
         }
 
         // Initialize app
@@ -13902,7 +13925,6 @@
         loadClubTheme();
         loadDesign();
         render();
-        mountRefreshButton();
     </script>
 
     <!-- ====================================================================
@@ -13922,7 +13944,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-04a"></script>
+    <script src="cloud-sync.js?v=2026-09-04b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

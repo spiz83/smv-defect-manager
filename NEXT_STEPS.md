@@ -16,6 +16,24 @@ second editor anywhere would be the mistake.
 STATUS: Active
 LAST UPDATED: 2026-09-04
 
+## ✅ The ↻ button is below the content now — build `2026-09-04b`
+
+It was `position: fixed` bottom-left and sat on top of defect rows, their ⋯
+menus and the sync banner. It is a footer at the end of `#app` now, rendered by
+`appFooterHtml()` from inside `render()`, with the build stamp beside it.
+
+`tests/footer.mjs` (suite 11) checks it by GEOMETRY — `elementFromPoint` at five
+points of the button, its top against the lowest `.defect-item`, and its bottom
+against the sync banner. Verified by reverting: the old build reports the button
+landing on `defect-item` and `defect-line-loc`, which is Spiro's screenshot.
+
+⚠️ **It also exposed a latent scroll bug.** Landing at the top of a NEW screen
+was working by accident — the browser clamped the scroll when the next page was
+shorter. ~100px of footer made the home screen tall enough to stop clamping, and
+navigation started landing part-way down. `render()` now scrolls to 0 explicitly
+on a key change. Anything that makes a screen taller could have found this.
+
+
 ## ⚠️ RUN THIS SQL — temp jobs on the desktop, build `2026-09-04a`
 
 `supabase/migrations/2026-09-04_temp_jobs.sql` — paste the whole file into the
