@@ -16,6 +16,29 @@ second editor anywhere would be the mistake.
 STATUS: Active
 LAST UPDATED: 2026-09-04
 
+## ✅ Same wording, two rooms, two defects — build `2026-09-04g`
+
+The duplicate guard keyed on address + description + supplier and ignored
+LOCATION, so "Grout tiles to wall above shower" in the ensuite and in the
+bathroom collapsed into one row — and the second room's photo was filed against
+the first room's defect. Location is part of the key now.
+
+The subtle half: location used to be applied AFTER `addDefect` by
+`applyRowExtras`. Adding it to the key without moving that would have broken
+double-tap protection (first save has no location, second compares '' against a
+located row, slips through). Callers pass it in at creation now. `applyRowExtras`
+was also overwriting the matched defect's location — the old build relabelled the
+ensuite row as "bth".
+
+`tests/dupe.mjs` (suite 8) covers both halves and re-checks everything the guard
+already protected: double-tap, case/spacing, one wording across two trades, a
+completed item recurring, and a report re-import not doubling the list.
+
+⚠️ **Existing data.** Merges that already happened cannot be undone — the second
+entry was never written. A job where the same wording was raised for two rooms
+may be short a defect, and the surviving row may carry the WRONG room.
+
+
 ## ✅ Generate PDF Report attaches the file again — build `2026-09-04f`
 
 It was hosting the PDF and sharing a LINK on iOS, so a Mail draft came out with

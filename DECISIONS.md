@@ -2680,3 +2680,33 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
   stub between the overlay appearing and the tap (fixed with a defineProperty
   getter, the same fix `navigator.clipboard` needed in emailattach), and the
   suite needs a real iPhone user agent because the whole branch is UA-gated.
+
+- **Decision:** The duplicate guard in `addDefect` now keys on **address +
+  description + supplier + LOCATION**, and callers pass the location IN rather
+  than applying it afterwards with `setDefectLocation`.
+- **Why:** Spiro 2026-09-04: same wording, ensuite then bathroom — "it said
+  there's already a defect under that, so it's taken the photo and assigned it
+  to the old defect. I needed it to have created a new defect." The same wording
+  in two rooms is two jobs to go and do. Worse than the missing row: the
+  bathroom's PHOTO was filed against the ensuite defect, so the evidence landed
+  on the wrong room.
+- **The second half, which was the subtle one.** Location used to be applied
+  AFTER `addDefect` returned, by `applyRowExtras`. Adding location to the key
+  without moving that would have broken double-tap protection — the first save
+  creates a row with no location, `setDefectLocation` then sets it, and the
+  second tap compares `''` against a located row and slips through as a new
+  copy. `tests/dupe.mjs` section D pins both halves: applying the key change
+  alone makes "saving the same room again is still caught as a duplicate" fail.
+- **Also fixed by the same move:** on a returned duplicate, `applyRowExtras` was
+  overwriting the EXISTING defect's location. The old code relabelled the
+  ensuite defect as "bth" on the way past — visible in the test's own output
+  when run against the previous build.
+- **Trade-off:** a defect with no location and the same defect with one are now
+  two rows. That is the right way to be wrong here: the complaint was a wrongly
+  MERGED entry, and a spare row is visible and deletable while a swallowed one
+  is neither.
+
+- **Note on existing data:** rows merged by the old guard cannot be recovered
+  automatically — the second entry was never written. Any job where the same
+  wording was raised for two rooms may be short a defect, and may carry the
+  SECOND room's location on the first room's row.
