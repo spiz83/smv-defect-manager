@@ -6645,7 +6645,7 @@
             const ref = splitReportRef(defect.description);
             const body = ref.body;
             // The card shows "BPI #7 · p.3", not the saved "BPI #7 (p.3)".
-            const refLbl = ref.label.replace(/\s*\(p\.(\d+)\)/, ' · p.$1');
+            const refLbl = ref.label.replace(/\s*\(p\.(\d+(?:[-–]\d+)?)\)/, ' · p.$1');
             const loc = defect.location ? `<span class="pv-loc">${_pvEsc(defect.location)}</span>` : '';
             const n = (window.CloudPhotos && window.CloudPhotos.count(defect.id)) || 0;
             return `<div class="pv-card ${done ? 'pv-done' : ''}" data-pv="${defect.id}">
@@ -10050,6 +10050,13 @@
                 const res = await deepReadReport(reportFile);
                 if (res) { items = res.items; opts = { layout: res.layout, photoMode: 'anchor' }; }
             }
+            if (!items.length) {
+                const tabular = parseTabularDefects(rawText);
+                if (tabular) items = tabular.map(it => {
+                    const cid = findContractorByExactName(it.trade);
+                    return cid != null ? Object.assign({}, it, { _contractorId: cid }) : it;
+                });
+            }
             if (!items.length && useAI) {
                 impSetBusy('🤖 Reading the report with AI…');
                 try {
@@ -10173,17 +10180,66 @@
         }
 
         // ===========================================================================
+        //  Structured paste — a Private Inspection report a supervisor already has as
+        //  a table (Trade / Item # / Report Page / Location / Defect or Finding),
+        //  copied out of a spreadsheet instead of typed as prose. Tab-separated (the
+        //  normal shape when a table is copied out of Excel/Word) or aligned with 2+
+        //  spaces; an optional header row is recognised (its Item#/Page cells aren't
+        //  numeric) and dropped. Deterministic — the columns are already right there,
+        //  so there's nothing for AI or the freeform bullet parser to guess — and the
+        //  only path that keeps the report's OWN item numbering (section.item, e.g.
+        //  "3.27", not sequential) and a page RANGE ("53-54"), neither of which the
+        //  AI extraction round-trip preserves (extract-defects only returns a numeric
+        //  page and no item number at all). All-or-nothing: one line that doesn't fit
+        //  the shape means this isn't a table, and extractAndReview falls back to
+        //  AI / the freeform parser exactly as before. (2026-09-09)
+        // ===========================================================================
+        function _splitTabularRow(line) {
+            let cells;
+            if (line.indexOf('\t') !== -1) cells = line.split('\t').map(s => s.trim());
+            else {
+                const m = line.match(/^(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(.+)$/);
+                cells = m ? m.slice(1) : null;
+            }
+            if (!cells || cells.length < 5) return null;
+            return [cells[0], cells[1], cells[2], cells[3], cells.slice(4).join(' ').trim()];
+        }
+        function _isTabularRow(cells) {
+            return !!cells && /^\d+(?:\.\d+)?$/.test(cells[1]) && /^\d+(?:[-–]\d+)?$/.test(cells[2]) && !!cells[4];
+        }
+        function parseTabularDefects(text) {
+            if (!text) return null;
+            const lines = text.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length < 2) return null;
+            const first = _splitTabularRow(lines[0]);
+            if (!first) return null;   // not columnar at all — let the caller fall back
+            const rows = _isTabularRow(first) ? lines : lines.slice(1);   // drop a header row
+            if (!rows.length) return null;
+            const items = [];
+            for (const line of rows) {
+                const cells = _splitTabularRow(line);
+                if (!_isTabularRow(cells)) return null;   // one line off-shape → not a table, bail entirely
+                items.push({ trade: cells[0], itemNo: cells[1], page: cells[2], location: cells[3], description: cells[4] });
+            }
+            return items;
+        }
+
+        // ===========================================================================
         //  BPI360 smart import — structured defects (location, page, trade) so the
         //  supervisor reviews + allocates instead of typing. (Spiro 2026-06-09)
         // ===========================================================================
         // Every defect imported from a report is saved with its report reference in
         // front of the description ("BPI #7 (p.3) — ..."), so a supplier's list
-        // points straight back at the page. Deep-read private reports get the same
-        // treatment under "Item #N", since they have no numbering of their own.
+        // points straight back at the page. Private Inspection reports get the same
+        // treatment under "PI #N" — a PI report has its own item numbering (often
+        // decimal, e.g. "3.27") and sometimes a page RANGE ("p.53-54"), so the
+        // number/page groups accept those shapes too, not just a plain integer.
         // ONE regex for the whole app: the label is written in two places and
         // stripped in four, and they must never drift apart. (Spiro 2026-08-02)
-        const REPORT_REF_RE = /^(?:BPI|Item) #(\d+)(?:\s*\(p\.(\d+)\))?\s*—\s*/;
-        const reportRefWord = reportType => (reportType === 'BPI' || !reportType) ? 'BPI' : 'Item';
+        // "Item" is kept as a matchable word (never written for a new save) purely
+        // so a description saved before this change still strips/compares correctly.
+        const REPORT_REF_RE = /^(?:BPI|PI|Item) #([\d.]+)(?:\s*\(p\.(\d+(?:[-–]\d+)?)\))?\s*—\s*/;
+        const reportRefWord = reportType => (reportType === 'BPI' || !reportType) ? 'BPI' : 'PI';
         const stripReportRef = s => String(s || '').replace(REPORT_REF_RE, '');
         // Split a saved description into its report reference and the defect text.
         // { label: 'BPI #7 (p.3)' | '', body: 'the defect' } — label is '' when the
@@ -10238,6 +10294,18 @@
                 const hay = ((c.trades || '') + ' ' + (c.name || '')).toLowerCase();
                 return kws.some(k => hay.includes(k));
             });
+            return hit ? hit.id : null;
+        }
+        // A structured paste's Trade column is often already the exact name the app
+        // needs — a real sub ("Fix N Chips Roxburgh Park") or a trade placeholder
+        // ("Bricklayer", "Shower Screen") — not free text to classify. An exact match
+        // pre-fills the review's Assign field with confidence, ahead of the keyword
+        // guesses BPI_TRADE_KEYWORDS would otherwise need. No match (the trade
+        // placeholder doesn't exist yet) just leaves it unfilled, same as today.
+        function findContractorByExactName(name) {
+            const t = (name || '').trim().toLowerCase();
+            if (!t) return null;
+            const hit = db.getContractors().find(c => (c.name || '').trim().toLowerCase() === t);
             return hit ? hit.id : null;
         }
         // ── Framework call-up: who was actually engaged for a trade on THIS job ──
@@ -13990,7 +14058,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-04g';
+        const APP_VERSION = '2026-09-09a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14077,7 +14145,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-04g"></script>
+    <script src="cloud-sync.js?v=2026-09-09a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

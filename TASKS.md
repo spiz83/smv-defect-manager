@@ -1,6 +1,16 @@
 # Tasks
 
 ## Current sprint
+- [x] **Private Inspection imports say "PI" and keep the report's own item
+      numbers/page ranges; a pasted table (Trade / Item # / Page / Location /
+      Defect) parses straight in, no AI needed.** Build `2026-09-09a`, tested
+      (`tests/pitable.mjs`, full `./tests/run.sh` green) — see NEXT_STEPS.md
+      and DECISIONS.md 2026-09-09. **Not deployed** — needs the go-ahead to
+      merge `claude/sharp-brown-mfn4cd` to `main`.
+- [ ] **Once approved and live: paste the actual 38-item PI report** (Report
+      type: Private Inspection) for the job it belongs to, and confirm the
+      review screen shows `PI #2.04 (p.12-13)` etc. with trade/location
+      pre-filled per row before saving each one.
 - [ ] **Confirm a plan actually opens on a phone for a job that has one.**
       Needs CH Tracker migration 101 applied and a plan uploaded against that
       job number.
@@ -29,6 +39,9 @@
       them; if the trades don't exist those wordings can never be reached by
       picking a supplier. The editor flags them amber, so this is visible on
       the screen itself — either add the trades or move the wordings.
+      Also now affects PI report imports (2026-09-09): a pasted PI table
+      using "Bricklayer" or "Shower Screen" as its Trade column can't
+      pre-fill an assignee until the placeholder exists — see NEXT_STEPS.md.
 - [x] **The curated defect-wording list is live** — 62 items across 12 trades,
       seeded into `dm_defect_wordings` and compiled into index.html as the
       offline/pre-migration fallback.

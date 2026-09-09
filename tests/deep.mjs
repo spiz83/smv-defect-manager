@@ -196,8 +196,8 @@ const screen = await page.evaluate(() => ({
   imgs: document.querySelectorAll('#imp-body img').length,
 }));
 console.log('review screen:', JSON.stringify(screen.body.slice(0, 220)));
-check('review labels a private item "Item #1", not "BPI #1"',
-  /Item #1/.test(screen.body) && !/BPI #/.test(screen.body), screen.body.slice(0, 90));
+check('review labels a private item "PI #1", not "BPI #1"',
+  /PI #1/.test(screen.body) && !/BPI #/.test(screen.body), screen.body.slice(0, 90));
 check('the layout read is shown on the review', /Report read as/.test(screen.body));
 check('the report photos are visible BEFORE saving', screen.imgs === 2, screen.imgs + ' images');
 await page.screenshot({ path: `${OUT}/61-deep-review.png` });
@@ -238,13 +238,13 @@ const saved = await page.evaluate(async () => {
 });
 console.log('saved:', JSON.stringify(saved));
 check('the item saved', saved.added === 1, JSON.stringify(saved));
-check('saved description carries an "Item #" reference, not "BPI #"',
-  /^Item #1 \(p\.1\) — /.test(saved.desc || ''), saved.desc);
+check('saved description carries a "PI #" reference, not "BPI #"',
+  /^PI #1 \(p\.1\) — /.test(saved.desc || ''), saved.desc);
 check('the report reference strips back off for display',
   await page.evaluate(d => stripReportRef(d) === 'Paint finish to the kitchen ceiling is patchy — apply a further coat throughout', saved.desc),
   saved.desc);
 check('the email line still splits the reference out',
-  await page.evaluate(() => /^Item #1 \(p\.1\) — Kitchen — Paint finish/.test(formatDefectEmailLine(db.data.defects[0]))),
+  await page.evaluate(() => /^PI #1 \(p\.1\) — Kitchen — Paint finish/.test(formatDefectEmailLine(db.data.defects[0]))),
   await page.evaluate(() => formatDefectEmailLine(db.data.defects[0])));
 
 // ================= 5. BPI is untouched ======================================

@@ -2,6 +2,69 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-09-09 — Private Inspection imports say "PI", keep the report's own item numbers, and a pasted table parses without AI — build `2026-09-09a`
+
+- **Decision:** a Private Inspection report's saved reference now reads
+  `PI #3.27 (p.53-54) — ...`, not the old `Item #7 (p.3) — ...`.
+  `REPORT_REF_RE` — and the two other spots that read the same shape
+  (`reportRefWord`, and the preview-card `(p.N)` → `· p.N` reformat) — now
+  accept a **decimal item number** (a PI report's own section.item numbering,
+  e.g. "3.27") and a **page range** ("53-54"), neither of which the old
+  integer-only regex could hold at all.
+- **Why:** these reports arrive as a table (Trade / Item # / Report Page /
+  Location / Defect) with the inspector's OWN numbering, not a sequential
+  list — collapsing that down to "Item #1, #2, #3…" made the saved defect
+  useless for pointing back at the actual report page, which is the entire
+  reason the reference is prefixed in the first place. "PI" (as opposed to
+  "BPI", the BPI360 quality-assurance inspection) is also just what these are
+  already called on site: "PI Items — not to be confused as BPI Items."
+- **New: `parseTabularDefects`.** When a Private Inspection paste is already
+  a clean table — tab-separated (the normal shape copied out of Excel/Word)
+  or aligned with 2+ spaces, an optional header row recognised and dropped —
+  it parses deterministically into `{trade, itemNo, page, location,
+  description}` per row. No AI call, nothing to guess, and the only path
+  that can carry a decimal item number or a page range through at all: the
+  `extract-defects` AI path (`normaliseExtracted` in cloud-sync.js) only
+  ever returns a numeric `page` and no item number whatsoever, by design.
+  **All-or-nothing:** one line that doesn't fit the five-column shape and
+  the whole paste is treated as prose instead, falling through to the AI /
+  freeform-bullet parser exactly as before — an ordinary messy paste is
+  never at risk from this change.
+- **New: `findContractorByExactName`.** A structured row's Trade column is
+  often already the exact name the app needs — a real sub ("Fix N Chips
+  Roxburgh Park") or a trade placeholder ("Bricklayer", "Shower Screen") —
+  not free text to run through `BPI_TRADE_KEYWORDS`. An exact,
+  case-insensitive match pre-fills the review screen's Assign field before
+  the supervisor even opens that item. No match just leaves it exactly as
+  unfilled as it does today — no guessing.
+- **Backward compatible, on purpose.** `REPORT_REF_RE` still matches the old
+  `Item` word (only NEW saves write "PI"), so a description saved before
+  this change keeps stripping/comparing correctly — the duplicate guard,
+  trade learning, and every export all key off it.
+  `stripReportRef`/`splitReportRef`/`formatDefectEmailLine` needed no
+  changes at all; they already treat the reference as an opaque label.
+- **Not done / needs a person, not code.** Some Trade values that show up
+  on real PI reports (`Bricklayer`, `Shower Screen`, `Supervisor`,
+  `Caulker`, …) may not exist yet as live trade placeholders in
+  `dm_contractors` — see the open item in TASKS.md asking Spiro to confirm
+  the trade list. Until they do, `findContractorByExactName` simply finds no
+  match for those and the review screen falls back to the keyword chips
+  exactly as it does today — nothing breaks, the pre-fill just doesn't help
+  until the placeholders exist.
+- **Test:** `tests/pitable.mjs` (new, added to gate 3) parses the shape both
+  tab- and space-delimited, proves ordinary prose still falls through
+  untouched, and drives the ACTUAL review screen's Save button (same pattern
+  as `fixes.mjs`) to confirm the final saved description is byte-for-byte
+  `PI #3.27 (p.53-54) — Defective external paint finish - blemishes, patchy
+  coverage, runs, texture variation` — the exact worked example given for
+  this change. `tests/deep.mjs` had three assertions pinned to the old
+  "Item #" wording; updated to "PI #" since that word change was the point,
+  not a regression. All four gates green (`./tests/run.sh`).
+- **Not deployed.** `AGENT_INSTRUCTIONS.md` says stop and ask before anything
+  goes live. Version stamps bumped to `2026-09-09a` (all four places, gate 4
+  green) so the build is ready to ship as soon as it's approved. On branch
+  `claude/sharp-brown-mfn4cd`.
+
 ## 2026-09-02 (b) — the wordings admin is named in the migration
 
 - **Spiro gave the address: `svladimiroski@hotmail.com`.** (a) deliberately left

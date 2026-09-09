@@ -14,7 +14,50 @@ second editor anywhere would be the mistake.
 # Next Steps / Handover
 
 STATUS: Active
-LAST UPDATED: 2026-09-04
+LAST UPDATED: 2026-09-09
+
+## ✅ Private Inspection imports say "PI" and keep the report's own numbering — build `2026-09-09a` — NOT YET DEPLOYED
+
+A supervisor has a Private Inspection report as a table (Trade / Item # /
+Report Page / Location / Defect) and wants it added "through the back door" —
+i.e. pasted into 📄 Add Report → **Private Inspection**, not typed one at a
+time — so it can go out as one report supervisors and trades can trace back
+to the original inspection page.
+
+Two gaps stood in the way, both fixed:
+1. The saved reference said `Item #7 (p.3) — ...`. It now says `PI #7 (p.3)
+   — ...` — matching what these are already called on site ("PI Items, not
+   to be confused as BPI Items").
+2. Neither the old regex nor the AI extraction path (`extract-defects`) could
+   carry the report's OWN item numbering (often decimal, e.g. "3.27") or a
+   page RANGE ("53-54") — both get flattened/dropped. `REPORT_REF_RE` now
+   accepts both, and a new deterministic parser (`parseTabularDefects`) reads
+   a pasted table's columns directly — no AI needed, nothing to guess, since
+   the columns are already right there. It also pre-fills the Assign field
+   when a row's Trade column is already an exact contractor/trade-placeholder
+   name (`findContractorByExactName`) — e.g. "Fix N Chips Roxburgh Park" or
+   "Caulker" match straight away, ahead of the keyword guesses.
+
+**To use it once deployed:** 📄 Add Report → Report type: **Private
+Inspection** → paste the table text (a header row is fine, it's dropped
+automatically) → Extract defects. Each row becomes one review item with its
+trade, location, page and the report's own item number already filled in —
+still reviewed one at a time same as any import, but nothing left to retype.
+
+**Tested, not shipped.** `tests/pitable.mjs` (new) plus a full
+`./tests/run.sh` all green — see DECISIONS.md 2026-09-09 for the detail and
+what `deep.mjs` needed updating. Version stamps bumped to `2026-09-09a`
+(all four places). **Still needs:** someone to actually run
+`git checkout main && git merge --no-ff claude/sharp-brown-mfn4cd && git push`
+and verify live per `deploy-defect-manager` — held back deliberately,
+`AGENT_INSTRUCTIONS.md` says stop and ask before anything goes live.
+
+⚠️ **Known gap, not code:** a few Trade values real PI reports use
+(`Bricklayer`, `Shower Screen`, `Supervisor`, `Caulker`, …) may not exist yet
+as live trade placeholders in `dm_contractors` — same open question as the
+existing TASKS.md item asking Spiro to confirm the trade list. Until
+confirmed, a row using one of those just won't pre-fill an assignee (falls
+back to the usual keyword chips) — it still imports fine either way.
 
 ## ✅ Same wording, two rooms, two defects — build `2026-09-04g`
 
