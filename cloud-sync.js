@@ -2432,6 +2432,24 @@
       .filter((d) => d.description && d.description.trim());
   }
 
+  // supabase-js collapses ANY non-2xx from an edge function into a
+  // FunctionsHttpError whose .message is the generic "Edge Function returned a
+  // non-2xx status code". The useful part — our 401 "Sign in to use AI
+  // extraction" or 429 "Daily AI limit reached" — is in the response body
+  // hanging off .context. Without this a supervisor who simply hit the daily
+  // cap is told "AI extraction failed" and goes looking for a fault that isn't
+  // there. (2026-09-19)
+  async function fnErrorMessage(error, fallback) {
+    try {
+      const res = error && error.context;
+      if (res && typeof res.json === 'function') {
+        const body = await res.clone().json();
+        if (body && body.error) return String(body.error);
+      }
+    } catch (_) { /* not JSON, or already consumed — use the generic message */ }
+    return (error && error.message) || fallback;
+  }
+
   window.CloudAI = {
     available: () => true,
     // Deep read is admin-only: it costs several times a flat read (every page
@@ -2441,7 +2459,7 @@
     deepAvailable: () => (userRole || cachedIdentity.role) === 'manager',
     extract: async (text) => {
       const { data, error } = await sb.functions.invoke('extract-defects', { body: { text } });
-      if (error) throw new Error(error.message || 'AI extraction failed');
+      if (error) throw new Error(await fnErrorMessage(error, 'AI extraction failed'));
       if (data && data.error) throw new Error(data.error);
       return normaliseExtracted(data);
     },
@@ -2455,7 +2473,7 @@
       const { data, error } = await sb.functions.invoke('extract-defects', {
         body: { pdf: pdfBase64, trades: trades || [] },
       });
-      if (error) throw new Error(error.message || 'AI extraction failed');
+      if (error) throw new Error(await fnErrorMessage(error, 'AI extraction failed'));
       if (data && data.error) throw new Error(data.error);
       return { items: normaliseExtracted(data), layout: (data && data.layout) || '' };
     }
@@ -3038,6 +3056,37 @@
   const SHARE_BUCKET = 'shared-pdfs';
   let _lastShareKey = null;   // object name of the most recent uploadTempPdf (for CloudMail)
   const SHARE_BASE = 'https://smv-defect-manager.vercel.app/go.html?f=';
+  // The random folder is the ONLY thing between a stranger and a supplier's
+  // report: the bucket is public, so /object/public/… bypasses RLS by design
+  // (that is what makes the link work in a trade's email at all). So it has to
+  // be genuinely unguessable, and it wasn't.
+  //
+  // It used to be
+  //   (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).slice(-12)
+  // which LOOKS like 12 random characters. It isn't: slice(-12) keeps the TAIL
+  // of a 14-char string, so 6 of the 12 are the low digits of the timestamp —
+  // derivable from roughly when the report was sent — and only the other 6 come
+  // from Math.random(), a non-crypto PRNG. ~2.2 billion real combinations, not
+  // the 36^12 the length implies.
+  //
+  // crypto.getRandomValues for all 12 instead. Bytes >= 252 are DISCARDED rather
+  // than folded in: 256 is not a multiple of 36, so a plain % 36 would make the
+  // first four letters of the alphabet measurably likelier than the rest.
+  // No Math.random() fallback on purpose — if crypto is ever missing, the upload
+  // failing loudly (the caller already catches and returns null) beats silently
+  // handing out a weak link. Every PWA context here is HTTPS, where it exists.
+  const SHARE_TOKEN_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';   // 36
+  const shareToken = (len = 12) => {
+    let out = '';
+    while (out.length < len) {
+      const buf = new Uint8Array(len - out.length + 8);
+      crypto.getRandomValues(buf);
+      for (let i = 0; i < buf.length && out.length < len; i++) {
+        if (buf[i] < 252) out += SHARE_TOKEN_ALPHABET[buf[i] % 36];
+      }
+    }
+    return out;
+  };
   // The caller's filename, reduced to something safe as BOTH a URL path segment
   // and a filename on every OS: letters, digits, dot, dash, underscore. Any
   // directory part is dropped, so nothing here can climb out of its folder.
@@ -3059,7 +3108,7 @@
       // would cheerfully attach the wrong supplier's PDF.
       _lastShareKey = null;
       try {
-        const rand = (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).slice(-12);
+        const rand = shareToken();
         const safe = shareFileName(filename || (blob && blob.name));
         const name = rand + '/' + safe;
         const up = await sb.storage.from(SHARE_BUCKET).upload(name, blob, { contentType: 'application/pdf', upsert: true });

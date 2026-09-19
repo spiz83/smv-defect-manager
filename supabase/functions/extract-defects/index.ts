@@ -44,6 +44,84 @@ const MAX_CHARS = 100_000;
 // matters (a 200-page PDF can be small on disk and enormous in tokens).
 const MAX_PDF_B64 = 15 * 1024 * 1024;
 
+// ===========================================================================
+//  WHO IS CALLING, AND HOW OFTEN  (2026-09-19)
+// ---------------------------------------------------------------------------
+//  This function used to read no Authorization header at all. The platform's
+//  JWT gate is satisfied by the PUBLIC anon key — which ships in index.html,
+//  correctly, because it is the key the browser signs in with — so in practice
+//  anyone who opened the site could POST here as often as they liked and every
+//  call went to claude-opus-5. The only guards were per-CALL size caps; nothing
+//  capped the number of calls. It also meant the 50/user/day figure in the
+//  tracker's 05_AI_PROMPTS.md could not be enforced even in principle, because
+//  there was no "user" in scope to count against.
+//
+//  Note this function never touches the database and never did — it only reads
+//  what the caller posts. So the exposure was billing, not defect data.
+//
+//  Two checks now, and they fail in DIFFERENT directions on purpose:
+//
+//   1. IDENTITY — fails CLOSED. Needs nothing from the database, so it works
+//      the moment this function is deployed. A caller holding only the anon key
+//      is rejected: /auth/v1/user answers 401 for it, since it carries no user.
+//
+//   2. DAILY CAP — fails OPEN. It needs 2026-09-19_ai_call_quota.sql, and in
+//      this project migrations are run BY HAND, so there is a window where this
+//      function is deployed and the table does not exist yet. Failing closed
+//      there would break every import for everyone on site until someone ran
+//      the SQL. So an unreachable counter logs and lets the call through: the
+//      identity check above is doing the load-bearing work, and the cap starts
+//      biting the moment the migration lands. Check the logs for
+//      [quota unavailable] if you think it should be on and isn't.
+// ===========================================================================
+const DAILY_LIMIT = 50;
+const FN_NAME = "extract-defects";
+
+// The signed-in user's id, or null for anyone we cannot place — no token, a
+// token that is only the anon key, or an expired session.
+async function callerUserId(req: Request): Promise<string | null> {
+  const auth = req.headers.get("Authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token) return null;
+  const url = Deno.env.get("SUPABASE_URL");
+  const anon = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!url || !anon) return null;
+  try {
+    const r = await fetch(`${url}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: anon },
+    });
+    if (!r.ok) return null;
+    const u = await r.json();
+    return typeof u?.id === "string" && u.id ? u.id : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Count this call and return the running total for today, or null if the
+// counter can't be reached (see the fail-open note above).
+async function bumpQuota(userId: string): Promise<number | null> {
+  const url = Deno.env.get("SUPABASE_URL");
+  const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return null;
+  try {
+    const r = await fetch(`${url}/rest/v1/rpc/ai_quota_bump`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ p_user: userId, p_fn: FN_NAME }),
+    });
+    if (!r.ok) {
+      console.error("[quota unavailable] rpc ai_quota_bump HTTP " + r.status + " — has 2026-09-19_ai_call_quota.sql been run?");
+      return null;
+    }
+    const used = await r.json();
+    return typeof used === "number" ? used : null;
+  } catch (e) {
+    console.error("[quota unavailable]", e);
+    return null;
+  }
+}
+
 // Fallback trade vocabulary. The app posts its own list (single source of
 // truth is CALLUP_TRADE_KEYWORDS in index.html) — this only covers a caller
 // that doesn't.
@@ -209,6 +287,10 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
 
+  // Before the body is even read — an unidentified caller costs us nothing.
+  const userId = await callerUserId(req);
+  if (!userId) return json({ error: "Sign in to use AI extraction." }, 401);
+
   let body: any;
   try {
     body = await req.json();
@@ -231,6 +313,19 @@ Deno.serve(async (req: Request) => {
 
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) return json({ error: "Server not configured: ANTHROPIC_API_KEY missing" }, 500);
+
+  // Counted BEFORE the call, not after: a run of failures must not be a free
+  // way round the cap. The cost of that is a failed extraction still spending
+  // one of the 50, which is the right way to be wrong here.
+  const used = await bumpQuota(userId);
+  if (used !== null && used > DAILY_LIMIT) {
+    return json({
+      // Kept short deliberately — this lands in a toast on a phone.
+      error: `Daily AI limit reached (${DAILY_LIMIT} reports). Resets midnight UTC.`,
+      limit: DAILY_LIMIT,
+      used,
+    }, 429);
+  }
 
   const anthropicReq = deep
     ? {

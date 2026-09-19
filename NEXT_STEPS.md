@@ -14,7 +14,121 @@ second editor anywhere would be the mistake.
 # Next Steps / Handover
 
 STATUS: Active
-LAST UPDATED: 2026-09-09
+LAST UPDATED: 2026-09-19
+
+## 🚨 READ FIRST — a working manager password is published, and no code change fixes it
+
+Found 2026-09-19 while checking something else. `cloud-sync.js:61-63`:
+
+`ALIAS_USER`, `ALIAS_EMAIL` and `ALIAS_PASS` are literals there — a username,
+a manager's email address, and that account's real password. (Not repeated in
+this file on purpose: it is already in one public place too many, and a copy
+here would outlive the rotation below.)
+
+Typing the two-character alias twice — as username AND password — at the
+sign-in form calls `signInWithPassword` as that **manager** account. `cloud-sync.js` is served publicly and this repo is
+public — and the shortcut is guessable without reading any source at all.
+
+**This outranks everything else in this file.** It also defeats the other
+fixes: a manager login passes the new `extract-defects` auth check legitimately,
+and a manager sees every job under the new RLS policy by design.
+
+**Deleting those three lines does NOT fix it** — the password is already
+disclosed, including in git history. The only fix that means anything:
+
+- [ ] **Rotate the password on `svladimiroski@hotmail.com`** (Supabase Dashboard
+      → Authentication → Users, or the in-app change-password flow), and tell
+      whoever uses the shortcut the new one.
+- [ ] **Then** decide whether the alias should exist at all. If it stays, it
+      must read from somewhere that isn't public JavaScript — which, for a
+      static PWA with no server of its own, really means it shouldn't stay.
+- [ ] `tests/pass.mjs` covers the alias, so removing it means updating that
+      suite too.
+
+**It is in three files, not one** — `grep -rn` for the password literal finds:
+
+| File | Why it matters |
+|---|---|
+| `cloud-sync.js:63` | **Served publicly.** This is the exposed one. |
+| `scripts/setup-manager.mjs:20` | Repo-only, but public repo. |
+| `scripts/test-addr-match.mjs:8` | Repo-only, but public repo. Posts it to the auth endpoint. |
+
+So the scrub is three files, and it still does nothing on its own — rotate
+first. Anyone who has ever cloned this repo already has the old password.
+
+Left in place deliberately rather than ripped out: removing it would lock the
+manager out of the shortcut while leaving the real exposure (a known-public
+password on a live account) untouched — i.e. it would buy the appearance of a
+fix and none of the substance. It was already on the backlog as "decide what to
+do about ALIAS_PASS"; it is not a decision, it is an open door.
+
+## 🔒 Three security fixes — build `2026-09-19a` — NOTHING APPLIED OR DEPLOYED YET
+
+Asked directly whether the app was safe from anyone hacking in or information
+being exposed. It wasn't, in three ways. Detail and reasoning in DECISIONS.md
+2026-09-19; this is the do-list.
+
+**Two are fixed in code and ride along with the normal deploy:**
+
+1. **Share-link tokens** (`cloud-sync.js`) — the "unguessable" folder in a
+   public-bucket PDF link had only ~6 truly random characters out of 12, from
+   `Math.random()`. Now 12 from `crypto.getRandomValues`. Same link length.
+   `tests/sharetoken.mjs` pins it — and fails against the old line, which is
+   the point of it.
+2. **`extract-defects` auth + 50/user/day cap.** The function never read the
+   Authorization header, so the public anon key was enough for anyone to run up
+   the Anthropic bill on `claude-opus-5`. It never touched the database, so
+   this was billing, not a data leak. Identity now fails CLOSED; the cap fails
+   OPEN until its migration is run.
+
+**Ordered steps — the order matters:**
+
+- [ ] **Run `supabase/migrations/2026-09-19_ai_call_quota.sql`.** Safe any time:
+      it only CREATEs, alters no existing table, drops no policy. Until it runs
+      the cap is inert (the function logs `[quota unavailable]`) — the auth
+      check still works without it.
+- [ ] **Deploy the edge function** — `supabase functions deploy extract-defects`.
+      This is the one that actually closes the open door, and it needs no
+      migration. Do it even if everything else waits.
+- [ ] **Ship the app build** (`2026-09-19a`) the normal way — see
+      `deploy-defect-manager`. Carries the share-token fix, the friendlier
+      limit/sign-in messages, AND the still-unshipped PI import work from
+      `2026-09-09a`. Branch: `claude/sharp-brown-mfn4cd`.
+- [ ] **Sanity-check after deploying the function:** send a report link and
+      confirm the trade can still open it, and run one AI import and confirm it
+      still works while signed in. If an import suddenly says "Sign in to use
+      AI extraction", the session token isn't reaching the function — that is
+      the thing to look at first.
+
+**The third one is WRITTEN BUT MUST NOT BE RUN BLIND:**
+
+`dm_defects` and `dm_defect_photos` are `USING(true)`, so every logged-in user
+can read every defect and photo row across every supervisor. (The photo FILES
+were already job-scoped by the bucket policy — it's the metadata rows that were
+open.) `supabase/migrations/2026-09-19_defect_job_scoping.sql` fixes it with
+RESTRICTIVE policies, so nothing existing is dropped and rollback is two
+`DROP POLICY` lines.
+
+- [ ] **First run `supabase/inspect_defect_rls.sql`** (read-only, changes
+      nothing). **Query 6 is the one that matters:** it counts defects with
+      `job_id IS NULL`. Those become invisible to supervisors under the new
+      rule — managers and the cert team still see them. If that count isn't
+      roughly zero, fix the data before applying, not after.
+- [ ] Paste that output back to whoever picks this up. The migration was
+      written without DB access: `schema.sql` in this repo is STALE (it
+      describes a `workspace_id` model the live tables no longer use — live
+      `dm_defects` is keyed on `job_id`), and tracker migrations 120-124 exist
+      nowhere here. The preflight RAISEs rather than half-applying if an
+      assumption is wrong, but that is a backstop, not a substitute for looking.
+- [ ] Apply it when someone can watch and roll back — not at 6am before site.
+      `service_role` bypasses RLS, so server-side tracker jobs are unaffected,
+      but a tracker VIEW that is `security_invoker=true` inherits the
+      restriction (inspect query 8 lists them). Tell the tracker side.
+
+⚠️ **Not touched:** briefing item 3, the 380 shared-pdfs supplier PDFs that
+never expire. Storage hygiene rather than exposure, and it needs a retention
+decision first — a trade may open a link weeks after it was sent, so the
+tracker's 30-business-day photo rule isn't automatically right here.
 
 ## ✅ Private Inspection imports say "PI" and keep the report's own numbering — build `2026-09-09a` — NOT YET DEPLOYED
 

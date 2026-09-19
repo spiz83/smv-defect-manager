@@ -1,6 +1,37 @@
 # Tasks
 
 ## Current sprint
+- [ ] 🚨 **ROTATE THE MANAGER PASSWORD.** `cloud-sync.js:61-63` holds
+      `ALIAS_USER` / `ALIAS_EMAIL` / `ALIAS_PASS` as literals — a manager
+      account's real password among them. Typing the alias as both username and
+      password at sign-in logs you in as that manager, and the file is served
+      publicly. **Deleting the lines does not fix it** — the password is
+      already public, git history included. Rotate the account password first,
+      then decide whether the alias shortcut should exist at all (it can't live
+      in public JS). `tests/pass.mjs` covers the alias. This outranks every
+      other item in this file.
+- [x] **Security: share-link tokens are now genuinely random** — the folder in a
+      public-bucket PDF link had ~6 real random characters out of 12 (the rest
+      was a timestamp, via `Math.random()`). Now 12 from `crypto.getRandomValues`.
+      `tests/sharetoken.mjs`. Build `2026-09-19a`.
+- [x] **Security: `extract-defects` now checks who is calling** — it read no
+      Authorization header at all, so the public anon key let anyone run up the
+      Anthropic bill on `claude-opus-5`. Identity fails closed; the 50/user/day
+      cap fails open until its migration runs. It never touched the database, so
+      this was billing, not a data leak.
+- [ ] **Run `supabase/migrations/2026-09-19_ai_call_quota.sql`**, then
+      **`supabase functions deploy extract-defects`**. The deploy is what
+      actually closes the door and needs no migration — do it even if the rest
+      waits.
+- [ ] **⚠️ Every logged-in user can see every defect and photo row**
+      (`dm_defects` / `dm_defect_photos` are `USING(true)`). Fix is WRITTEN —
+      `supabase/migrations/2026-09-19_defect_job_scoping.sql`, restrictive
+      policies so rollback is two lines — but **run `supabase/inspect_defect_rls.sql`
+      first** and check query 6 (defects with `job_id IS NULL` go invisible to
+      supervisors). Written without DB access; `schema.sql` here is stale.
+- [ ] Decide retention for the 380+ `shared-pdfs` supplier PDFs, which never
+      expire. Needs a number, not code: a trade may open a link weeks later, so
+      the tracker's 30-business-day photo rule may be too short.
 - [x] **Private Inspection imports say "PI" and keep the report's own item
       numbers/page ranges; a pasted table (Trade / Item # / Page / Location /
       Defect) parses straight in, no AI needed.** Build `2026-09-09a`, tested
