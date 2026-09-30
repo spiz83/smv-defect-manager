@@ -153,11 +153,25 @@ console.log('\n--- B · tapping it ---');
     parseFloat((await boxOf('#add-contractor-1-input')).padR) < 34, (await boxOf('#add-contractor-1-input')).padR);
   // Clearing has to run the field's oninput, or the list under it keeps showing
   // matches for text that is no longer there.
-  const listGone = await page.evaluate(() => {
+  //
+  // Since 2026-09-30 an empty contractor field shows the quick-trade chips
+  // rather than nothing, so "the dropdown is empty" stopped being the way to
+  // ask this. The thing that must never survive a clear is a MATCH for text
+  // that was deleted — which is what the original bug actually was — so that is
+  // what is checked, plus the chips being there as the empty-field state.
+  const listState = await page.evaluate(() => {
     const d = document.getElementById('add-contractor-1-dropdown');
-    return !d || !d.classList.contains('active') || !d.innerHTML.trim();
+    if (!d || !d.classList.contains('active')) return { stale: 0, chips: 0, open: false };
+    return {
+      open: true,
+      stale: d.querySelectorAll('.autocomplete-item').length,
+      chips: d.querySelectorAll('.bulk-quick-chip').length,
+    };
   });
-  check('…and the dropdown under it is re-run, not left showing stale matches', listGone);
+  check('…and the dropdown under it is re-run, not left showing stale matches',
+    listState.stale === 0, JSON.stringify(listState));
+  check('…landing on the quick-trade chips, which is what an empty field shows',
+    listState.chips === 9, JSON.stringify(listState));
 }
 
 // ===========================================================================
