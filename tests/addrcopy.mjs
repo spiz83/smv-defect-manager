@@ -91,9 +91,15 @@ const rows = await page.evaluate(() => {
   const dd = document.getElementById('unified-search-dropdown');
   return [...dd.querySelectorAll('.autocomplete-item')].map(r => {
     const icons = [...r.querySelectorAll('div[onclick]')].filter(d => d.getAttribute('onclick').includes('('));
-    const acts = [...r.children[1].children];
+    // The actions are the LAST child, not children[1]: since 2026-09-30 a job
+    // with outstanding defects carries a count badge between the text and the
+    // icons (same shape as a My Jobs row). Indexing from the end survives that.
+    const acts = [...r.lastElementChild.children];
+    const badge = [...r.children].find(c => c.tagName === 'SPAN' && /^\d+$/.test(c.textContent.trim()));
     return {
       text: (r.children[0].textContent || '').trim(),
+      badge: badge ? badge.textContent.trim() : null,
+      textWidth: Math.round(r.children[0].getBoundingClientRect().width),
       icons: acts.map(a => a.textContent.trim()),
       right: Math.round(r.getBoundingClientRect().right),
       // rightmost pixel of the last icon — must stay inside the row
@@ -114,13 +120,20 @@ check('📋 sits before 👁️ and ✚',
 check('no icon is pushed off the right edge',
   rows.every(r => r.lastIconRight <= r.right), rows.map(r => `${r.lastIconRight}/${r.right}`).join(' '));
 check('the row still does not wrap', rows.every(r => !r.wraps), rows.map(r => r.h + 'px').join(' '));
+// Measure the TEXT element, not where the icons start. Those were the same
+// thing until the count badge went in between them; now only the first one is
+// the question actually being asked ("can you still read the address?").
 check('the address text still has room',
-  rows.every(r => r.firstIconLeft >= 150), rows.map(r => r.firstIconLeft + 'px').join(' '));
+  rows.every(r => r.textWidth >= 150), rows.map(r => r.textWidth + 'px').join(' '));
+// The badge is the whole point of the row telling you anything: a job with
+// outstanding defects has to show its count here as well as in My Jobs.
+check('a job with outstanding defects shows its count',
+  rows.some(r => r.badge && /^\d+$/.test(r.badge)), JSON.stringify(rows.map(r => r.badge)));
 
 // ── the string ───────────────────────────────────────────────────────────
 await page.evaluate(() => {
   const dd = document.getElementById('unified-search-dropdown');
-  dd.querySelector('.autocomplete-item').children[1].children[0].click();
+  dd.querySelector('.autocomplete-item').lastElementChild.children[0].click();
 });
 await page.waitForTimeout(200);
 const copied = await page.evaluate(() => window.__copied);
