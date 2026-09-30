@@ -183,6 +183,14 @@
   // the app behaves identically either way.
   let defectWordings = [];
   let defectWordingsReady = false;   // false = table absent/unreadable, use the built-in list
+  // Shared pre-loaded defect LISTS (dm_defect_lists + dm_defect_list_items),
+  // pulled each sync. A list is a named bundle of items imported onto a job in
+  // one go, so an inspection starts with its regulars already on the screen.
+  // Same fallback contract as the wordings above: empty until
+  // supabase/migrations/2026-09-30_defect_lists.sql is run, and index.html uses
+  // its built-in starter list until then.
+  let defectLists = [];              // [{ id, name, n, items: [{ id, text, trade, n }] }]
+  let defectListsReady = false;      // false = tables absent/unreadable, use the built-in list
   let bpiAiSettings = { weight_supervisor: 1, weight_senior: 3, weight_manager: 5, weight_admin: 10, min_examples: 2, auto_learning: true };
 
   function emptySnap() {
@@ -949,7 +957,7 @@
     // from idMap.defects, so reconcileLocalDefectsUp read ~1000 cloud rows as
     // un-synced local work and re-uploaded them on every boot ("Uploaded 1000
     // change(s) from this phone").
-    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, wordings] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, wordings, dLists, dListItems] = await Promise.all([
       selectAllRows('dm_trades', '*', 'id'),
       selectAllRows('dm_contractors', '*', 'id'),
       selectAllRows('dm_contractor_trades', 'contractor_id, trade_id', 'contractor_id'),
@@ -970,7 +978,14 @@
       // errors, defectWordingsReady stays false, and the app keeps using its
       // built-in list. Small and bounded (a curated list, not a log), so a
       // plain select is fine — no paging needed.
-      sb.from('dm_defect_wordings').select('id, text, trade, sort_n, active').eq('active', true)
+      sb.from('dm_defect_wordings').select('id, text, trade, sort_n, active').eq('active', true),
+      // Pre-loaded defect lists + their items, same best-effort contract as the
+      // wordings above: before 2026-09-30_defect_lists.sql is run both error,
+      // defectListsReady stays false, and index.html keeps its built-in starter
+      // list. Two selects rather than a join so a failure on either one is
+      // visible on its own; both are small curated content, not logs.
+      sb.from('dm_defect_lists').select('id, name, sort_n, active').eq('active', true),
+      sb.from('dm_defect_list_items').select('id, list_id, text, trade, sort_n, active').eq('active', true)
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -1104,6 +1119,37 @@
     } else if (wordings && wordings.error) {
       defectWordingsReady = false;
       console.info('[CloudSync] shared defect wordings unavailable — using the built-in list.', wordings.error.message || '');
+    }
+
+    // Shared defect LISTS, stitched to their items here rather than by a join,
+    // so the app holds one ready-to-render shape. Same fallback contract as the
+    // wordings: BOTH selects have to succeed, because a list with its items
+    // missing would import as an empty list — worse than falling back, since it
+    // looks like it worked and puts nothing on the job.
+    if (dLists && !dLists.error && Array.isArray(dLists.data) &&
+        dListItems && !dListItems.error && Array.isArray(dListItems.data)) {
+      const byList = new Map();
+      dListItems.data.forEach(r => {
+        if (!r || !r.text || !r.list_id) return;
+        const item = { id: r.id, text: String(r.text).trim(), trade: String(r.trade || 'Supervisor').trim(), n: Number(r.sort_n) || 1 };
+        const arr = byList.get(r.list_id);
+        if (arr) arr.push(item); else byList.set(r.list_id, [item]);
+      });
+      defectLists = dLists.data
+        .filter(r => r && r.name)
+        .map(r => ({
+          id: r.id,
+          name: String(r.name).trim(),
+          n: Number(r.sort_n) || 1,
+          items: (byList.get(r.id) || []).sort((a, b) => a.n - b.n || a.text.localeCompare(b.text)),
+        }))
+        .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+      defectListsReady = true;
+      console.info('[CloudSync] defect lists:', defectLists.length, 'from the shared bank');
+    } else if ((dLists && dLists.error) || (dListItems && dListItems.error)) {
+      defectListsReady = false;
+      console.info('[CloudSync] shared defect lists unavailable — using the built-in starter list.',
+        ((dLists && dLists.error) || (dListItems && dListItems.error)).message || '');
     }
 
     // DB-managed keyword rules (priority order) + live AI settings. Best-effort:
@@ -2432,6 +2478,24 @@
       .filter((d) => d.description && d.description.trim());
   }
 
+  // supabase-js collapses ANY non-2xx from an edge function into a
+  // FunctionsHttpError whose .message is the generic "Edge Function returned a
+  // non-2xx status code". The useful part — our 401 "Sign in to use AI
+  // extraction" or 429 "Daily AI limit reached" — is in the response body
+  // hanging off .context. Without this a supervisor who simply hit the daily
+  // cap is told "AI extraction failed" and goes looking for a fault that isn't
+  // there. (2026-09-19)
+  async function fnErrorMessage(error, fallback) {
+    try {
+      const res = error && error.context;
+      if (res && typeof res.json === 'function') {
+        const body = await res.clone().json();
+        if (body && body.error) return String(body.error);
+      }
+    } catch (_) { /* not JSON, or already consumed — use the generic message */ }
+    return (error && error.message) || fallback;
+  }
+
   window.CloudAI = {
     available: () => true,
     // Deep read is admin-only: it costs several times a flat read (every page
@@ -2441,7 +2505,7 @@
     deepAvailable: () => (userRole || cachedIdentity.role) === 'manager',
     extract: async (text) => {
       const { data, error } = await sb.functions.invoke('extract-defects', { body: { text } });
-      if (error) throw new Error(error.message || 'AI extraction failed');
+      if (error) throw new Error(await fnErrorMessage(error, 'AI extraction failed'));
       if (data && data.error) throw new Error(data.error);
       return normaliseExtracted(data);
     },
@@ -2455,7 +2519,7 @@
       const { data, error } = await sb.functions.invoke('extract-defects', {
         body: { pdf: pdfBase64, trades: trades || [] },
       });
-      if (error) throw new Error(error.message || 'AI extraction failed');
+      if (error) throw new Error(await fnErrorMessage(error, 'AI extraction failed'));
       if (data && data.error) throw new Error(data.error);
       return { items: normaliseExtracted(data), layout: (data && data.layout) || '' };
     }
@@ -3038,6 +3102,37 @@
   const SHARE_BUCKET = 'shared-pdfs';
   let _lastShareKey = null;   // object name of the most recent uploadTempPdf (for CloudMail)
   const SHARE_BASE = 'https://smv-defect-manager.vercel.app/go.html?f=';
+  // The random folder is the ONLY thing between a stranger and a supplier's
+  // report: the bucket is public, so /object/public/… bypasses RLS by design
+  // (that is what makes the link work in a trade's email at all). So it has to
+  // be genuinely unguessable, and it wasn't.
+  //
+  // It used to be
+  //   (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).slice(-12)
+  // which LOOKS like 12 random characters. It isn't: slice(-12) keeps the TAIL
+  // of a 14-char string, so 6 of the 12 are the low digits of the timestamp —
+  // derivable from roughly when the report was sent — and only the other 6 come
+  // from Math.random(), a non-crypto PRNG. ~2.2 billion real combinations, not
+  // the 36^12 the length implies.
+  //
+  // crypto.getRandomValues for all 12 instead. Bytes >= 252 are DISCARDED rather
+  // than folded in: 256 is not a multiple of 36, so a plain % 36 would make the
+  // first four letters of the alphabet measurably likelier than the rest.
+  // No Math.random() fallback on purpose — if crypto is ever missing, the upload
+  // failing loudly (the caller already catches and returns null) beats silently
+  // handing out a weak link. Every PWA context here is HTTPS, where it exists.
+  const SHARE_TOKEN_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';   // 36
+  const shareToken = (len = 12) => {
+    let out = '';
+    while (out.length < len) {
+      const buf = new Uint8Array(len - out.length + 8);
+      crypto.getRandomValues(buf);
+      for (let i = 0; i < buf.length && out.length < len; i++) {
+        if (buf[i] < 252) out += SHARE_TOKEN_ALPHABET[buf[i] % 36];
+      }
+    }
+    return out;
+  };
   // The caller's filename, reduced to something safe as BOTH a URL path segment
   // and a filename on every OS: letters, digits, dot, dash, underscore. Any
   // directory part is dropped, so nothing here can climb out of its folder.
@@ -3059,7 +3154,7 @@
       // would cheerfully attach the wrong supplier's PDF.
       _lastShareKey = null;
       try {
-        const rand = (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).slice(-12);
+        const rand = shareToken();
         const safe = shareFileName(filename || (blob && blob.name));
         const name = rand + '/' + safe;
         const up = await sb.storage.from(SHARE_BUCKET).upload(name, blob, { contentType: 'application/pdf', upsert: true });
@@ -3396,6 +3491,81 @@
         .update({ active: false, updated_at: new Date().toISOString(), updated_by: userId }).eq('id', id);
       if (error) return { error: error.message || String(error) };
       defectWordings = defectWordings.filter(w => w.id !== id);
+      return { ok: true };
+    },
+  };
+
+  // Pre-loaded defect lists. Same shape and same admin as CloudWordings —
+  // profiles.is_wordings_admin is "may edit the shared defect content", and
+  // this is the same person doing the same job, so it is reused rather than
+  // duplicated into a second flag nobody would remember to grant.
+  //
+  // Every write updates the in-memory copy too, so the editor reflects the
+  // change without waiting for the next pull.
+  window.CloudDefectLists = {
+    ready: () => defectListsReady,
+    list: () => defectLists.map(l => ({ ...l, items: l.items.slice() })),
+    canEdit: () => !!(wordingsAdmin || (cachedIdentity && cachedIdentity.wordingsAdmin)),
+    async addList(name, sortN) {
+      const row = { name: String(name || '').trim(), sort_n: Number(sortN) || 1, updated_by: userId };
+      if (!row.name) return { error: 'empty' };
+      const { data, error } = await sb.from('dm_defect_lists').insert(row).select('id, name, sort_n').single();
+      if (error) return { error: error.message || String(error) };
+      defectLists.push({ id: data.id, name: data.name, n: data.sort_n, items: [] });
+      return { ok: true, id: data.id };
+    },
+    async renameList(id, name) {
+      const patch = { name: String(name || '').trim(), updated_at: new Date().toISOString(), updated_by: userId };
+      if (!patch.name) return { error: 'empty' };
+      const { error } = await sb.from('dm_defect_lists').update(patch).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      const hit = defectLists.find(l => l.id === id);
+      if (hit) hit.name = patch.name;
+      return { ok: true };
+    },
+    // Soft delete, same as a wording: the row stays so a list removed by
+    // mistake can be brought back. The items are left alone — they hang off a
+    // list nothing reads, and restoring the list restores them with it.
+    async removeList(id) {
+      const { error } = await sb.from('dm_defect_lists')
+        .update({ active: false, updated_at: new Date().toISOString(), updated_by: userId }).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      defectLists = defectLists.filter(l => l.id !== id);
+      return { ok: true };
+    },
+    async addItem(listId, text, trade, sortN) {
+      const row = {
+        list_id: listId,
+        text: String(text || '').trim(),
+        trade: String(trade || 'Supervisor').trim(),
+        sort_n: Number(sortN) || 1,
+        updated_by: userId,
+      };
+      if (!row.text) return { error: 'empty' };
+      const { data, error } = await sb.from('dm_defect_list_items').insert(row).select('id, text, trade, sort_n').single();
+      if (error) return { error: error.message || String(error) };
+      const hit = defectLists.find(l => l.id === listId);
+      if (hit) hit.items.push({ id: data.id, text: data.text, trade: data.trade, n: data.sort_n });
+      return { ok: true, id: data.id };
+    },
+    async updateItem(id, text, trade) {
+      const patch = {
+        text: String(text || '').trim(),
+        trade: String(trade || 'Supervisor').trim(),
+        updated_at: new Date().toISOString(),
+        updated_by: userId,
+      };
+      if (!patch.text) return { error: 'empty' };
+      const { error } = await sb.from('dm_defect_list_items').update(patch).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      defectLists.forEach(l => l.items.forEach(i => { if (i.id === id) { i.text = patch.text; i.trade = patch.trade; } }));
+      return { ok: true };
+    },
+    async removeItem(id) {
+      const { error } = await sb.from('dm_defect_list_items')
+        .update({ active: false, updated_at: new Date().toISOString(), updated_by: userId }).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      defectLists.forEach(l => { l.items = l.items.filter(i => i.id !== id); });
       return { ok: true };
     },
   };

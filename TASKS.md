@@ -1,6 +1,56 @@
 # Tasks
 
 ## Current sprint
+- [x] **Pre-loaded defect lists** — import a named list onto a job (everything
+      ticked, untick what doesn't apply) so an inspection starts with its
+      regulars already there; plus Settings → Defect lists to keep a bank of
+      them. Built from the existing 62 curated wordings. `tests/deflists.mjs`,
+      build `2026-09-30a`.
+- [ ] **Run `supabase/migrations/2026-09-30_defect_lists.sql`.** Until then the
+      app uses its built-in Standard PCI starter list and the editor is
+      read-only. Additive only; needs the 2026-09-02 wordings-admin migration
+      first, and says so if it is missing.
+- [ ] 🚨 **ROTATE THE MANAGER PASSWORD.** `cloud-sync.js:61-63` holds
+      `ALIAS_USER` / `ALIAS_EMAIL` / `ALIAS_PASS` as literals — a manager
+      account's real password among them. Typing the alias as both username and
+      password at sign-in logs you in as that manager, and the file is served
+      publicly. **Deleting the lines does not fix it** — the password is
+      already public, git history included. Rotate the account password first,
+      then decide whether the alias shortcut should exist at all (it can't live
+      in public JS). `tests/pass.mjs` covers the alias. This outranks every
+      other item in this file.
+- [x] **Security: share-link tokens are now genuinely random** — the folder in a
+      public-bucket PDF link had ~6 real random characters out of 12 (the rest
+      was a timestamp, via `Math.random()`). Now 12 from `crypto.getRandomValues`.
+      `tests/sharetoken.mjs`. Build `2026-09-19a`.
+- [x] **Security: `extract-defects` now checks who is calling** — it read no
+      Authorization header at all, so the public anon key let anyone run up the
+      Anthropic bill on `claude-opus-5`. Identity fails closed; the 50/user/day
+      cap fails open until its migration runs. It never touched the database, so
+      this was billing, not a data leak.
+- [ ] **Run `supabase/migrations/2026-09-19_ai_call_quota.sql`**, then
+      **`supabase functions deploy extract-defects`**. The deploy is what
+      actually closes the door and needs no migration — do it even if the rest
+      waits.
+- [ ] **⚠️ Every logged-in user can see every defect and photo row**
+      (`dm_defects` / `dm_defect_photos` are `USING(true)`). Fix is WRITTEN —
+      `supabase/migrations/2026-09-19_defect_job_scoping.sql`, restrictive
+      policies so rollback is two lines — but **run `supabase/inspect_defect_rls.sql`
+      first** and check query 6 (defects with `job_id IS NULL` go invisible to
+      supervisors). Written without DB access; `schema.sql` here is stale.
+- [ ] Decide retention for the 380+ `shared-pdfs` supplier PDFs, which never
+      expire. Needs a number, not code: a trade may open a link weeks later, so
+      the tracker's 30-business-day photo rule may be too short.
+- [x] **Private Inspection imports say "PI" and keep the report's own item
+      numbers/page ranges; a pasted table (Trade / Item # / Page / Location /
+      Defect) parses straight in, no AI needed.** Build `2026-09-09a`, tested
+      (`tests/pitable.mjs`, full `./tests/run.sh` green) — see NEXT_STEPS.md
+      and DECISIONS.md 2026-09-09. **Not deployed** — needs the go-ahead to
+      merge `claude/sharp-brown-mfn4cd` to `main`.
+- [ ] **Once approved and live: paste the actual 38-item PI report** (Report
+      type: Private Inspection) for the job it belongs to, and confirm the
+      review screen shows `PI #2.04 (p.12-13)` etc. with trade/location
+      pre-filled per row before saving each one.
 - [ ] **Confirm a plan actually opens on a phone for a job that has one.**
       Needs CH Tracker migration 101 applied and a plan uploaded against that
       job number.
@@ -29,6 +79,9 @@
       them; if the trades don't exist those wordings can never be reached by
       picking a supplier. The editor flags them amber, so this is visible on
       the screen itself — either add the trades or move the wordings.
+      Also now affects PI report imports (2026-09-09): a pasted PI table
+      using "Bricklayer" or "Shower Screen" as its Trade column can't
+      pre-fill an assignee until the placeholder exists — see NEXT_STEPS.md.
 - [x] **The curated defect-wording list is live** — 62 items across 12 trades,
       seeded into `dm_defect_wordings` and compiled into index.html as the
       offline/pre-migration fallback.

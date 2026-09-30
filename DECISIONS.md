@@ -2,6 +2,271 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-09-30 (b) — pre-loaded defect lists — build `2026-09-30a`
+
+- **Spiro:** *"Create defect lists for inspections… there are certain things
+  that will appear on every single report so rather than entering it in you're
+  pretty much taking photos and matching the photos to that item."* Then, asked
+  how it should be shaped: *"I want the import to be the current 'preloaded
+  list you have' but the ability to also create pre loaded defect lists, edit
+  and add and remove items… like be able to create a bank of them."*
+- **Decision: a list is a saved SELECTION of the wordings bank, not a second
+  vocabulary.** The 62 curated wordings are already the house language; the
+  seeded Standard PCI list is built entirely from them (the test asserts that —
+  18 of 18 items are existing wordings), and the editor's add-item form leads
+  with a picker of those wordings that fills both the text and its trade.
+  Spiro's own examples map straight onto rows that already existed: mortar
+  smears → *Clean brick smears*, blowouts → *Repair brickwork blow outs*.
+- **But items store their own TEXT, not a foreign key to a wording.** Editing a
+  wording later must not silently rewrite every list built from it, and a list
+  has to be able to hold a one-off line that was never a wording. The
+  denormalisation is the point, not an oversight.
+- **Same admin as wordings, reused deliberately.** `profiles.is_wordings_admin`
+  already means "may edit the shared defect content" and it is the same person
+  doing the same job. A second flag would be a second thing to grant, forget,
+  and get out of step.
+- **Everything starts TICKED on import.** The whole premise is that these are
+  the items that turn up every time, so the common case is all of them; the
+  ticks exist to drop the two that don't apply to this house, not to make you
+  choose twenty times. The failure that matters is rows nobody meant to raise
+  sitting on a job looking like real defects — unticking two is cheaper than
+  that, and cheaper than tapping twenty.
+- **Imports go through `db.addDefect` with `matchCompleted`,** the same guard
+  the report import uses, so importing the same list onto the same job twice
+  does not double it. The toast says what actually happened ("16 added · 2
+  already on this job") so an accidental second import reads as nothing new
+  rather than looking broken.
+- **A trade with no placeholder lands UNASSIGNED rather than failing.**
+  Resolution is `findContractorByExactName`, the same path a typed name and a
+  quick-trade chip take. TASKS.md still has Bricklayer and friends unconfirmed;
+  an import must not be all-or-nothing on that.
+- **Entry point is a line above the blocks on Add Defects, NOT a fourth header
+  icon.** That header already carries 📐 🎞️ 💾; a fourth does not fit a phone
+  at 30px and `hdr.mjs` pins the layout. It is the thing you tap once at the
+  start, before anything is typed, so a line there is the right weight — and
+  the 2026-09-01 lesson about the "Contractor missing?" strip was about a HINT
+  costing a line, not an action.
+- **Built-in starter list ships in index.html**, same contract as
+  `CURATED_DEFECT_WORDINGS`: it is what the app uses until
+  `2026-09-30_defect_lists.sql` is run, and it is superseded — never merged —
+  once the shared bank is readable, or a list deleted in the editor would keep
+  coming back.
+- **Trade-off accepted:** no reordering of items in the editor yet (they sort
+  by `sort_n`, which is set on insert and never edited), and no location on an
+  item. Location changes per job, and a default that is wrong most of the time
+  is worse than blank. Both are easy to add if the shape proves right in use.
+- **Test:** `tests/deflists.mjs` — the fallback, the tick-list, trade
+  resolution both ways, the no-double-import guard, and the editor writing
+  through to the bank. Migration is additive only (two new tables), so it
+  cannot disturb anything CH Tracker reads.
+
+## 2026-09-19 — three security fixes: share-link randomness, AI function auth + cap, defect job scoping — build `2026-09-19a`
+
+Prompted by a direct question — "no one being able to hack into the app or
+expose any of the information inside it, has it been taken care of?" — against
+a shared database (`cubwwnvzmeydyixhetfb`) the CH Tracker app also uses. The
+honest answer was no, in three separate ways. Two are fixed in code; the third
+is written but must not be run unverified.
+
+### 1. Share links were weaker than their length implied — FIXED
+
+- **Was:** `(Date.now().toString(36) + Math.random().toString(36).slice(2,8)).slice(-12)`.
+  Twelve characters that look random and aren't: `slice(-12)` keeps the TAIL of
+  a 14-char string, so six are the low digits of the timestamp (derivable from
+  roughly when the report was sent) and six come from `Math.random()`, a
+  non-crypto PRNG. ~2.2 billion real combinations, not 36^12.
+- **Why it matters:** the `shared-pdfs` bucket is PUBLIC — `/object/public/…`
+  bypasses RLS by design, which is what makes the link work in a trade's email.
+  So that folder name is the only thing between a stranger and a supplier's
+  report. The code comment already said "the random folder is what keeps the
+  link unguessable"; the implementation didn't deliver it.
+- **Now:** `crypto.getRandomValues` for all 12 characters, bytes ≥ 252
+  discarded rather than folded in (256 isn't a multiple of 36, so a plain
+  `% 36` would bias the first four letters). Same 12-char length, so links stay
+  short enough to auto-linkify in Mail — the property that put the name there.
+- **No `Math.random()` fallback on purpose.** If `crypto` is ever missing the
+  upload fails (the caller already catches and returns null). Silently handing
+  out a weak link is worse than a visible failure.
+- **`randName()` at cloud-sync.js ~1916 was left alone deliberately** — it names
+  a file *inside* a job-uuid folder in a private bucket whose RLS checks
+  `is_assigned_to_job(foldername[1])`. Path obscurity isn't the boundary there.
+- **Test: `tests/sharetoken.mjs`**, and the check that matters is the PREFIX
+  one. Reverting to the old line makes it fail loudly — all 60 tokens began
+  `8b9ct`, and the first four positions had ONE distinct character across 60
+  samples. "Is it 12 characters" and "are they unique" both PASS against the
+  broken version, which is exactly why neither is worth having on its own.
+
+### 2. extract-defects had no auth check at all — FIXED in code
+
+- **Was:** the function never read the Authorization header. The platform's JWT
+  gate is satisfied by the public anon key — which ships in index.html,
+  correctly, since it's the key the browser signs in with — so anyone who
+  opened the site could POST to it as often as they liked, every call going to
+  `claude-opus-5`. The only guards were per-CALL size caps; nothing capped the
+  number of calls. It also made the 50/user/day figure in the tracker's
+  05_AI_PROMPTS.md unenforceable in principle: there was no "user" in scope.
+- **Scope of the exposure, stated precisely:** that function never touches the
+  database and never did. It reads only what the caller posts. So this was
+  billing/abuse, **not** a defect-data leak.
+- **Now, and the two halves fail in opposite directions on purpose:**
+  - **Identity fails CLOSED.** `/auth/v1/user` with the caller's bearer token;
+    an anon-key-only caller gets 401. Needs nothing from the database, so it
+    works the moment the function is deployed. This is the load-bearing fix.
+  - **The cap fails OPEN.** 50/user/day via `ai_quota_bump`. Migrations here are
+    run BY HAND, so there is always a window where the function is deployed and
+    the table isn't there yet — failing closed would break every import on site
+    until someone ran SQL. An unreachable counter logs `[quota unavailable]` and
+    lets the call through.
+- **Counted BEFORE the Anthropic call**, so a run of failures isn't a free way
+  round the cap. Trade-off accepted: a failed extraction still spends one of
+  the 50. That's the right way to be wrong.
+- **`ai_call_quota` is deliberately NOT `dm_`-prefixed.** The same spec covers
+  four LLM functions across both apps on this one database; an `fn` column lets
+  CH Tracker's three adopt the table without a second migration or a second
+  convention. Creating it changes nothing existing, so the tracker side can
+  ignore it at zero cost — flagged to them rather than assumed.
+- **Client:** supabase-js collapses every non-2xx into a generic "Edge Function
+  returned a non-2xx status code". `fnErrorMessage()` digs the real text out of
+  `error.context`, so a supervisor who hits the cap is told that, instead of
+  "AI extraction failed" sending them hunting for a fault that isn't there.
+  Both AI paths (flat and deep read) surface it, and both still fall back to
+  the basic parser, so hitting the limit never blocks an import.
+
+### 3. Every logged-in user can see every defect and photo — WRITTEN, NOT APPLIED
+
+- **The finding:** `dm_defects` and `dm_defect_photos` are `USING(true)` for all
+  authenticated users. That is the single biggest information-exposure item in
+  the app, and it isn't a break-in — it's the app working as configured for
+  anyone with an account. It contradicts the job-level isolation the tracker
+  introduced in 120/121.
+- **Mitigating detail worth knowing:** the photo FILES were already job-scoped
+  by the `defect-photos` bucket policy (`is_assigned_to_job(foldername[1])`).
+  It's the metadata ROWS beside them that were open.
+- **Decision: RESTRICTIVE policies, not replacements.** The obvious move is to
+  drop the `USING(true)` policies and write new ones — that needs their exact
+  names, and this repo cannot see the live database. `schema.sql` here still
+  describes a `workspace_id` / `is_workspace_member()` model that the live
+  tables no longer use (live `dm_defects` is keyed on `job_id`, per
+  cloud-sync.js ~1369 and its "job_id-based RLS check" comment), and 120-124
+  exist nowhere in this repo. PostgreSQL ANDs restrictive policies with
+  whatever is already there, so `permissive(true) AND restrictive(job check)`
+  collapses to the job check without dropping, renaming, or depending on a
+  policy this file has never seen. **Rollback is two `DROP POLICY` lines and
+  needs no backup.**
+- **The rule mirrors 120 exactly** so the two can't drift: manager OR
+  `is_cert_team()` OR `is_assigned_to_job(job_id)`, in one function
+  (`dm_can_see_job`) rather than duplicated per table.
+- **NOT RUN, and it must not be run blind.** Its preflight RAISEs rather than
+  half-applying if any assumption is wrong, but the real prerequisite is
+  `supabase/inspect_defect_rls.sql` (read-only, new) — especially query 6, the
+  count of defects with `job_id IS NULL`. Those stay visible to managers and
+  the cert team and become invisible to supervisors, because there is no job to
+  be assigned to. If that count isn't ~0, the data needs fixing first.
+- **Trade-off accepted:** this is the one of the three where "written and
+  reasoned" is not the same as "done". Applying it changes what people see on
+  a live app used on site, and a second app shares the database.
+
+### 4. A working manager password is published in the client — FOUND, NOT FIXED
+
+Found while verifying that the new auth check wouldn't break legitimate users
+(does the app always hold a real Supabase session? — yes, `signInWithPassword`
+with `persistSession`). `cloud-sync.js:61-63` hardcodes `ALIAS_USER`,
+`ALIAS_EMAIL` and `ALIAS_PASS` as literals — a manager account's email and its
+real password — and typing the alias as both username and password at the
+sign-in form signs you in as that **manager**. (The values are not repeated
+here: they are already in one public place too many, and a copy in the docs
+would outlive the rotation.)
+
+- **This is the real answer to "can someone hack into the app".** The file is
+  served publicly, the repo is public, and the shortcut is guessable without
+  reading any source. Everything else in this entry is secondary to it.
+- **It also defeats the other three fixes:** a manager login passes the new
+  `extract-defects` auth check legitimately, and sees every job under the new
+  RLS policy by design. Scoping data by role is worth nothing if the role is
+  free to anyone who types `qwqw` twice.
+- **Deliberately NOT removed.** Deleting the three lines does not fix it — the
+  password is already disclosed, git history included. Removing it would lock
+  the manager out of his shortcut while leaving a known-public password live on
+  the account: the appearance of a fix and none of the substance. The fix is to
+  ROTATE the password, which needs credentials this session doesn't have and
+  coordination with whoever uses the shortcut.
+- It sat on the backlog as "decide what to do about `ALIAS_PASS`". Re-filed as
+  the top item, because it is not a decision — it is an open door.
+
+### Not done
+
+- **Item 3 of the briefing (shared-pdfs never expire, 380 files since July)** —
+  untouched. It's storage hygiene, not an exposure, and it needs a retention
+  decision first: a trade may come back to a link weeks after it was sent, so
+  the tracker's 30-business-day rule for progress photos isn't automatically
+  the right number here.
+- **Nothing was applied to the database and nothing was deployed.** No DB
+  credentials in the session that wrote this, and `AGENT_INSTRUCTIONS.md` says
+  stop and ask before anything goes live.
+
+## 2026-09-09 — Private Inspection imports say "PI", keep the report's own item numbers, and a pasted table parses without AI — build `2026-09-09a`
+
+- **Decision:** a Private Inspection report's saved reference now reads
+  `PI #3.27 (p.53-54) — ...`, not the old `Item #7 (p.3) — ...`.
+  `REPORT_REF_RE` — and the two other spots that read the same shape
+  (`reportRefWord`, and the preview-card `(p.N)` → `· p.N` reformat) — now
+  accept a **decimal item number** (a PI report's own section.item numbering,
+  e.g. "3.27") and a **page range** ("53-54"), neither of which the old
+  integer-only regex could hold at all.
+- **Why:** these reports arrive as a table (Trade / Item # / Report Page /
+  Location / Defect) with the inspector's OWN numbering, not a sequential
+  list — collapsing that down to "Item #1, #2, #3…" made the saved defect
+  useless for pointing back at the actual report page, which is the entire
+  reason the reference is prefixed in the first place. "PI" (as opposed to
+  "BPI", the BPI360 quality-assurance inspection) is also just what these are
+  already called on site: "PI Items — not to be confused as BPI Items."
+- **New: `parseTabularDefects`.** When a Private Inspection paste is already
+  a clean table — tab-separated (the normal shape copied out of Excel/Word)
+  or aligned with 2+ spaces, an optional header row recognised and dropped —
+  it parses deterministically into `{trade, itemNo, page, location,
+  description}` per row. No AI call, nothing to guess, and the only path
+  that can carry a decimal item number or a page range through at all: the
+  `extract-defects` AI path (`normaliseExtracted` in cloud-sync.js) only
+  ever returns a numeric `page` and no item number whatsoever, by design.
+  **All-or-nothing:** one line that doesn't fit the five-column shape and
+  the whole paste is treated as prose instead, falling through to the AI /
+  freeform-bullet parser exactly as before — an ordinary messy paste is
+  never at risk from this change.
+- **New: `findContractorByExactName`.** A structured row's Trade column is
+  often already the exact name the app needs — a real sub ("Fix N Chips
+  Roxburgh Park") or a trade placeholder ("Bricklayer", "Shower Screen") —
+  not free text to run through `BPI_TRADE_KEYWORDS`. An exact,
+  case-insensitive match pre-fills the review screen's Assign field before
+  the supervisor even opens that item. No match just leaves it exactly as
+  unfilled as it does today — no guessing.
+- **Backward compatible, on purpose.** `REPORT_REF_RE` still matches the old
+  `Item` word (only NEW saves write "PI"), so a description saved before
+  this change keeps stripping/comparing correctly — the duplicate guard,
+  trade learning, and every export all key off it.
+  `stripReportRef`/`splitReportRef`/`formatDefectEmailLine` needed no
+  changes at all; they already treat the reference as an opaque label.
+- **Not done / needs a person, not code.** Some Trade values that show up
+  on real PI reports (`Bricklayer`, `Shower Screen`, `Supervisor`,
+  `Caulker`, …) may not exist yet as live trade placeholders in
+  `dm_contractors` — see the open item in TASKS.md asking Spiro to confirm
+  the trade list. Until they do, `findContractorByExactName` simply finds no
+  match for those and the review screen falls back to the keyword chips
+  exactly as it does today — nothing breaks, the pre-fill just doesn't help
+  until the placeholders exist.
+- **Test:** `tests/pitable.mjs` (new, added to gate 3) parses the shape both
+  tab- and space-delimited, proves ordinary prose still falls through
+  untouched, and drives the ACTUAL review screen's Save button (same pattern
+  as `fixes.mjs`) to confirm the final saved description is byte-for-byte
+  `PI #3.27 (p.53-54) — Defective external paint finish - blemishes, patchy
+  coverage, runs, texture variation` — the exact worked example given for
+  this change. `tests/deep.mjs` had three assertions pinned to the old
+  "Item #" wording; updated to "PI #" since that word change was the point,
+  not a regression. All four gates green (`./tests/run.sh`).
+- **Not deployed.** `AGENT_INSTRUCTIONS.md` says stop and ask before anything
+  goes live. Version stamps bumped to `2026-09-09a` (all four places, gate 4
+  green) so the build is ready to ship as soon as it's approved. On branch
+  `claude/sharp-brown-mfn4cd`.
+
 ## 2026-09-02 (b) — the wordings admin is named in the migration
 
 - **Spiro gave the address: `svladimiroski@hotmail.com`.** (a) deliberately left

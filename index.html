@@ -3281,10 +3281,27 @@
                          (Spiro 2026-09-01: "taking up too much space… only do an
                          icon"). -->
                     <div style="padding: 10px 12px;">
+                        ${renderDefectListImportButton(addressId)}
                         ${addDefectBlocksHtml()}
                     </div>
                 </div>
             `;
+        }
+
+        // One line, above the blocks, and only here — this is the thing you tap
+        // once at the START of an inspection, before anything is typed. It is
+        // NOT in the header: that row already carries 📐 🎞️ 💾, a fourth icon
+        // does not fit a phone at 30px, and hdr.mjs pins that layout.
+        function renderDefectListImportButton(addressId) {
+            const lists = defectListBank();
+            if (!lists.length) return '';
+            return `
+                <div onclick="openDefectListImport(${addressId})"
+                     style="display:flex;align-items:center;justify-content:center;gap:7px;margin:0 0 10px;padding:10px 12px;border:1px dashed var(--border-color,#ccc);border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text-secondary,#777);"
+                     title="Drop a pre-loaded list of defects onto this job">
+                    📋 Import a defect list
+                    <span style="font-weight:400;font-size:12px;opacity:.8;">· ${lists.length} available</span>
+                </div>`;
         }
 
         function renderAddDefectsContractor(contractorId) {
@@ -3604,6 +3621,16 @@
                             <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">📝 Defect wordings</div>
                             <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Suggestions offered as you type a defect, grouped by trade. <strong>${wordingsSummary()}</strong></div>
                             <button onclick="showWordingsEditor()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--blue, #2563eb); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">${wordingsCanEdit() ? 'Edit wordings' : 'View wordings'}</button>
+                        </div>` : ''}
+
+                        <!-- Defect lists. Same audience and same admin flag as
+                             the wordings card above: one is the vocabulary, the
+                             other is a saved selection of it. -->
+                        ${wordingsIsManager() ? `
+                        <div style="margin-bottom: 20px; padding: 20px; background: var(--card-bg); border: 2px solid var(--border-color); border-radius: 10px;">
+                            <div style="font-size: 17px; font-weight: 600; margin-bottom: 5px; color: var(--text-primary);">📋 Defect lists</div>
+                            <div style="font-size: 14px; color: var(--text-secondary); margin-bottom: 12px;">Pre-loaded lists imported onto a job in one go, so an inspection starts with its regulars already there. <strong>${defectListsSummary()}</strong></div>
+                            <button onclick="showDefectListsEditor()" style="padding: 11px 18px; border: none; border-radius: 10px; background: var(--blue, #2563eb); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;">${defectListsCanEdit() ? 'Edit lists' : 'View lists'}</button>
                         </div>` : ''}
 
                         <!-- Themes -->
@@ -4352,15 +4379,37 @@
             // Match the My Jobs list row styling exactly (same padding, text
             // sizes, 40px icons) so search results look identical to the list.
             const ico = 'flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid var(--brd,rgba(128,128,128,.3));cursor:pointer;font-size:18px;line-height:38px;text-align:center;';
+            // …including the outstanding-defect marker, which it did NOT until
+            // 2026-09-30. "Look identical to the list" was true of the padding
+            // and icons and false of the one thing you actually read off a row:
+            // a job searched for showed no count while the same job two inches
+            // below it in My Jobs showed a red bar and a number. Same source
+            // (open defects per address), same toggle (showDefectMarkers), so
+            // the two cannot disagree about a job again.
+            const searchOutstanding = {};
+            if (withIcons) (db.data.defects || []).forEach(d => {
+                if (d.status === 'completed' || d.completed) return;
+                searchOutstanding[d.addressId] = (searchOutstanding[d.addressId] || 0) + 1;
+            });
+            const searchMarkersOn = withIcons && showDefectMarkers();
             dropdown.innerHTML = items.slice(0, 5).map(item => {
                 if (withIcons) {
                     const canAdd = (item.type === 'address' || item.type === 'contractor');
                     const main = item.type === 'address'
                         ? `<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.street}</div>${item.sub ? `<div style="font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.sub}</div>` : ''}`
                         : `<div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.label}</div>`;
+                    // Only addresses carry a count — a contractor or trade row
+                    // isn't one job, so a number on it would mean something else.
+                    const oc = (item.type === 'address') ? (searchOutstanding[item.id] || 0) : 0;
+                    const flagged = searchMarkersOn && oc > 0;
+                    const badge = flagged
+                        ? `<span title="${oc} outstanding defect${oc > 1 ? 's' : ''}" style="flex:0 0 auto;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 6px;border-radius:11px;background:var(--red,#DC143C);color:#fff;font-size:12px;font-weight:400;">${oc}</span>`
+                        : '';
+                    const rowExtra = flagged ? 'border-left:4px solid var(--red,#DC143C);padding-left:8px;' : '';
                     return `
-                    <div class="autocomplete-item" style="display:flex;flex-wrap:nowrap;align-items:center;gap:8px;padding:10px 12px;font-size:15px;">
+                    <div class="autocomplete-item" style="display:flex;flex-wrap:nowrap;align-items:center;gap:8px;padding:10px 12px;font-size:15px;${rowExtra}">
                         <div style="flex:1 1 auto;min-width:0;overflow:hidden;cursor:pointer;" onclick="viewDefectsFor('${item.type}', ${item.id})">${main}</div>
+                        ${badge}
                         <div style="flex:0 0 auto;display:flex;gap:6px;">
                             ${item.type === 'address' ? `<div style="${ico}" onclick="event.stopPropagation();copyAddressToClipboard(${item.id})" title="Copy the full address">📋</div>` : ''}
                             <div style="${ico}" onclick="event.stopPropagation();viewDefectsFor('${item.type}', ${item.id})" title="View defects">👁️</div>
@@ -4625,7 +4674,27 @@
                     return r || a.name.localeCompare(b.name);
                 });
 
-            if (contractors.length === 0 || value === '') {
+            // EMPTY FIELD → the quick-trade chips, not nothing (site feedback
+            // 2026-09-30). Focusing "Contractor 1" used to show an empty
+            // dropdown: you had to already know a company name and start typing,
+            // when most rows only ever want "the painter". Bulk Import has had
+            // one-tap chips for this since 2026-08-15 and the ask was simply to
+            // give the same options here.
+            //
+            // BULK_QUICK_TRADES is shared rather than copied, so the two screens
+            // cannot drift into offering different trades. _ensureBulkPhotoStyles
+            // owns .bulk-quick-chip; everything else it injects is scoped to
+            // #bulk-photo-ov / #bulk-sup-quick, so it cannot leak into this screen.
+            if (value === '') {
+                _ensureBulkPhotoStyles();
+                dropdown.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;padding:9px 10px;">${
+                    BULK_QUICK_TRADES.map(t => `<button type="button" class="bulk-quick-chip" onclick="pickAddDefectsQuickTrade('${t.replace(/'/g, "\\'")}', ${contractorNum || 0})">${t}</button>`).join('')
+                }</div>`;
+                dropdown.classList.add('active');
+                return;
+            }
+
+            if (contractors.length === 0) {
                 dropdown.classList.remove('active');
                 return;
             }
@@ -4641,6 +4710,22 @@
             `).join('');
             
             dropdown.classList.add('active');
+        }
+
+        // A chip is the trade WORD, resolved exactly as a typed one would be:
+        // trade placeholders are ordinary contractor rows, so an exact-name match
+        // selects one properly (id recorded, same as tapping the dropdown).
+        // If the placeholder doesn't exist yet — TASKS.md still has Bricklayer and
+        // friends unconfirmed — the word is left in the field anyway and
+        // resolveAddDefectsContractor's what-you-see-is-what-you-save matching
+        // handles it, which is exactly what typing it by hand does today.
+        function pickAddDefectsQuickTrade(trade, contractorNum) {
+            const id = findContractorByExactName(trade);
+            if (id != null) { selectAddDefectsContractor(id, trade, contractorNum); return; }
+            const input = document.getElementById(contractorNum ? `add-contractor-${contractorNum}-input` : 'add-defects-contractor-input');
+            const dd = document.getElementById(contractorNum ? `add-contractor-${contractorNum}-dropdown` : 'add-defects-contractor-dropdown');
+            if (input) input.value = trade;
+            if (dd) dd.classList.remove('active');
         }
 
         function selectAddDefectsContractor(id, name, contractorNum) {
@@ -6645,7 +6730,7 @@
             const ref = splitReportRef(defect.description);
             const body = ref.body;
             // The card shows "BPI #7 · p.3", not the saved "BPI #7 (p.3)".
-            const refLbl = ref.label.replace(/\s*\(p\.(\d+)\)/, ' · p.$1');
+            const refLbl = ref.label.replace(/\s*\(p\.(\d+(?:[-–]\d+)?)\)/, ' · p.$1');
             const loc = defect.location ? `<span class="pv-loc">${_pvEsc(defect.location)}</span>` : '';
             const n = (window.CloudPhotos && window.CloudPhotos.count(defect.id)) || 0;
             return `<div class="pv-card ${done ? 'pv-done' : ''}" data-pv="${defect.id}">
@@ -8980,6 +9065,9 @@
                     case 'wordings':
                         content = renderWordingsScreen();
                         break;
+                    case 'deflists':
+                        content = renderDefectListsScreen();
+                        break;
                 }
             } catch (err) {
                 console.error('[render] view "' + state.currentView + '" failed:', err);
@@ -10038,7 +10126,9 @@
                 return res;
             } catch (err) {
                 console.error('[deep read]', err);
-                showToast('Deep read failed — using standard AI extraction', true);
+                // Same reasoning as the flat path: if the server said why (signed
+                // out, daily AI cap), say that rather than "Deep read failed".
+                showToast((err && err.message ? err.message : 'Deep read failed') + ' — using standard AI extraction', true);
                 return null;
             }
         }
@@ -10050,13 +10140,24 @@
                 const res = await deepReadReport(reportFile);
                 if (res) { items = res.items; opts = { layout: res.layout, photoMode: 'anchor' }; }
             }
+            if (!items.length) {
+                const tabular = parseTabularDefects(rawText);
+                if (tabular) items = tabular.map(it => {
+                    const cid = findContractorByExactName(it.trade);
+                    return cid != null ? Object.assign({}, it, { _contractorId: cid }) : it;
+                });
+            }
             if (!items.length && useAI) {
                 impSetBusy('🤖 Reading the report with AI…');
                 try {
                     items = await window.CloudAI.extract(rawText);
                 } catch (err) {
                     console.error('[AI extract]', err);
-                    showToast('AI extraction failed — using basic parser', true);
+                    // Show the REAL reason when the server gave one — signed out,
+                    // or the daily AI cap. "AI extraction failed" sends a
+                    // supervisor hunting for a fault when they have simply hit
+                    // the limit, and the import still works either way.
+                    showToast((err && err.message ? err.message : 'AI extraction failed') + ' — using basic parser', true);
                     items = parseReportDefects(rawText);
                 }
             } else if (!items.length) {
@@ -10173,17 +10274,66 @@
         }
 
         // ===========================================================================
+        //  Structured paste — a Private Inspection report a supervisor already has as
+        //  a table (Trade / Item # / Report Page / Location / Defect or Finding),
+        //  copied out of a spreadsheet instead of typed as prose. Tab-separated (the
+        //  normal shape when a table is copied out of Excel/Word) or aligned with 2+
+        //  spaces; an optional header row is recognised (its Item#/Page cells aren't
+        //  numeric) and dropped. Deterministic — the columns are already right there,
+        //  so there's nothing for AI or the freeform bullet parser to guess — and the
+        //  only path that keeps the report's OWN item numbering (section.item, e.g.
+        //  "3.27", not sequential) and a page RANGE ("53-54"), neither of which the
+        //  AI extraction round-trip preserves (extract-defects only returns a numeric
+        //  page and no item number at all). All-or-nothing: one line that doesn't fit
+        //  the shape means this isn't a table, and extractAndReview falls back to
+        //  AI / the freeform parser exactly as before. (2026-09-09)
+        // ===========================================================================
+        function _splitTabularRow(line) {
+            let cells;
+            if (line.indexOf('\t') !== -1) cells = line.split('\t').map(s => s.trim());
+            else {
+                const m = line.match(/^(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(.+?)\s{2,}(.+)$/);
+                cells = m ? m.slice(1) : null;
+            }
+            if (!cells || cells.length < 5) return null;
+            return [cells[0], cells[1], cells[2], cells[3], cells.slice(4).join(' ').trim()];
+        }
+        function _isTabularRow(cells) {
+            return !!cells && /^\d+(?:\.\d+)?$/.test(cells[1]) && /^\d+(?:[-–]\d+)?$/.test(cells[2]) && !!cells[4];
+        }
+        function parseTabularDefects(text) {
+            if (!text) return null;
+            const lines = text.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length < 2) return null;
+            const first = _splitTabularRow(lines[0]);
+            if (!first) return null;   // not columnar at all — let the caller fall back
+            const rows = _isTabularRow(first) ? lines : lines.slice(1);   // drop a header row
+            if (!rows.length) return null;
+            const items = [];
+            for (const line of rows) {
+                const cells = _splitTabularRow(line);
+                if (!_isTabularRow(cells)) return null;   // one line off-shape → not a table, bail entirely
+                items.push({ trade: cells[0], itemNo: cells[1], page: cells[2], location: cells[3], description: cells[4] });
+            }
+            return items;
+        }
+
+        // ===========================================================================
         //  BPI360 smart import — structured defects (location, page, trade) so the
         //  supervisor reviews + allocates instead of typing. (Spiro 2026-06-09)
         // ===========================================================================
         // Every defect imported from a report is saved with its report reference in
         // front of the description ("BPI #7 (p.3) — ..."), so a supplier's list
-        // points straight back at the page. Deep-read private reports get the same
-        // treatment under "Item #N", since they have no numbering of their own.
+        // points straight back at the page. Private Inspection reports get the same
+        // treatment under "PI #N" — a PI report has its own item numbering (often
+        // decimal, e.g. "3.27") and sometimes a page RANGE ("p.53-54"), so the
+        // number/page groups accept those shapes too, not just a plain integer.
         // ONE regex for the whole app: the label is written in two places and
         // stripped in four, and they must never drift apart. (Spiro 2026-08-02)
-        const REPORT_REF_RE = /^(?:BPI|Item) #(\d+)(?:\s*\(p\.(\d+)\))?\s*—\s*/;
-        const reportRefWord = reportType => (reportType === 'BPI' || !reportType) ? 'BPI' : 'Item';
+        // "Item" is kept as a matchable word (never written for a new save) purely
+        // so a description saved before this change still strips/compares correctly.
+        const REPORT_REF_RE = /^(?:BPI|PI|Item) #([\d.]+)(?:\s*\(p\.(\d+(?:[-–]\d+)?)\))?\s*—\s*/;
+        const reportRefWord = reportType => (reportType === 'BPI' || !reportType) ? 'BPI' : 'PI';
         const stripReportRef = s => String(s || '').replace(REPORT_REF_RE, '');
         // Split a saved description into its report reference and the defect text.
         // { label: 'BPI #7 (p.3)' | '', body: 'the defect' } — label is '' when the
@@ -10238,6 +10388,18 @@
                 const hay = ((c.trades || '') + ' ' + (c.name || '')).toLowerCase();
                 return kws.some(k => hay.includes(k));
             });
+            return hit ? hit.id : null;
+        }
+        // A structured paste's Trade column is often already the exact name the app
+        // needs — a real sub ("Fix N Chips Roxburgh Park") or a trade placeholder
+        // ("Bricklayer", "Shower Screen") — not free text to classify. An exact match
+        // pre-fills the review's Assign field with confidence, ahead of the keyword
+        // guesses BPI_TRADE_KEYWORDS would otherwise need. No match (the trade
+        // placeholder doesn't exist yet) just leaves it unfilled, same as today.
+        function findContractorByExactName(name) {
+            const t = (name || '').trim().toLowerCase();
+            if (!t) return null;
+            const hit = db.getContractors().find(c => (c.name || '').trim().toLowerCase() === t);
             return hit ? hit.id : null;
         }
         // ── Framework call-up: who was actually engaged for a trade on THIS job ──
@@ -10572,6 +10734,183 @@
         }
 
         // ===================================================================
+        //  PRE-LOADED DEFECT LISTS  (Spiro 2026-09-30)
+        //  "There are certain things that will appear on every single report,
+        //  so rather than entering it in you're pretty much taking photos and
+        //  matching the photos to that item."
+        //
+        //  A list is a named bundle of items dropped onto a job in one go. The
+        //  items are the SAME wordings the suggestions use — a list is a saved
+        //  selection of the house vocabulary, not a second vocabulary.
+        //
+        //  This built-in copy is the fallback, exactly like
+        //  CURATED_DEFECT_WORDINGS: it is what the app uses until
+        //  supabase/migrations/2026-09-30_defect_lists.sql has been run, and it
+        //  is superseded the moment the shared bank is readable — never merged
+        //  with it, or a list deleted in the editor would keep coming back.
+        // ===================================================================
+        const BUILTIN_DEFECT_LISTS = [
+            { id: 'builtin-pci', name: 'Standard PCI', n: 100, items: [
+                { id: 'b1',  text: 'Clean brick smears.',                              trade: 'Brick Cleaner', n: 10 },
+                { id: 'b2',  text: 'Clean out weepholes.',                             trade: 'Brick Cleaner', n: 20 },
+                { id: 'b3',  text: 'Repair brickwork blow outs.',                      trade: 'Bricklayer',    n: 30 },
+                { id: 'b4',  text: 'Complete outstanding caulking.',                   trade: 'Caulker',       n: 40 },
+                { id: 'b5',  text: 'Caulk gaps to window, top and bottom.',            trade: 'Caulker',       n: 50 },
+                { id: 'b6',  text: 'Seal service penetrations.',                       trade: 'Caulker',       n: 60 },
+                { id: 'b7',  text: 'Clean overpaint from hinges and striker plates.',  trade: 'Painter',       n: 70 },
+                { id: 'b8',  text: 'Clean overpaint from window frames.',              trade: 'Painter',       n: 80 },
+                { id: 'b9',  text: 'Clean overpaint from splashback tiles.',           trade: 'Painter',       n: 90 },
+                { id: 'b10', text: 'Adjust door margins to 3mm-4mm.',                  trade: 'Carpenter',     n: 100 },
+                { id: 'b11', text: 'Adjust striker plate to remove latch binding.',    trade: 'Carpenter',     n: 110 },
+                { id: 'b12', text: 'Install cushion stop to door.',                    trade: 'Carpenter',     n: 120 },
+                { id: 'b13', text: 'Install downpipe brackets correctly.',             trade: 'Plumber',       n: 130 },
+                { id: 'b14', text: 'Punch in downpipe pins.',                          trade: 'Plumber',       n: 140 },
+                { id: 'b15', text: 'Clean carpet.',                                    trade: 'Cleaner',       n: 150 },
+                { id: 'b16', text: 'Sweep out garage and remove building materials.',  trade: 'Cleaner',       n: 160 },
+                { id: 'b17', text: 'Repair dented window frame.',                      trade: 'Supervisor',    n: 170 },
+                { id: 'b18', text: 'Touch up window frame with correct paint colour.', trade: 'Supervisor',    n: 180 },
+            ] },
+        ];
+        function defectListBank() {
+            if (window.CloudDefectLists && window.CloudDefectLists.ready()) return window.CloudDefectLists.list();
+            return BUILTIN_DEFECT_LISTS;
+        }
+        // Editing needs the shared tables — before the migration there is
+        // nowhere to save to, and the screen says so rather than pretending.
+        function defectListsCanEdit() {
+            return !!(window.CloudDefectLists && window.CloudDefectLists.ready() && window.CloudDefectLists.canEdit());
+        }
+
+        // ---- Importing a list onto a job ----------------------------------
+        // Everything starts TICKED. The point of a list is that its items are
+        // the ones that turn up every time, so the common case is "all of
+        // them" and the ticks are there to drop the two that don't apply on
+        // this house — not to make you choose twenty times. Unticking is
+        // cheaper than the alternative failure, which is rows nobody meant to
+        // raise sitting on a job looking like real defects.
+        let _dlImport = null;   // { addressId, listId, ticked: Set<itemId> }
+
+        function openDefectListImport(addressId) {
+            const lists = defectListBank();
+            if (!lists.length) { showToast('No defect lists yet'); return; }
+            _dlImport = { addressId, listId: lists.length === 1 ? lists[0].id : null, ticked: null };
+            if (_dlImport.listId) _dlTickAll(lists[0]);
+            _dlRender();
+        }
+        function _dlTickAll(list) {
+            _dlImport.ticked = new Set((list.items || []).map(i => i.id));
+        }
+        function _dlClose() { _dlImport = null; const ov = document.getElementById('dl-overlay'); if (ov) ov.remove(); }
+        function _dlPickList(id) {
+            const list = defectListBank().find(l => String(l.id) === String(id));
+            if (!list) return;
+            _dlImport.listId = list.id;
+            _dlTickAll(list);
+            _dlRender();
+        }
+        function _dlBackToLists() { _dlImport.listId = null; _dlImport.ticked = null; _dlRender(); }
+        function _dlToggle(itemId) {
+            if (!_dlImport || !_dlImport.ticked) return;
+            if (_dlImport.ticked.has(itemId)) _dlImport.ticked.delete(itemId); else _dlImport.ticked.add(itemId);
+            _dlRender();
+        }
+        function _dlSetAll(on) {
+            const list = defectListBank().find(l => String(l.id) === String(_dlImport.listId));
+            if (!list) return;
+            _dlImport.ticked = on ? new Set(list.items.map(i => i.id)) : new Set();
+            _dlRender();
+        }
+        function _dlRender() {
+            if (!_dlImport) return;
+            let ov = document.getElementById('dl-overlay');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'dl-overlay';
+                ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:flex-end;justify-content:center;';
+                ov.addEventListener('click', (e) => { if (e.target === ov) _dlClose(); });
+                document.body.appendChild(ov);
+            }
+            const lists = defectListBank();
+            const list = lists.find(l => String(l.id) === String(_dlImport.listId));
+            const head = (title, back) => `
+                <div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border-color,#eee);">
+                    ${back ? `<button onclick="_dlBackToLists()" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:var(--blue,#2563eb);padding:0 4px;">‹</button>` : ''}
+                    <strong style="flex:1;font-size:16px;color:var(--text-primary,#111);">${title}</strong>
+                    <button onclick="_dlClose()" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:var(--text-secondary,#888);">✕</button>
+                </div>`;
+            let body;
+            if (!list) {
+                body = head('📋 Import a defect list', false) + `
+                    <div style="overflow-y:auto;">
+                        ${lists.map(l => `
+                            <div onclick="_dlPickList('${_escAttrJs(l.id)}')" style="padding:14px 16px;border-bottom:1px solid var(--border-color,#eee);cursor:pointer;">
+                                <div style="font-weight:700;font-size:15px;color:var(--text-primary,#111);">${_escHtml(l.name)}</div>
+                                <div style="font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${l.items.length} item${l.items.length === 1 ? '' : 's'}</div>
+                            </div>`).join('')}
+                    </div>`;
+            } else {
+                const n = _dlImport.ticked.size;
+                const rows = list.items.map(i => {
+                    const on = _dlImport.ticked.has(i.id);
+                    return `
+                        <div onclick="_dlToggle('${_escAttrJs(i.id)}')" style="display:flex;align-items:flex-start;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border-color,#eee);cursor:pointer;">
+                            <span style="flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:1.5px solid ${on ? 'var(--blue,#2563eb)' : 'var(--border-color,#bbb)'};background:${on ? 'var(--blue,#2563eb)' : 'transparent'};color:#fff;font-size:14px;line-height:20px;text-align:center;">${on ? '✓' : ''}</span>
+                            <span style="flex:1;min-width:0;">
+                                <span style="display:block;font-size:14px;color:var(--text-primary,#111);line-height:1.35;">${_escHtml(i.text)}</span>
+                                <span style="display:block;font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${_escHtml(i.trade)}</span>
+                            </span>
+                        </div>`;
+                }).join('');
+                body = head('📋 ' + _escHtml(list.name), lists.length > 1) + `
+                    <div style="display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border-color,#eee);">
+                        <button onclick="_dlSetAll(true)" style="flex:1;padding:8px;border:1px solid var(--border-color,#ccc);border-radius:8px;background:transparent;color:inherit;font-size:13px;font-weight:600;cursor:pointer;">Tick all</button>
+                        <button onclick="_dlSetAll(false)" style="flex:1;padding:8px;border:1px solid var(--border-color,#ccc);border-radius:8px;background:transparent;color:inherit;font-size:13px;font-weight:600;cursor:pointer;">Untick all</button>
+                    </div>
+                    <div style="flex:1;overflow-y:auto;">${rows}</div>
+                    <div style="padding:12px 16px;border-top:1px solid var(--border-color,#eee);">
+                        <button onclick="_dlDoImport()" ${n ? '' : 'disabled'} style="width:100%;padding:13px;border:none;border-radius:10px;background:${n ? 'var(--blue,#2563eb)' : 'var(--border-color,#ccc)'};color:#fff;font-size:15px;font-weight:700;cursor:${n ? 'pointer' : 'default'};">
+                            Add ${n} defect${n === 1 ? '' : 's'} to this job
+                        </button>
+                    </div>`;
+            }
+            ov.innerHTML = `<div style="width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;background:var(--card-bg,#fff);border-radius:14px 14px 0 0;overflow:hidden;">${body}</div>`;
+        }
+        // Each ticked item becomes one defect, filed against the trade the item
+        // names — resolved the same way a chip or a typed name is, so a trade
+        // placeholder that doesn't exist yet lands unassigned rather than
+        // failing the whole import.
+        //
+        // matchCompleted is passed for the same reason the report import passes
+        // it: importing the same list onto the same job twice must not double
+        // the rows. The summary says what actually happened, so an accidental
+        // second import reads as "nothing new" rather than looking broken.
+        function _dlDoImport() {
+            if (!_dlImport || !_dlImport.ticked || !_dlImport.ticked.size) return;
+            const list = defectListBank().find(l => String(l.id) === String(_dlImport.listId));
+            if (!list) return;
+            const addressId = _dlImport.addressId;
+            let added = 0, dupe = 0;
+            list.items.forEach(item => {
+                if (!_dlImport.ticked.has(item.id)) return;
+                const contractorId = findContractorByExactName(item.trade);
+                db.addDefect({
+                    addressId,
+                    contractorId: contractorId || null,
+                    description: item.text,
+                    location: null,
+                    status: 'open',
+                    unassigned: !contractorId,
+                }, { matchCompleted: true, quiet: true });
+                if (db.lastAddWasDuplicate) dupe++; else added++;
+            });
+            _dlClose();
+            render();
+            showToast(added
+                ? `${added} defect${added === 1 ? '' : 's'} added${dupe ? ` · ${dupe} already on this job` : ''}`
+                : `Nothing new — all ${dupe} already on this job`);
+        }
+
+        // ===================================================================
         //  DEFECT WORDINGS EDITOR  (Settings -> Defect wordings, managers only)
         //  Edits the SHARED list, so one manager's change reaches every
         //  supervisor on their next sync. Needs the migration in
@@ -10809,6 +11148,198 @@
                         <input type="text" value="${_escHtml(_wordFilter)}" oninput="wordingsSetFilter(this.value)" placeholder="Search wordings or trade…" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #c6c6c8;border-radius:10px;font-size:16px;margin-bottom:12px;background:var(--bg-primary,#fff);">
                         ${editable ? `<button id="wording-new" onclick="startNewWordingTrade()" style="width:100%;padding:12px;margin-bottom:12px;border:1px dashed var(--blue,#2563eb);border-radius:10px;background:transparent;color:var(--blue,#2563eb);font-weight:700;font-size:15px;cursor:pointer;">＋ New wording</button>` : ''}
                         <div id="wordings-body">${renderWordingGroups()}</div>
+                    </div>
+                </div>`;
+        }
+
+        // ===================================================================
+        //  DEFECT LISTS EDITOR  (Settings -> Defect lists)
+        //  The bank Spiro asked to be able to "create, edit and add and remove
+        //  items" in. Same shape and same admin as the wordings editor beside
+        //  it; before the migration is run it is read-only and says so rather
+        //  than pretending to save.
+        // ===================================================================
+        let _dlOpenList = null;    // which list is expanded
+        let _dlEditItem = null;    // item id open for edit
+        let _dlAddTo = null;       // list id currently having an item added
+
+        function defectListsSummary() {
+            const b = defectListBank();
+            const items = b.reduce((n, l) => n + l.items.length, 0);
+            return b.length + (b.length === 1 ? ' list' : ' lists') + ', ' +
+                items + (items === 1 ? ' item' : ' items') + '.';
+        }
+        function showDefectListsEditor() {
+            state.currentView = 'deflists';
+            _dlOpenList = null; _dlEditItem = null; _dlAddTo = null;
+            render();
+        }
+        function dlToggleOpen(id) {
+            _dlOpenList = (String(_dlOpenList) === String(id)) ? null : id;
+            _dlEditItem = null; _dlAddTo = null;
+            render();
+        }
+        async function dlNewList() {
+            const name = (prompt('Name this list (e.g. "Standard PCI")') || '').trim();
+            if (!name) return;
+            const r = await window.CloudDefectLists.addList(name, 1);
+            if (r && r.error) { showToast('Could not add: ' + r.error, true); return; }
+            _dlOpenList = r.id; render(); showToast('List added');
+        }
+        async function dlRenameList(id) {
+            const cur = defectListBank().find(l => String(l.id) === String(id));
+            const name = (prompt('Rename this list', cur ? cur.name : '') || '').trim();
+            if (!name) return;
+            const r = await window.CloudDefectLists.renameList(id, name);
+            if (r && r.error) { showToast('Could not rename: ' + r.error, true); return; }
+            render(); showToast('Renamed');
+        }
+        async function dlDeleteList(id) {
+            const cur = defectListBank().find(l => String(l.id) === String(id));
+            if (!confirm(`Delete "${cur ? cur.name : 'this list'}"?\n\nIt is archived, not destroyed — it can be brought back from the database if it goes by mistake.`)) return;
+            const r = await window.CloudDefectLists.removeList(id);
+            if (r && r.error) { showToast('Could not delete: ' + r.error, true); return; }
+            if (String(_dlOpenList) === String(id)) _dlOpenList = null;
+            render(); showToast('List deleted');
+        }
+        function dlStartAdd(listId) { _dlAddTo = listId; _dlEditItem = null; render(); }
+        function dlCancelAdd() { _dlAddTo = null; _dlEditItem = null; render(); }
+        function dlStartEditItem(id) { _dlEditItem = id; _dlAddTo = null; render(); }
+        // Picking an existing wording fills both fields — this is the link back
+        // to the 62-item bank, so a list is built FROM the house vocabulary
+        // rather than being a second place to invent wordings.
+        function dlFillFromWording(prefix, value) {
+            if (!value) return;
+            const w = defectWordingList().find(x => x.text === value);
+            if (!w) return;
+            const t = document.getElementById(prefix + '-text');
+            const tr = document.getElementById(prefix + '-trade');
+            if (t) t.value = w.text;
+            if (tr) tr.value = w.trade || 'Supervisor';
+        }
+        async function dlSaveNewItem(listId) {
+            const text = (document.getElementById('dl-add-text') || {}).value || '';
+            const trade = (document.getElementById('dl-add-trade') || {}).value || 'Supervisor';
+            if (!text.trim()) { showToast('Enter the defect wording', true); return; }
+            const list = defectListBank().find(l => String(l.id) === String(listId));
+            const nextN = list && list.items.length ? Math.max(...list.items.map(i => i.n || 0)) + 10 : 10;
+            const r = await window.CloudDefectLists.addItem(listId, text, trade, nextN);
+            if (r && r.error) { showToast('Could not add: ' + r.error, true); return; }
+            _dlAddTo = null; render(); showToast('Item added');
+        }
+        async function dlSaveItem(id) {
+            const text = (document.getElementById('dl-edit-text') || {}).value || '';
+            const trade = (document.getElementById('dl-edit-trade') || {}).value || 'Supervisor';
+            if (!text.trim()) { showToast('Enter the defect wording', true); return; }
+            const r = await window.CloudDefectLists.updateItem(id, text, trade);
+            if (r && r.error) { showToast('Could not save: ' + r.error, true); return; }
+            _dlEditItem = null; render(); showToast('Saved');
+        }
+        async function dlRemoveItem(id) {
+            if (!confirm('Remove this item from the list?')) return;
+            const r = await window.CloudDefectLists.removeItem(id);
+            if (r && r.error) { showToast('Could not remove: ' + r.error, true); return; }
+            render(); showToast('Item removed');
+        }
+        // Trade options come from the contractor list, same rule the wordings
+        // editor uses: a trade that is not a real placeholder can never be
+        // reached by picking a supplier, so it is not offered here either.
+        function dlTradeOptions(selected) {
+            const known = new Set();
+            db.getContractors().forEach(c => { if (c.isTradePlaceholder && c.name) known.add(String(c.name).trim()); });
+            defectWordingList().forEach(w => { if (w.trade) known.add(String(w.trade).trim()); });
+            if (selected) known.add(String(selected).trim());
+            return [...known].sort().map(t =>
+                `<option value="${_escHtml(t)}" ${t === selected ? 'selected' : ''}>${_escHtml(t)}</option>`).join('');
+        }
+        function dlWordingPicker(prefix) {
+            const opts = defectWordingList().slice()
+                .sort((a, b) => (a.trade || '').localeCompare(b.trade || '') || a.text.localeCompare(b.text))
+                .map(w => `<option value="${_escHtml(w.text)}">${_escHtml(w.trade)} — ${_escHtml(w.text)}</option>`).join('');
+            return `<select onchange="dlFillFromWording('${prefix}', this.value)" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #c6c6c8;border-radius:9px;font-size:14px;margin-bottom:8px;background:var(--bg-primary,#fff);">
+                        <option value="">— pick an existing wording, or type your own below —</option>${opts}
+                    </select>`;
+        }
+        function renderDefectListsScreen() {
+            const editable = defectListsCanEdit();
+            const bank = defectListBank();
+            const inp = 'width:100%;box-sizing:border-box;padding:10px;border:1px solid #c6c6c8;border-radius:9px;font-size:15px;background:var(--bg-primary,#fff);';
+            const btn = 'padding:9px 12px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--border-color,#ccc);background:transparent;color:inherit;';
+            let banner = '';
+            if (!window.CloudDefectLists || !window.CloudDefectLists.ready()) {
+                banner = `<div style="padding:12px 14px;margin-bottom:12px;border-radius:10px;background:var(--bg-secondary,#f3f3f3);font-size:13px;line-height:1.5;color:var(--text-secondary,#666);">
+                    Showing the built-in starter list. To create your own, run
+                    <code>supabase/migrations/2026-09-30_defect_lists.sql</code> — until then this screen is read-only.
+                </div>`;
+            } else if (!editable) {
+                banner = `<div style="padding:12px 14px;margin-bottom:12px;border-radius:10px;background:var(--bg-secondary,#f3f3f3);font-size:13px;line-height:1.5;color:var(--text-secondary,#666);">
+                    Read-only — editing the shared lists needs the defect-content admin flag, the same one the wordings editor uses.
+                </div>`;
+            }
+            const lists = bank.map(l => {
+                const open = String(_dlOpenList) === String(l.id);
+                const items = open ? l.items.map(i => {
+                    if (String(_dlEditItem) === String(i.id)) {
+                        return `<div style="padding:10px 12px;border-bottom:1px solid var(--border-color,#eee);background:var(--bg-secondary,#fafafa);">
+                            ${dlWordingPicker('dl-edit')}
+                            <textarea id="dl-edit-text" rows="2" style="${inp}margin-bottom:8px;">${_escHtml(i.text)}</textarea>
+                            <select id="dl-edit-trade" style="${inp}margin-bottom:8px;">${dlTradeOptions(i.trade)}</select>
+                            <div style="display:flex;gap:8px;">
+                                <button onclick="dlSaveItem('${_escAttrJs(i.id)}')" style="${btn}border-color:var(--blue,#2563eb);color:var(--blue,#2563eb);">Save</button>
+                                <button onclick="dlCancelAdd()" style="${btn}">Cancel</button>
+                            </div>
+                        </div>`;
+                    }
+                    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border-color,#eee);">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:14px;color:var(--text-primary,#111);line-height:1.35;">${_escHtml(i.text)}</div>
+                            <div style="font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${_escHtml(i.trade)}</div>
+                        </div>
+                        ${editable ? `<button onclick="dlStartEditItem('${_escAttrJs(i.id)}')" style="${btn}">Edit</button>
+                        <button onclick="dlRemoveItem('${_escAttrJs(i.id)}')" style="${btn}border-color:#dc2626;color:#dc2626;">🗑</button>` : ''}
+                    </div>`;
+                }).join('') : '';
+                const addForm = (open && editable && String(_dlAddTo) === String(l.id)) ? `
+                    <div style="padding:10px 12px;border-bottom:1px solid var(--border-color,#eee);background:var(--bg-secondary,#fafafa);">
+                        ${dlWordingPicker('dl-add')}
+                        <textarea id="dl-add-text" rows="2" placeholder="Defect wording…" style="${inp}margin-bottom:8px;"></textarea>
+                        <select id="dl-add-trade" style="${inp}margin-bottom:8px;">${dlTradeOptions('Supervisor')}</select>
+                        <div style="display:flex;gap:8px;">
+                            <button onclick="dlSaveNewItem('${_escAttrJs(l.id)}')" style="${btn}border-color:var(--blue,#2563eb);color:var(--blue,#2563eb);">Add item</button>
+                            <button onclick="dlCancelAdd()" style="${btn}">Cancel</button>
+                        </div>
+                    </div>` : '';
+                return `
+                <div style="border:1px solid var(--border-color,#ddd);border-radius:10px;overflow:hidden;margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;gap:8px;padding:13px 12px;cursor:pointer;background:var(--card-bg,#fff);" onclick="dlToggleOpen('${_escAttrJs(l.id)}')">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-weight:700;font-size:15px;color:var(--text-primary,#111);">${_escHtml(l.name)}</div>
+                            <div style="font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${l.items.length} item${l.items.length === 1 ? '' : 's'}</div>
+                        </div>
+                        <span style="font-size:20px;color:var(--text-secondary,#888);line-height:1;">${open ? '▴' : '▾'}</span>
+                    </div>
+                    ${open ? `
+                        ${items || '<div style="padding:12px;font-size:13px;color:var(--text-secondary,#888);">No items yet.</div>'}
+                        ${addForm}
+                        ${editable ? `<div style="display:flex;gap:8px;padding:10px 12px;">
+                            ${String(_dlAddTo) === String(l.id) ? '' : `<button onclick="dlStartAdd('${_escAttrJs(l.id)}')" style="${btn}border-color:var(--blue,#2563eb);color:var(--blue,#2563eb);">＋ Add item</button>`}
+                            <button onclick="dlRenameList('${_escAttrJs(l.id)}')" style="${btn}">Rename</button>
+                            <button onclick="dlDeleteList('${_escAttrJs(l.id)}')" style="${btn}border-color:#dc2626;color:#dc2626;">Delete list</button>
+                        </div>` : ''}
+                    ` : ''}
+                </div>`;
+            }).join('');
+            return `
+                <div class="defects-container">
+                    <div class="app-header">
+                        <a href="#" class="back-link" onclick="event.preventDefault(); state.currentView='manage'; render()">Back</a>
+                        <div class="header-title">Defect lists</div>
+                        <div style="width:60px;"></div>
+                    </div>
+                    <div class="manage-container">
+                        ${banner}
+                        ${editable ? `<button onclick="dlNewList()" style="width:100%;padding:12px;margin-bottom:12px;border:1px dashed var(--blue,#2563eb);border-radius:10px;background:transparent;color:var(--blue,#2563eb);font-weight:700;font-size:15px;cursor:pointer;">＋ New list</button>` : ''}
+                        ${lists || '<div style="padding:16px;font-size:13px;color:var(--text-secondary,#888);">No lists yet.</div>'}
                     </div>
                 </div>`;
         }
@@ -13990,7 +14521,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-04g';
+        const APP_VERSION = '2026-09-30a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14077,7 +14608,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-04g"></script>
+    <script src="cloud-sync.js?v=2026-09-30a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

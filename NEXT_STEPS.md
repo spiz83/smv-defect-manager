@@ -14,7 +14,195 @@ second editor anywhere would be the mistake.
 # Next Steps / Handover
 
 STATUS: Active
-LAST UPDATED: 2026-09-04
+LAST UPDATED: 2026-09-19
+
+## ✅ Pre-loaded defect lists — build `2026-09-30a` — NOT DEPLOYED
+
+Import a named list onto a job and its items land as defects in one go, so an
+inspection starts with its regulars already on screen and the supervisor only
+photographs and matches. Plus an editor to keep a bank of lists.
+
+- **Add Defects → 📋 Import a defect list** → pick a list → everything is
+  ticked, untick what doesn't apply → *Add N defects to this job*. Re-importing
+  the same list will not double the job.
+- **Settings → 📋 Defect lists** → create, rename, delete lists; add, edit,
+  remove items. Adding an item leads with a picker of the existing 62 curated
+  wordings, which fills both the text and its trade.
+- A **Standard PCI** starter list (18 items, all of them existing wordings)
+  ships built into the app, so this works before the migration is run — the
+  screen is just read-only until then.
+
+- [ ] **Run `supabase/migrations/2026-09-30_defect_lists.sql`** to make the bank
+      editable and shared. Additive only — two new tables, nothing altered or
+      dropped. It requires `2026-09-02_defect_wordings_admin.sql` to have been
+      run first (it reuses `profiles.is_wordings_admin`) and says so rather than
+      half-applying.
+- [ ] Worth a look on a real phone: the import sheet is a bottom sheet at 85vh
+      with a fixed action button. It behaves in headless Chromium, but this
+      repo's history with keyboards and fixed overlays says confirm it on
+      device before trusting it.
+
+⚠️ Not built, deliberately: **no reordering of items** in the editor (they sort
+by the order they were added) and **no location per item** — location changes
+per job, and a default that is wrong most of the time is worse than blank. Both
+are easy adds if the shape proves right in use.
+
+## 🚨 READ FIRST — a working manager password is published, and no code change fixes it
+
+Found 2026-09-19 while checking something else. `cloud-sync.js:61-63`:
+
+`ALIAS_USER`, `ALIAS_EMAIL` and `ALIAS_PASS` are literals there — a username,
+a manager's email address, and that account's real password. (Not repeated in
+this file on purpose: it is already in one public place too many, and a copy
+here would outlive the rotation below.)
+
+Typing the two-character alias twice — as username AND password — at the
+sign-in form calls `signInWithPassword` as that **manager** account. `cloud-sync.js` is served publicly and this repo is
+public — and the shortcut is guessable without reading any source at all.
+
+**This outranks everything else in this file.** It also defeats the other
+fixes: a manager login passes the new `extract-defects` auth check legitimately,
+and a manager sees every job under the new RLS policy by design.
+
+**Deleting those three lines does NOT fix it** — the password is already
+disclosed, including in git history. The only fix that means anything:
+
+- [ ] **Rotate the password on `svladimiroski@hotmail.com`** (Supabase Dashboard
+      → Authentication → Users, or the in-app change-password flow), and tell
+      whoever uses the shortcut the new one.
+- [ ] **Then** decide whether the alias should exist at all. If it stays, it
+      must read from somewhere that isn't public JavaScript — which, for a
+      static PWA with no server of its own, really means it shouldn't stay.
+- [ ] `tests/pass.mjs` covers the alias, so removing it means updating that
+      suite too.
+
+**It is in three files, not one** — `grep -rn` for the password literal finds:
+
+| File | Why it matters |
+|---|---|
+| `cloud-sync.js:63` | **Served publicly.** This is the exposed one. |
+| `scripts/setup-manager.mjs:20` | Repo-only, but public repo. |
+| `scripts/test-addr-match.mjs:8` | Repo-only, but public repo. Posts it to the auth endpoint. |
+
+So the scrub is three files, and it still does nothing on its own — rotate
+first. Anyone who has ever cloned this repo already has the old password.
+
+Left in place deliberately rather than ripped out: removing it would lock the
+manager out of the shortcut while leaving the real exposure (a known-public
+password on a live account) untouched — i.e. it would buy the appearance of a
+fix and none of the substance. It was already on the backlog as "decide what to
+do about ALIAS_PASS"; it is not a decision, it is an open door.
+
+## 🔒 Three security fixes — build `2026-09-19a` — NOTHING APPLIED OR DEPLOYED YET
+
+Asked directly whether the app was safe from anyone hacking in or information
+being exposed. It wasn't, in three ways. Detail and reasoning in DECISIONS.md
+2026-09-19; this is the do-list.
+
+**Two are fixed in code and ride along with the normal deploy:**
+
+1. **Share-link tokens** (`cloud-sync.js`) — the "unguessable" folder in a
+   public-bucket PDF link had only ~6 truly random characters out of 12, from
+   `Math.random()`. Now 12 from `crypto.getRandomValues`. Same link length.
+   `tests/sharetoken.mjs` pins it — and fails against the old line, which is
+   the point of it.
+2. **`extract-defects` auth + 50/user/day cap.** The function never read the
+   Authorization header, so the public anon key was enough for anyone to run up
+   the Anthropic bill on `claude-opus-5`. It never touched the database, so
+   this was billing, not a data leak. Identity now fails CLOSED; the cap fails
+   OPEN until its migration is run.
+
+**Ordered steps — the order matters:**
+
+- [ ] **Run `supabase/migrations/2026-09-19_ai_call_quota.sql`.** Safe any time:
+      it only CREATEs, alters no existing table, drops no policy. Until it runs
+      the cap is inert (the function logs `[quota unavailable]`) — the auth
+      check still works without it.
+- [ ] **Deploy the edge function** — `supabase functions deploy extract-defects`.
+      This is the one that actually closes the open door, and it needs no
+      migration. Do it even if everything else waits.
+- [ ] **Ship the app build** (`2026-09-19a`) the normal way — see
+      `deploy-defect-manager`. Carries the share-token fix, the friendlier
+      limit/sign-in messages, AND the still-unshipped PI import work from
+      `2026-09-09a`. Branch: `claude/sharp-brown-mfn4cd`.
+- [ ] **Sanity-check after deploying the function:** send a report link and
+      confirm the trade can still open it, and run one AI import and confirm it
+      still works while signed in. If an import suddenly says "Sign in to use
+      AI extraction", the session token isn't reaching the function — that is
+      the thing to look at first.
+
+**The third one is WRITTEN BUT MUST NOT BE RUN BLIND:**
+
+`dm_defects` and `dm_defect_photos` are `USING(true)`, so every logged-in user
+can read every defect and photo row across every supervisor. (The photo FILES
+were already job-scoped by the bucket policy — it's the metadata rows that were
+open.) `supabase/migrations/2026-09-19_defect_job_scoping.sql` fixes it with
+RESTRICTIVE policies, so nothing existing is dropped and rollback is two
+`DROP POLICY` lines.
+
+- [ ] **First run `supabase/inspect_defect_rls.sql`** (read-only, changes
+      nothing). **Query 6 is the one that matters:** it counts defects with
+      `job_id IS NULL`. Those become invisible to supervisors under the new
+      rule — managers and the cert team still see them. If that count isn't
+      roughly zero, fix the data before applying, not after.
+- [ ] Paste that output back to whoever picks this up. The migration was
+      written without DB access: `schema.sql` in this repo is STALE (it
+      describes a `workspace_id` model the live tables no longer use — live
+      `dm_defects` is keyed on `job_id`), and tracker migrations 120-124 exist
+      nowhere here. The preflight RAISEs rather than half-applying if an
+      assumption is wrong, but that is a backstop, not a substitute for looking.
+- [ ] Apply it when someone can watch and roll back — not at 6am before site.
+      `service_role` bypasses RLS, so server-side tracker jobs are unaffected,
+      but a tracker VIEW that is `security_invoker=true` inherits the
+      restriction (inspect query 8 lists them). Tell the tracker side.
+
+⚠️ **Not touched:** briefing item 3, the 380 shared-pdfs supplier PDFs that
+never expire. Storage hygiene rather than exposure, and it needs a retention
+decision first — a trade may open a link weeks after it was sent, so the
+tracker's 30-business-day photo rule isn't automatically right here.
+
+## ✅ Private Inspection imports say "PI" and keep the report's own numbering — build `2026-09-09a` — NOT YET DEPLOYED
+
+A supervisor has a Private Inspection report as a table (Trade / Item # /
+Report Page / Location / Defect) and wants it added "through the back door" —
+i.e. pasted into 📄 Add Report → **Private Inspection**, not typed one at a
+time — so it can go out as one report supervisors and trades can trace back
+to the original inspection page.
+
+Two gaps stood in the way, both fixed:
+1. The saved reference said `Item #7 (p.3) — ...`. It now says `PI #7 (p.3)
+   — ...` — matching what these are already called on site ("PI Items, not
+   to be confused as BPI Items").
+2. Neither the old regex nor the AI extraction path (`extract-defects`) could
+   carry the report's OWN item numbering (often decimal, e.g. "3.27") or a
+   page RANGE ("53-54") — both get flattened/dropped. `REPORT_REF_RE` now
+   accepts both, and a new deterministic parser (`parseTabularDefects`) reads
+   a pasted table's columns directly — no AI needed, nothing to guess, since
+   the columns are already right there. It also pre-fills the Assign field
+   when a row's Trade column is already an exact contractor/trade-placeholder
+   name (`findContractorByExactName`) — e.g. "Fix N Chips Roxburgh Park" or
+   "Caulker" match straight away, ahead of the keyword guesses.
+
+**To use it once deployed:** 📄 Add Report → Report type: **Private
+Inspection** → paste the table text (a header row is fine, it's dropped
+automatically) → Extract defects. Each row becomes one review item with its
+trade, location, page and the report's own item number already filled in —
+still reviewed one at a time same as any import, but nothing left to retype.
+
+**Tested, not shipped.** `tests/pitable.mjs` (new) plus a full
+`./tests/run.sh` all green — see DECISIONS.md 2026-09-09 for the detail and
+what `deep.mjs` needed updating. Version stamps bumped to `2026-09-09a`
+(all four places). **Still needs:** someone to actually run
+`git checkout main && git merge --no-ff claude/sharp-brown-mfn4cd && git push`
+and verify live per `deploy-defect-manager` — held back deliberately,
+`AGENT_INSTRUCTIONS.md` says stop and ask before anything goes live.
+
+⚠️ **Known gap, not code:** a few Trade values real PI reports use
+(`Bricklayer`, `Shower Screen`, `Supervisor`, `Caulker`, …) may not exist yet
+as live trade placeholders in `dm_contractors` — same open question as the
+existing TASKS.md item asking Spiro to confirm the trade list. Until
+confirmed, a row using one of those just won't pre-fill an assignee (falls
+back to the usual keyword chips) — it still imports fine either way.
 
 ## ✅ Same wording, two rooms, two defects — build `2026-09-04g`
 
