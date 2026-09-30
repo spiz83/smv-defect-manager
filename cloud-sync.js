@@ -183,6 +183,14 @@
   // the app behaves identically either way.
   let defectWordings = [];
   let defectWordingsReady = false;   // false = table absent/unreadable, use the built-in list
+  // Shared pre-loaded defect LISTS (dm_defect_lists + dm_defect_list_items),
+  // pulled each sync. A list is a named bundle of items imported onto a job in
+  // one go, so an inspection starts with its regulars already on the screen.
+  // Same fallback contract as the wordings above: empty until
+  // supabase/migrations/2026-09-30_defect_lists.sql is run, and index.html uses
+  // its built-in starter list until then.
+  let defectLists = [];              // [{ id, name, n, items: [{ id, text, trade, n }] }]
+  let defectListsReady = false;      // false = tables absent/unreadable, use the built-in list
   let bpiAiSettings = { weight_supervisor: 1, weight_senior: 3, weight_manager: 5, weight_admin: 10, min_examples: 2, auto_learning: true };
 
   function emptySnap() {
@@ -949,7 +957,7 @@
     // from idMap.defects, so reconcileLocalDefectsUp read ~1000 cloud rows as
     // un-synced local work and re-uploaded them on every boot ("Uploaded 1000
     // change(s) from this phone").
-    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, wordings] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, wordings, dLists, dListItems] = await Promise.all([
       selectAllRows('dm_trades', '*', 'id'),
       selectAllRows('dm_contractors', '*', 'id'),
       selectAllRows('dm_contractor_trades', 'contractor_id, trade_id', 'contractor_id'),
@@ -970,7 +978,14 @@
       // errors, defectWordingsReady stays false, and the app keeps using its
       // built-in list. Small and bounded (a curated list, not a log), so a
       // plain select is fine — no paging needed.
-      sb.from('dm_defect_wordings').select('id, text, trade, sort_n, active').eq('active', true)
+      sb.from('dm_defect_wordings').select('id, text, trade, sort_n, active').eq('active', true),
+      // Pre-loaded defect lists + their items, same best-effort contract as the
+      // wordings above: before 2026-09-30_defect_lists.sql is run both error,
+      // defectListsReady stays false, and index.html keeps its built-in starter
+      // list. Two selects rather than a join so a failure on either one is
+      // visible on its own; both are small curated content, not logs.
+      sb.from('dm_defect_lists').select('id, name, sort_n, active').eq('active', true),
+      sb.from('dm_defect_list_items').select('id, list_id, text, trade, sort_n, active').eq('active', true)
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -1104,6 +1119,37 @@
     } else if (wordings && wordings.error) {
       defectWordingsReady = false;
       console.info('[CloudSync] shared defect wordings unavailable — using the built-in list.', wordings.error.message || '');
+    }
+
+    // Shared defect LISTS, stitched to their items here rather than by a join,
+    // so the app holds one ready-to-render shape. Same fallback contract as the
+    // wordings: BOTH selects have to succeed, because a list with its items
+    // missing would import as an empty list — worse than falling back, since it
+    // looks like it worked and puts nothing on the job.
+    if (dLists && !dLists.error && Array.isArray(dLists.data) &&
+        dListItems && !dListItems.error && Array.isArray(dListItems.data)) {
+      const byList = new Map();
+      dListItems.data.forEach(r => {
+        if (!r || !r.text || !r.list_id) return;
+        const item = { id: r.id, text: String(r.text).trim(), trade: String(r.trade || 'Supervisor').trim(), n: Number(r.sort_n) || 1 };
+        const arr = byList.get(r.list_id);
+        if (arr) arr.push(item); else byList.set(r.list_id, [item]);
+      });
+      defectLists = dLists.data
+        .filter(r => r && r.name)
+        .map(r => ({
+          id: r.id,
+          name: String(r.name).trim(),
+          n: Number(r.sort_n) || 1,
+          items: (byList.get(r.id) || []).sort((a, b) => a.n - b.n || a.text.localeCompare(b.text)),
+        }))
+        .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+      defectListsReady = true;
+      console.info('[CloudSync] defect lists:', defectLists.length, 'from the shared bank');
+    } else if ((dLists && dLists.error) || (dListItems && dListItems.error)) {
+      defectListsReady = false;
+      console.info('[CloudSync] shared defect lists unavailable — using the built-in starter list.',
+        ((dLists && dLists.error) || (dListItems && dListItems.error)).message || '');
     }
 
     // DB-managed keyword rules (priority order) + live AI settings. Best-effort:
@@ -3445,6 +3491,81 @@
         .update({ active: false, updated_at: new Date().toISOString(), updated_by: userId }).eq('id', id);
       if (error) return { error: error.message || String(error) };
       defectWordings = defectWordings.filter(w => w.id !== id);
+      return { ok: true };
+    },
+  };
+
+  // Pre-loaded defect lists. Same shape and same admin as CloudWordings —
+  // profiles.is_wordings_admin is "may edit the shared defect content", and
+  // this is the same person doing the same job, so it is reused rather than
+  // duplicated into a second flag nobody would remember to grant.
+  //
+  // Every write updates the in-memory copy too, so the editor reflects the
+  // change without waiting for the next pull.
+  window.CloudDefectLists = {
+    ready: () => defectListsReady,
+    list: () => defectLists.map(l => ({ ...l, items: l.items.slice() })),
+    canEdit: () => !!(wordingsAdmin || (cachedIdentity && cachedIdentity.wordingsAdmin)),
+    async addList(name, sortN) {
+      const row = { name: String(name || '').trim(), sort_n: Number(sortN) || 1, updated_by: userId };
+      if (!row.name) return { error: 'empty' };
+      const { data, error } = await sb.from('dm_defect_lists').insert(row).select('id, name, sort_n').single();
+      if (error) return { error: error.message || String(error) };
+      defectLists.push({ id: data.id, name: data.name, n: data.sort_n, items: [] });
+      return { ok: true, id: data.id };
+    },
+    async renameList(id, name) {
+      const patch = { name: String(name || '').trim(), updated_at: new Date().toISOString(), updated_by: userId };
+      if (!patch.name) return { error: 'empty' };
+      const { error } = await sb.from('dm_defect_lists').update(patch).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      const hit = defectLists.find(l => l.id === id);
+      if (hit) hit.name = patch.name;
+      return { ok: true };
+    },
+    // Soft delete, same as a wording: the row stays so a list removed by
+    // mistake can be brought back. The items are left alone — they hang off a
+    // list nothing reads, and restoring the list restores them with it.
+    async removeList(id) {
+      const { error } = await sb.from('dm_defect_lists')
+        .update({ active: false, updated_at: new Date().toISOString(), updated_by: userId }).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      defectLists = defectLists.filter(l => l.id !== id);
+      return { ok: true };
+    },
+    async addItem(listId, text, trade, sortN) {
+      const row = {
+        list_id: listId,
+        text: String(text || '').trim(),
+        trade: String(trade || 'Supervisor').trim(),
+        sort_n: Number(sortN) || 1,
+        updated_by: userId,
+      };
+      if (!row.text) return { error: 'empty' };
+      const { data, error } = await sb.from('dm_defect_list_items').insert(row).select('id, text, trade, sort_n').single();
+      if (error) return { error: error.message || String(error) };
+      const hit = defectLists.find(l => l.id === listId);
+      if (hit) hit.items.push({ id: data.id, text: data.text, trade: data.trade, n: data.sort_n });
+      return { ok: true, id: data.id };
+    },
+    async updateItem(id, text, trade) {
+      const patch = {
+        text: String(text || '').trim(),
+        trade: String(trade || 'Supervisor').trim(),
+        updated_at: new Date().toISOString(),
+        updated_by: userId,
+      };
+      if (!patch.text) return { error: 'empty' };
+      const { error } = await sb.from('dm_defect_list_items').update(patch).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      defectLists.forEach(l => l.items.forEach(i => { if (i.id === id) { i.text = patch.text; i.trade = patch.trade; } }));
+      return { ok: true };
+    },
+    async removeItem(id) {
+      const { error } = await sb.from('dm_defect_list_items')
+        .update({ active: false, updated_at: new Date().toISOString(), updated_by: userId }).eq('id', id);
+      if (error) return { error: error.message || String(error) };
+      defectLists.forEach(l => { l.items = l.items.filter(i => i.id !== id); });
       return { ok: true };
     },
   };

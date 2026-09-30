@@ -16,6 +16,37 @@ second editor anywhere would be the mistake.
 STATUS: Active
 LAST UPDATED: 2026-09-19
 
+## ✅ Pre-loaded defect lists — build `2026-09-30a` — NOT DEPLOYED
+
+Import a named list onto a job and its items land as defects in one go, so an
+inspection starts with its regulars already on screen and the supervisor only
+photographs and matches. Plus an editor to keep a bank of lists.
+
+- **Add Defects → 📋 Import a defect list** → pick a list → everything is
+  ticked, untick what doesn't apply → *Add N defects to this job*. Re-importing
+  the same list will not double the job.
+- **Settings → 📋 Defect lists** → create, rename, delete lists; add, edit,
+  remove items. Adding an item leads with a picker of the existing 62 curated
+  wordings, which fills both the text and its trade.
+- A **Standard PCI** starter list (18 items, all of them existing wordings)
+  ships built into the app, so this works before the migration is run — the
+  screen is just read-only until then.
+
+- [ ] **Run `supabase/migrations/2026-09-30_defect_lists.sql`** to make the bank
+      editable and shared. Additive only — two new tables, nothing altered or
+      dropped. It requires `2026-09-02_defect_wordings_admin.sql` to have been
+      run first (it reuses `profiles.is_wordings_admin`) and says so rather than
+      half-applying.
+- [ ] Worth a look on a real phone: the import sheet is a bottom sheet at 85vh
+      with a fixed action button. It behaves in headless Chromium, but this
+      repo's history with keyboards and fixed overlays says confirm it on
+      device before trusting it.
+
+⚠️ Not built, deliberately: **no reordering of items** in the editor (they sort
+by the order they were added) and **no location per item** — location changes
+per job, and a default that is wrong most of the time is worse than blank. Both
+are easy adds if the shape proves right in use.
+
 ## 🚨 READ FIRST — a working manager password is published, and no code change fixes it
 
 Found 2026-09-19 while checking something else. `cloud-sync.js:61-63`:

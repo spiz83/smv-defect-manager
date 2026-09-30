@@ -2,6 +2,64 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-09-30 (b) — pre-loaded defect lists — build `2026-09-30a`
+
+- **Spiro:** *"Create defect lists for inspections… there are certain things
+  that will appear on every single report so rather than entering it in you're
+  pretty much taking photos and matching the photos to that item."* Then, asked
+  how it should be shaped: *"I want the import to be the current 'preloaded
+  list you have' but the ability to also create pre loaded defect lists, edit
+  and add and remove items… like be able to create a bank of them."*
+- **Decision: a list is a saved SELECTION of the wordings bank, not a second
+  vocabulary.** The 62 curated wordings are already the house language; the
+  seeded Standard PCI list is built entirely from them (the test asserts that —
+  18 of 18 items are existing wordings), and the editor's add-item form leads
+  with a picker of those wordings that fills both the text and its trade.
+  Spiro's own examples map straight onto rows that already existed: mortar
+  smears → *Clean brick smears*, blowouts → *Repair brickwork blow outs*.
+- **But items store their own TEXT, not a foreign key to a wording.** Editing a
+  wording later must not silently rewrite every list built from it, and a list
+  has to be able to hold a one-off line that was never a wording. The
+  denormalisation is the point, not an oversight.
+- **Same admin as wordings, reused deliberately.** `profiles.is_wordings_admin`
+  already means "may edit the shared defect content" and it is the same person
+  doing the same job. A second flag would be a second thing to grant, forget,
+  and get out of step.
+- **Everything starts TICKED on import.** The whole premise is that these are
+  the items that turn up every time, so the common case is all of them; the
+  ticks exist to drop the two that don't apply to this house, not to make you
+  choose twenty times. The failure that matters is rows nobody meant to raise
+  sitting on a job looking like real defects — unticking two is cheaper than
+  that, and cheaper than tapping twenty.
+- **Imports go through `db.addDefect` with `matchCompleted`,** the same guard
+  the report import uses, so importing the same list onto the same job twice
+  does not double it. The toast says what actually happened ("16 added · 2
+  already on this job") so an accidental second import reads as nothing new
+  rather than looking broken.
+- **A trade with no placeholder lands UNASSIGNED rather than failing.**
+  Resolution is `findContractorByExactName`, the same path a typed name and a
+  quick-trade chip take. TASKS.md still has Bricklayer and friends unconfirmed;
+  an import must not be all-or-nothing on that.
+- **Entry point is a line above the blocks on Add Defects, NOT a fourth header
+  icon.** That header already carries 📐 🎞️ 💾; a fourth does not fit a phone
+  at 30px and `hdr.mjs` pins the layout. It is the thing you tap once at the
+  start, before anything is typed, so a line there is the right weight — and
+  the 2026-09-01 lesson about the "Contractor missing?" strip was about a HINT
+  costing a line, not an action.
+- **Built-in starter list ships in index.html**, same contract as
+  `CURATED_DEFECT_WORDINGS`: it is what the app uses until
+  `2026-09-30_defect_lists.sql` is run, and it is superseded — never merged —
+  once the shared bank is readable, or a list deleted in the editor would keep
+  coming back.
+- **Trade-off accepted:** no reordering of items in the editor yet (they sort
+  by `sort_n`, which is set on insert and never edited), and no location on an
+  item. Location changes per job, and a default that is wrong most of the time
+  is worse than blank. Both are easy to add if the shape proves right in use.
+- **Test:** `tests/deflists.mjs` — the fallback, the tick-list, trade
+  resolution both ways, the no-double-import guard, and the editor writing
+  through to the bank. Migration is additive only (two new tables), so it
+  cannot disturb anything CH Tracker reads.
+
 ## 2026-09-19 — three security fixes: share-link randomness, AI function auth + cap, defect job scoping — build `2026-09-19a`
 
 Prompted by a direct question — "no one being able to hack into the app or

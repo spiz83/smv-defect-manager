@@ -1,6 +1,15 @@
 # Tasks
 
 ## Current sprint
+- [x] **Pre-loaded defect lists** — import a named list onto a job (everything
+      ticked, untick what doesn't apply) so an inspection starts with its
+      regulars already there; plus Settings → Defect lists to keep a bank of
+      them. Built from the existing 62 curated wordings. `tests/deflists.mjs`,
+      build `2026-09-30a`.
+- [ ] **Run `supabase/migrations/2026-09-30_defect_lists.sql`.** Until then the
+      app uses its built-in Standard PCI starter list and the editor is
+      read-only. Additive only; needs the 2026-09-02 wordings-admin migration
+      first, and says so if it is missing.
 - [ ] 🚨 **ROTATE THE MANAGER PASSWORD.** `cloud-sync.js:61-63` holds
       `ALIAS_USER` / `ALIAS_EMAIL` / `ALIAS_PASS` as literals — a manager
       account's real password among them. Typing the alias as both username and
