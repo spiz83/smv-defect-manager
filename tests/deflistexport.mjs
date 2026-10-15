@@ -52,6 +52,7 @@ const SEED = {
     { id: 2, lot: '6', street: 'Lot 6, Skylark Rd', suburb: 'Greenvale', propertyNumber: '401002', active: true },
     { id: 3, lot: '7', street: 'Lot 7, Skylark Rd', suburb: 'Greenvale', propertyNumber: '401003', active: true },
     { id: 4, lot: '8', street: 'Lot 8, Skylark Rd', suburb: 'Greenvale', propertyNumber: '401004', active: true },
+    { id: 5, lot: '10', street: 'Lot 10, Skylark Rd', suburb: 'Greenvale', propertyNumber: '401010', active: true },
   ],
   contractors: [
     { id: 1, name: 'Painter', isTradePlaceholder: true, isActive: true, trades: 'Painter' },
@@ -428,6 +429,76 @@ check('…defaulting to blank — a generic template should not presume a room',
   handmade.blankDefault === true, String(handmade.blankDefault));
 check('the room is passed through to the bank',
   handmade.calls.some(c => c[0] === 'addItem' && c[5] === 'Alfresco'), JSON.stringify(handmade.calls));
+
+// ================= 8. imports ACCUMULATE, they never replace ===============
+// Asked directly (Spiro 2026-10-15): "confirming that by adding additional
+// imports to a job it doesn't delete the previous job, it adds to it."
+//
+// It adds — db.addDefect only ever pushes — but "only ever pushes" is exactly
+// the kind of property that holds until someone writes a tidier importer, so
+// it is pinned here rather than left to be re-derived. What must survive a
+// second and third import: the hand-raised rows, their PHOTOS, a completed
+// row's completed state, and the ids (the cloud keys off them).
+console.log('\n--- a second import adds to the job, it does not replace it ---');
+const accum = await page.evaluate(() => {
+  // Lot 10, worked by hand first: one open defect carrying two photos, one
+  // already ticked off.
+  db.data.defects.push(
+    { id: 9101, addressId: 5, contractorId: 1, description: 'Hand-raised: damage to front door.', location: 'Front Door', status: 'open', photos: ['PHOTO-A', 'PHOTO-B'] },
+    { id: 9102, addressId: 5, contractorId: 3, description: 'Hand-raised: cracked brick.', location: 'Left Elevation', status: 'completed', completed: true });
+  const LISTS = [
+    { id: 'XA', name: 'List A', n: 1, items: [
+      { id: 'xa1', text: 'Touch up paint to skirting.', trade: 'Painter', location: 'Hallway', n: 10 },
+      { id: 'xa2', text: 'Clean brick smears.', trade: 'Bricklayer', location: 'Front Elevation', n: 20 } ] },
+    { id: 'XB', name: 'List B', n: 2, items: [
+      { id: 'xb1', text: 'Adjust sliding door.', trade: 'Painter', location: 'Alfresco', n: 10 },
+      { id: 'xb2', text: 'Seal gap to architrave.', trade: 'Painter', location: 'Study', n: 20 },
+      { id: 'xb3', text: 'Repoint mortar.', trade: 'Bricklayer', location: 'Rear Elevation', n: 30 } ] },
+  ];
+  const prevBank = window.CloudDefectLists.list;
+  window.CloudDefectLists.list = () => LISTS.map(l => ({ ...l, items: l.items.slice() }));
+  const snap = () => (db.data.defects || []).filter(d => d.addressId === 5)
+    .map(d => ({ id: d.id, t: d.description, photos: (d.photos || []).length, st: d.status }));
+  const imp = (listId) => {
+    _dlImport = { addressId: 5, listId, ticked: null };
+    _dlTickAll(LISTS.find(l => l.id === listId));
+    _dlDoImport();
+  };
+  const start = snap();
+  imp('XA'); const afterA = snap();
+  imp('XB'); const afterB = snap();
+  imp('XA'); const afterAgain = snap();
+  window.CloudDefectLists.list = prevBank;
+  return { start, afterA, afterB, afterAgain };
+});
+console.log('counts:', ['start', 'afterA', 'afterB', 'afterAgain'].map(k => `${k}=${accum[k].length}`).join(' '));
+console.log('final:', JSON.stringify(accum.afterAgain, null, 1));
+
+check('importing a list onto a job that already has defects ADDS to it',
+  accum.start.length === 2 && accum.afterA.length === 4, `2 → ${accum.afterA.length}`);
+check('a SECOND, different list adds again — it does not replace the first',
+  accum.afterB.length === 7, `${accum.afterA.length} → ${accum.afterB.length}`);
+check('…and every item from the first list is still there',
+  ['Touch up paint to skirting.', 'Clean brick smears.'].every(t => accum.afterB.some(d => d.t === t)),
+  JSON.stringify(accum.afterB.map(d => d.t)));
+check('the hand-raised defects survive every import',
+  accum.afterAgain.filter(d => /Hand-raised/.test(d.t)).length === 2,
+  JSON.stringify(accum.afterAgain.filter(d => /Hand-raised/.test(d.t))));
+check('…with their PHOTOS still attached',
+  (accum.afterAgain.find(d => d.id === 9101) || {}).photos === 2,
+  JSON.stringify(accum.afterAgain.find(d => d.id === 9101)));
+check('…and a completed one still completed, not re-opened',
+  (accum.afterAgain.find(d => d.id === 9102) || {}).st === 'completed',
+  JSON.stringify(accum.afterAgain.find(d => d.id === 9102)));
+check('ids are never reassigned — the cloud keys off them',
+  accum.afterAgain.filter(d => d.id === 9101 || d.id === 9102).length === 2,
+  JSON.stringify(accum.afterAgain.map(d => d.id)));
+check('re-importing a list already on the job adds nothing a third time',
+  accum.afterAgain.length === accum.afterB.length, `${accum.afterB.length} → ${accum.afterAgain.length}`);
+check('nothing is ever removed — the job only grows',
+  accum.start.every(a => accum.afterAgain.some(b => b.id === a.id)) &&
+  accum.afterA.every(a => accum.afterAgain.some(b => b.id === a.id)) &&
+  accum.afterB.every(a => accum.afterAgain.some(b => b.id === a.id)), 'every id from every stage survives');
 
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 

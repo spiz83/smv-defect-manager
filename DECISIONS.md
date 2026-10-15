@@ -54,6 +54,23 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   defects are offered, with the count on the row — picking an empty job is the
   one mistake that screen can make.
 
+## 2026-10-15 (c) — imports accumulate; a job is never replaced
+
+- **Spiro asked directly:** *"Confirming that by adding additional imports to
+  a job it doesn't delete the previous job, it adds to it."*
+- **Confirmed, and now pinned.** `_dlDoImport` calls `db.addDefect` per ticked
+  item and `db.addDefect` only ever pushes — there is no clear, splice or
+  reassignment anywhere in the write path (the single `this.data.defects = []`
+  in the file is the first-boot seed). But "only ever pushes" is exactly the
+  kind of property that holds right up until someone writes a tidier importer,
+  so it is now a test rather than a thing to re-derive.
+- **`tests/deflistexport.mjs` §8** works a job by hand, then imports two
+  different lists and re-imports the first, asserting at each stage that the
+  hand-raised rows survive **with their photos**, that a completed row stays
+  completed rather than being re-opened, that ids are never reassigned (the
+  cloud keys off them), and that every id from every earlier stage is still
+  present at the end. Lists stack: 2 → 4 → 7 → 7.
+
 ## 2026-10-15 (b) — a report reference no longer creates a second row
 
 - **Found while testing the export, not reported.** The workflow the feature

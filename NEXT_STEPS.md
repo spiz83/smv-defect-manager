@@ -51,6 +51,11 @@ Skylark lots.
   in the app; `tests/deflistexport.mjs` §5b covers both orders and the
   collision case, and all 42 suites pass. If anything odd turns up around
   duplicate defects, start here.
+- **Imports stack; they never replace.** Confirmed and pinned by
+  `tests/deflistexport.mjs` §8: import one list, then another, then the first
+  again — the hand-raised defects keep their photos, a completed row stays
+  completed, ids are never reassigned, and nothing from an earlier stage ever
+  disappears. Re-importing a list already on the job adds nothing.
 - **The crop toolbar fits one line again** (was wrapping at 390px and eating
   the top of the image). Pre-existing red in `tests/photoedit.mjs`.
 
