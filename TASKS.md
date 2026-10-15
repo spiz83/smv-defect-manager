@@ -1,6 +1,29 @@
 # Tasks
 
 ## Current sprint
+- [x] **Export a job's defects as a reusable list** — Settings → Defect lists →
+      *New list from a job's defects* → pick the job → tick/untick → name it.
+      The report reference is stripped, the company becomes its trade, the room
+      is kept, and the whole lot goes up in one insert. Do lot 5 Skylark
+      properly, save it, and the other nine lots start from it.
+      `tests/deflistexport.mjs`, build `2026-10-15a`.
+- [ ] **Run `supabase/migrations/2026-10-15_defect_list_locations.sql`.** One
+      nullable `location` column on `dm_defect_list_items`. Safe any time;
+      needs `2026-09-30_defect_lists.sql` first and says so if it is missing.
+      Until it is run, an exported list loses its rooms.
+- [ ] **Spiro: make the Skylark list.** Open Lot 5 Skylark Rd, Greenvale →
+      Settings → Defect lists → *New list from a job's defects* → pick it →
+      name it something like "Skylark Rd — standard". Then on each other
+      Skylark lot: Add Defects → *Import a defect list*. I cannot produce this
+      list from here — it has to come off your own data in the app.
+- [x] **A report reference no longer creates a second row** — `PI #3.27 — X`
+      and `X` on the same job, same room, same supplier are now one defect, and
+      the surviving row adopts the page reference. Found while testing the
+      export; it would have doubled every pre-loaded job the moment its real
+      report was imported. `tests/deflistexport.mjs` §5b.
+- [x] **Crop toolbar fits one line again** — the hint between Cancel and Crop ✓
+      wrapped at 390px and pushed the bar two rows deep, eating the top of the
+      image being cropped. Pre-existing; `tests/photoedit.mjs` had been red.
 - [x] **Pre-loaded defect lists** — import a named list onto a job (everything
       ticked, untick what doesn't apply) so an inspection starts with its
       regulars already there; plus Settings → Defect lists to keep a bank of
