@@ -615,6 +615,43 @@ check('…and offers no save button it could not honour',
 check('a job with no defects yet is not offered a save',
   chips.emptyJob === true, String(chips.emptyJob));
 
+// ================= 11. the banner must say WHY ============================
+// Spiro ran the migrations and still got "Showing the built-in starter list.
+// To create your own, run 2026-09-30_defect_lists.sql" — a message that named
+// a migration he had already run, because it was hardcoded rather than read
+// off the actual failure. The screen now reports what the database said.
+console.log('\n--- the read-only banner ---');
+const why = await page.evaluate(() => {
+  const saved = window.CloudDefectLists;
+  const read = () => {
+    showDefectListsEditor();
+    return (document.querySelector('.manage-container') || {}).textContent.replace(/\s+/g, ' ').trim();
+  };
+  // (a) The bank module is not loaded at all — no error to report, so fall back
+  //     to naming the migration that creates the tables.
+  window.CloudDefectLists = null;
+  const noModule = read();
+  // (b) Loaded, but the read failed and the database said why.
+  window.CloudDefectLists = {
+    ready: () => false, canEdit: () => false, list: () => [],
+    lastError: () => 'column dm_defect_list_items.location does not exist',
+  };
+  const withReason = read();
+  window.CloudDefectLists = saved;
+  return { noModule, withReason };
+});
+console.log('banner (no module):', why.noModule.slice(0, 140));
+console.log('banner (with reason):', why.withReason.slice(0, 180));
+check('with nothing to report, the banner names the migration that makes the tables',
+  /2026-09-30_defect_lists\.sql/.test(why.noModule), why.noModule.slice(0, 120));
+check('when the database gave a reason, the banner SHOWS it',
+  /column dm_defect_list_items\.location does not exist/.test(why.withReason),
+  why.withReason.slice(0, 160));
+check('…instead of sending you back to a migration you already ran',
+  !/2026-09-30_defect_lists\.sql/.test(why.withReason), why.withReason.slice(0, 160));
+check('…and names the signed-in address, since editing hangs off it',
+  /Signed in as/.test(why.withReason), why.withReason.slice(0, 200));
+
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');

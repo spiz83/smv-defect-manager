@@ -11556,9 +11556,19 @@
             const btn = 'padding:9px 12px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid var(--border-color,#ccc);background:transparent;color:inherit;';
             let banner = '';
             if (!window.CloudDefectLists || !window.CloudDefectLists.ready()) {
+                // SAY WHY. This used to name 2026-09-30_defect_lists.sql flatly,
+                // which is only right when that migration is the thing missing —
+                // and it sent Spiro back to re-run a migration he had already run
+                // when the real cause was a column the app asked for and the
+                // database did not have. The database's own words beat a guess.
+                const why = (window.CloudDefectLists && window.CloudDefectLists.lastError)
+                    ? String(window.CloudDefectLists.lastError() || '').trim() : '';
                 banner = `<div style="padding:12px 14px;margin-bottom:12px;border-radius:10px;background:var(--bg-secondary,#f3f3f3);font-size:13px;line-height:1.5;color:var(--text-secondary,#666);">
-                    Showing the built-in starter list. To create your own, run
-                    <code>supabase/migrations/2026-09-30_defect_lists.sql</code> — until then this screen is read-only.
+                    Showing the built-in starter list — this screen is read-only.
+                    ${why
+                        ? `<br><br>The shared bank could not be read:<br><code style="font-size:12px;">${_escHtml(why)}</code>`
+                        : `<br><br>To create your own, run <code>supabase/migrations/2026-09-30_defect_lists.sql</code>.`}
+                    <br><br><span style="opacity:.8;">Signed in as ${_escHtml((window.CloudAuth && window.CloudAuth.currentEmail && window.CloudAuth.currentEmail()) || 'unknown')} — editing the bank needs that address to have the defect-content admin flag.</span>
                 </div>`;
             } else if (!editable) {
                 banner = `<div style="padding:12px 14px;margin-bottom:12px;border-radius:10px;background:var(--bg-secondary,#f3f3f3);font-size:13px;line-height:1.5;color:var(--text-secondary,#666);">
@@ -14814,7 +14824,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-10-15b';
+        const APP_VERSION = '2026-10-15c';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14901,7 +14911,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-10-15b"></script>
+    <script src="cloud-sync.js?v=2026-10-15c"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
