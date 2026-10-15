@@ -54,6 +54,31 @@ Newest at top. Format: date — decision — why — trade-off accepted.
   defects are offered, with the count on the row — picking an empty job is the
   one mistake that screen can make.
 
+## 2026-10-15 (d) — the export moves to where the thought occurs — build `2026-10-15b`
+
+- **Spiro, standing on Lot 6 wanting Lot 5's defects:** *"Still says only 1 list
+  available?"* The Skylark list did not exist yet — fair enough — but two
+  things in the build made that much harder to work out than it should have
+  been, and both were mine.
+- **"1 available" was ambiguous.** The chip printed `defectListBank().length`,
+  and the bank falls back to ONE hardcoded starter list when the shared tables
+  are missing. So a migration that had not been run looked identical to one
+  that had. It now says **"starter list only"** on the fallback and keeps the
+  count when the bank is live — the screen states which world it is in instead
+  of leaving you to infer it.
+- **The export was in the wrong place, and 2026-10-15 (a) got this wrong.**
+  That entry reasoned the entry point belonged in the editor because the job
+  header already carries 📐 🎞️ 💾 and `hdr.mjs` pins it. The header was the
+  wrong thing to be reasoning about: the import chip is NOT in the header
+  either, it is a dashed chip above the blocks. A **💾 Save as a list** chip now
+  sits beside it. You have the finished house in front of you and you want to
+  keep it — that is where the thought occurs, and it is where Spiro went
+  looking. Settings → Defect lists still works and is unchanged.
+- **Both chips are conditional, so neither is a button that explains an error
+  after you tap it.** Save appears only when the job HAS defects and the viewer
+  can actually write to the bank; Import only when there is a bank to import
+  from.
+
 ## 2026-10-15 (c) — imports accumulate; a job is never replaced
 
 - **Spiro asked directly:** *"Confirming that by adding additional imports to

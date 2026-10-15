@@ -3321,7 +3321,7 @@
                          (Spiro 2026-09-01: "taking up too much space… only do an
                          icon"). -->
                     <div style="padding: 10px 12px;">
-                        ${renderDefectListImportButton(addressId)}
+                        ${renderDefectListChips(addressId)}
                         ${addDefectBlocksHtml()}
                     </div>
                 </div>
@@ -3332,16 +3332,46 @@
         // once at the START of an inspection, before anything is typed. It is
         // NOT in the header: that row already carries 📐 🎞️ 💾, a fourth icon
         // does not fit a phone at 30px, and hdr.mjs pins that layout.
-        function renderDefectListImportButton(addressId) {
-            const lists = defectListBank();
-            if (!lists.length) return '';
+        //
+        // The SAVE chip sits beside it (Spiro 2026-10-15). Saving a job as a
+        // list was only reachable from Settings -> Defect lists, which is not
+        // where the thought occurs: you have the finished house in front of you
+        // and you want to keep it. Standing on lot 6 wanting lot 5's work, the
+        // import chip is where you look — so the export belongs next to it.
+        function _dlChip(onclick, icon, label, sub, title) {
             return `
-                <div onclick="openDefectListImport(${addressId})"
-                     style="display:flex;align-items:center;justify-content:center;gap:7px;margin:0 0 10px;padding:10px 12px;border:1px dashed var(--border-color,#ccc);border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text-secondary,#777);"
-                     title="Drop a pre-loaded list of defects onto this job">
-                    📋 Import a defect list
-                    <span style="font-weight:400;font-size:12px;opacity:.8;">· ${lists.length} available</span>
+                <div onclick="${onclick}"
+                     style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 12px;border:1px dashed var(--border-color,#ccc);border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text-secondary,#777);"
+                     title="${_escHtml(title)}">
+                    ${icon} ${_escHtml(label)}
+                    ${sub ? `<span style="font-weight:400;font-size:12px;opacity:.8;white-space:nowrap;">· ${_escHtml(sub)}</span>` : ''}
                 </div>`;
+        }
+        function renderDefectListChips(addressId) {
+            const lists = defectListBank();
+            // "1 available" read exactly the same whether the shared bank was
+            // live or the app was falling back to its one hardcoded starter
+            // list — so a migration that had not been run looked identical to
+            // one that had, and cost a round trip to work out. Say which.
+            const live = !!(window.CloudDefectLists && window.CloudDefectLists.ready());
+            const mine = (db.data.defects || []).filter(d => d.addressId === addressId).length;
+            const chips = [];
+            if (lists.length) {
+                chips.push(_dlChip(`openDefectListImport(${addressId})`, '📋', 'Import a defect list',
+                    live ? lists.length + ' available' : 'starter list only',
+                    live ? 'Drop a pre-loaded list of defects onto this job'
+                         : 'Showing the built-in starter list — the shared bank needs supabase/migrations/2026-09-30_defect_lists.sql'));
+            }
+            // Only once there is something worth keeping, and only for someone
+            // who can actually save it — otherwise it is a button that explains
+            // an error after you tap it.
+            if (mine && defectListsCanEdit()) {
+                chips.push(_dlChip(`openDefectListExport(${addressId})`, '💾', 'Save as a list',
+                    mine + (mine === 1 ? ' defect' : ' defects'),
+                    "Copy this job's defects into a reusable list for the next house — the job itself is not changed"));
+            }
+            if (!chips.length) return '';
+            return `<div style="display:flex;gap:8px;margin:0 0 10px;">${chips.join('')}</div>`;
         }
 
         function renderAddDefectsContractor(contractorId) {
@@ -14784,7 +14814,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-10-15a';
+        const APP_VERSION = '2026-10-15b';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14871,7 +14901,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-10-15a"></script>
+    <script src="cloud-sync.js?v=2026-10-15b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

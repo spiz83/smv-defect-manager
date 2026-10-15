@@ -565,6 +565,56 @@ check('…and no defect added to or removed from the source job',
 check('the copy is a separate thing that can go onto other jobs',
   untouched.listItems > 0, `"Skylark" list holds ${untouched.listItems} items`);
 
+// ================= 10. reachable from the job you are standing on ==========
+// Spiro, on lot 6 wanting lot 5's defects: "Still says only 1 list available?"
+// The list did not exist yet — but the export that makes it was only reachable
+// from Settings -> Defect lists, which is not where the thought occurs, and the
+// chip's "1 available" read the same whether the shared bank was live or the
+// app was falling back to its one hardcoded list. Both fixed; both pinned.
+console.log('\n--- the chips on Add Defects ---');
+const chips = await page.evaluate(() => {
+  const read = () => {
+    startDefectsForJob(1);
+    const all = [...document.querySelectorAll('div[onclick]')];
+    const imp = all.find(d => /openDefectListImport/.test(d.getAttribute('onclick') || ''));
+    const exp = all.find(d => /openDefectListExport/.test(d.getAttribute('onclick') || ''));
+    return {
+      importText: imp ? imp.textContent.replace(/\s+/g, ' ').trim() : null,
+      exportText: exp ? exp.textContent.replace(/\s+/g, ' ').trim() : null,
+      sameRow: !!(imp && exp) && imp.parentElement === exp.parentElement,
+    };
+  };
+  const live = read();
+  // Now the migration-not-run case: the bank falls back to the built-in list.
+  const saved = window.CloudDefectLists;
+  window.CloudDefectLists = null;
+  const fallback = read();
+  // …and a job with no defects yet has nothing worth saving.
+  window.CloudDefectLists = saved;
+  const emptyJob = (() => {
+    startDefectsForJob(3);              // lot 7, deliberately empty
+    const all = [...document.querySelectorAll('div[onclick]')];
+    return !all.some(d => /openDefectListExport/.test(d.getAttribute('onclick') || ''));
+  })();
+  return { live, fallback, emptyJob };
+});
+console.log('chips:', JSON.stringify(chips, null, 1));
+
+check('the job screen offers to save its defects as a list',
+  !!chips.live.exportText, chips.live.exportText || 'no save chip');
+check('…right beside the import chip, where you went looking',
+  chips.live.sameRow === true, String(chips.live.sameRow));
+check('…saying how many it would take', /\d+ defects?/.test(chips.live.exportText || ''),
+  chips.live.exportText || '');
+check('with the shared bank live, the import chip counts it',
+  /\d+ available/.test(chips.live.importText || ''), chips.live.importText || '');
+check('on the built-in fallback it says SO, instead of a count that looks the same',
+  /starter list only/.test(chips.fallback.importText || ''), chips.fallback.importText || '');
+check('…and offers no save button it could not honour',
+  chips.fallback.exportText === null, String(chips.fallback.exportText));
+check('a job with no defects yet is not offered a save',
+  chips.emptyJob === true, String(chips.emptyJob));
+
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
