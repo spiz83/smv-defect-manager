@@ -183,7 +183,11 @@ const opened = await page.evaluate(() => {
     ready: () => true,
     list: () => lists.map(l => ({ ...l, items: l.items.slice() })),
     canEdit: () => true,
-    addList: async (n) => { window.__calls.push(['addList', n]); const l = { id: 'L9', name: n, n: 1, items: [] }; lists.push(l); return { ok: true, id: 'L9' }; },
+    // A real bank hands out a fresh id per list. The first cut of this stub
+    // returned a hardcoded 'L9', so a second export's items were filed onto
+    // the FIRST list and the new one came back empty — a stub bug that looked
+    // exactly like a product bug.
+    addList: async (n) => { const id = 'L' + (lists.length + 1); window.__calls.push(['addList', n, id]); lists.push({ id, name: n, n: 1, items: [] }); return { ok: true, id }; },
     addItem: async (...a) => { window.__calls.push(['addItem', ...a]); return { ok: true, id: 'x' }; },
     addItems: async (listId, items) => {
       window.__calls.push(['addItems', listId, items.length]);
@@ -250,6 +254,12 @@ check('the list is created under the name typed',
 const batches = saved.calls.filter(c => c[0] === 'addItems');
 check('the items go up in ONE call, not one per item',
   batches.length === 1 && batches[0][2] === 7, JSON.stringify(saved.calls));
+// The items must land on the list this export just created, not on whichever
+// list happens to be first in the bank. (The stub's own hardcoded id hid this
+// once already — worth asserting on the real thing.)
+const createdId = (saved.calls.find(c => c[0] === 'addList') || [])[2];
+check('…addressed to the list that was just created, not another one in the bank',
+  createdId != null && batches[0][1] === createdId, `created=${createdId} addItems→${batches[0][1]}`);
 check('…and addItem (the per-item path) is never used for an export',
   !saved.calls.some(c => c[0] === 'addItem'), JSON.stringify(saved.calls.map(c => c[0])));
 check('the overlay closes', saved.closed === true, String(saved.closed));
@@ -499,6 +509,61 @@ check('nothing is ever removed — the job only grows',
   accum.start.every(a => accum.afterAgain.some(b => b.id === a.id)) &&
   accum.afterA.every(a => accum.afterAgain.some(b => b.id === a.id)) &&
   accum.afterB.every(a => accum.afterAgain.some(b => b.id === a.id)), 'every id from every stage survives');
+
+// ================= 9. the SOURCE job is never touched ======================
+// Spiro's worry, and the right one to have (2026-10-15): "there are photos on
+// the original Skylark list so I can't let it disturb the job list in its
+// current form — replicate it and make it available to import to other jobs."
+//
+// Exporting is a READ. It copies wordings out into a new list and writes
+// nothing back. This pins that: the entire defects table is snapshotted as
+// JSON before the export and compared, deep, afterwards. Photos, statuses,
+// completion, booking dates, order status, ids — if the export disturbs ANY
+// of it, byte for byte, this fails.
+console.log('\n--- exporting must not disturb the job it reads ---');
+const untouched = await page.evaluate(async () => {
+  // Lot 5 as a real worked job: photos on defects, one completed, one booked,
+  // one on the shopping list.
+  const lot5 = (db.data.defects || []).filter(d => d.addressId === 1);
+  lot5[0].photos = ['PHOTO-1', 'PHOTO-2', 'PHOTO-3'];
+  lot5[0].lastUpdateAt = '2026-10-01T00:00:00.000Z';
+  if (lot5[1]) { lot5[1].photos = ['PHOTO-4']; lot5[1].status = 'completed'; lot5[1].completed = true; }
+  if (lot5[2]) { lot5[2].orderStatus = 'ordered'; lot5[2].bookingDate = '2026-10-20'; }
+  db.save();
+
+  const snapshot = () => JSON.stringify((db.data.defects || []).filter(d => d.addressId === 1));
+  const before = snapshot();
+  const photosBefore = (db.data.defects || []).filter(d => d.addressId === 1)
+    .reduce((n, d) => n + (d.photos || []).length, 0);
+
+  // The full export, end to end, exactly as the button runs it.
+  openDefectListExport(1);
+  const opened = !!document.getElementById('dlx-overlay');
+  _dlxName('Skylark');
+  await _dlxSave();
+
+  const after = snapshot();
+  const photosAfter = (db.data.defects || []).filter(d => d.addressId === 1)
+    .reduce((n, d) => n + (d.photos || []).length, 0);
+  const made = defectListBank().find(l => l.name === 'Skylark');
+  return {
+    opened, identical: before === after, photosBefore, photosAfter,
+    listMade: !!made, listItems: made ? made.items.length : 0,
+    sourceCount: (db.data.defects || []).filter(d => d.addressId === 1).length,
+  };
+});
+console.log('untouched:', JSON.stringify(untouched));
+check('the export runs end to end', untouched.opened === true && untouched.listMade === true,
+  JSON.stringify(untouched));
+check('the source job is byte-for-byte IDENTICAL afterwards — nothing is moved or rewritten',
+  untouched.identical === true, 'deep JSON compare of every defect on the job');
+check('…every photo still attached to the defect it was on',
+  untouched.photosBefore === 4 && untouched.photosAfter === 4,
+  `${untouched.photosBefore} → ${untouched.photosAfter}`);
+check('…and no defect added to or removed from the source job',
+  untouched.sourceCount === 9, String(untouched.sourceCount));
+check('the copy is a separate thing that can go onto other jobs',
+  untouched.listItems > 0, `"Skylark" list holds ${untouched.listItems} items`);
 
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 
