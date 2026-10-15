@@ -191,6 +191,28 @@
   // its built-in starter list until then.
   let defectLists = [];              // [{ id, name, n, items: [{ id, text, trade, n }] }]
   let defectListsReady = false;      // false = tables absent/unreadable, use the built-in list
+  let defectListsError = '';         // why, in the database's own words, for the banner to show
+
+  // `location` arrived in 2026-10-15_defect_list_locations.sql, AFTER the tables
+  // themselves in 2026-09-30_defect_lists.sql. Asking PostgREST for a column the
+  // database does not have is a HARD error, so an app newer than its database
+  // lost the entire feature: tables present and readable, bank unreadable, and a
+  // banner telling you to run the migration you had already run.
+  //
+  // So ask for it, and if that is what failed, ask again without it. Losing the
+  // rooms is a real loss on a row of identical houses; losing the lists is worse.
+  async function selectDefectListItems() {
+    const withLoc = 'id, list_id, text, trade, location, sort_n, active';
+    const first = await sb.from('dm_defect_list_items').select(withLoc).eq('active', true);
+    if (!first.error || !/location/i.test(first.error.message || '')) return first;
+    const second = await sb.from('dm_defect_list_items')
+      .select('id, list_id, text, trade, sort_n, active').eq('active', true);
+    if (!second.error) {
+      console.info('[CloudSync] defect lists read WITHOUT rooms — run ' +
+        'supabase/migrations/2026-10-15_defect_list_locations.sql so an exported list keeps its locations.');
+    }
+    return second;
+  }
   let bpiAiSettings = { weight_supervisor: 1, weight_senior: 3, weight_manager: 5, weight_admin: 10, min_examples: 2, auto_learning: true };
 
   function emptySnap() {
@@ -985,7 +1007,7 @@
       // list. Two selects rather than a join so a failure on either one is
       // visible on its own; both are small curated content, not logs.
       sb.from('dm_defect_lists').select('id, name, sort_n, active').eq('active', true),
-      sb.from('dm_defect_list_items').select('id, list_id, text, trade, location, sort_n, active').eq('active', true)
+      selectDefectListItems()
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -1154,10 +1176,14 @@
         .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
       defectListsReady = true;
       console.info('[CloudSync] defect lists:', defectLists.length, 'from the shared bank');
+      defectListsError = '';
     } else if ((dLists && dLists.error) || (dListItems && dListItems.error)) {
       defectListsReady = false;
-      console.info('[CloudSync] shared defect lists unavailable — using the built-in starter list.',
-        ((dLists && dLists.error) || (dListItems && dListItems.error)).message || '');
+      // Kept so the Defect lists screen can show WHY rather than guessing at a
+      // migration. "Run 2026-09-30" was wrong and misleading every time the real
+      // cause was anything else — a missing column, or RLS.
+      defectListsError = (((dLists && dLists.error) || (dListItems && dListItems.error)).message || '').trim();
+      console.info('[CloudSync] shared defect lists unavailable — using the built-in starter list.', defectListsError);
     }
 
     // DB-managed keyword rules (priority order) + live AI settings. Best-effort:
@@ -3516,6 +3542,7 @@
   // change without waiting for the next pull.
   window.CloudDefectLists = {
     ready: () => defectListsReady,
+    lastError: () => defectListsError,
     list: () => defectLists.map(l => ({ ...l, items: l.items.slice() })),
     canEdit: () => !!(wordingsAdmin || (cachedIdentity && cachedIdentity.wordingsAdmin)),
     async addList(name, sortN) {
