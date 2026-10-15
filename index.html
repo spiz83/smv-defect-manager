@@ -2562,6 +2562,26 @@
                 const norm = (s) => (s || '').trim().replace(/\s+/g, ' ').toLowerCase();
                 const sameContractor = (a, b) =>
                     (a == null ? '' : String(a)) === (b == null ? '' : String(b));
+                // A description WITH a report reference and the same description
+                // WITHOUT one are the same defect (Spiro 2026-10-15). This went
+                // from theoretical to certain the day jobs started being
+                // pre-loaded from a defect list: the list item reads "Defective
+                // external paint finish." and the PI report then imports
+                // "PI #3.27 (p.53-54) — Defective external paint finish." On a
+                // plain string compare those are two rows for one job — the
+                // photos split between them and the trade is sent to do it
+                // twice. The cloud cannot save us either: its unique index is on
+                // the raw description, so it holds both happily.
+                //
+                // stripReportRef is declared further down this file. addDefect
+                // only ever runs after the script has finished, so it resolves;
+                // the catch is for the one case it would not — a call made
+                // during boot — which degrades to a plain compare rather than
+                // throwing.
+                const bare = (s) => {
+                    try { return norm(stripReportRef(s)); } catch (e) { return norm(s); }
+                };
+                const hasRef = (s) => bare(s) !== norm(s);
                 // Completed rows are skipped UNLESS the caller is re-reading a
                 // source document (opts.matchCompleted). That exemption is what
                 // doubled Band Street: its 32 items had all been marked complete,
@@ -2586,7 +2606,7 @@
                 // left every first save comparing '' against a located row.
                 const dup = (this.data.defects || []).find(d =>
                     d.addressId === defect.addressId &&
-                    norm(d.description) === norm(defect.description) &&
+                    bare(d.description) === bare(defect.description) &&
                     norm(d.location) === norm(defect.location) &&
                     sameContractor(d.contractorId, defect.contractorId) &&
                     (matchCompleted || (d.status !== 'completed' && !d.completed))
@@ -2596,6 +2616,26 @@
                 // cloud sync diff.
                 this.lastAddWasDuplicate = !!dup;
                 if (dup) {
+                    // ADOPT THE REFERENCE. The row already on the job is the
+                    // same defect; it just did not know its number yet, because
+                    // it came off a defect list before the report was read. The
+                    // supervisor emails this report to the trade so they can
+                    // "refer to the specific page", and a pre-loaded row with
+                    // no page reference is the one row they cannot look up.
+                    //
+                    // Only ever ADDS a reference — an existing one is never
+                    // overwritten or removed — and never when another row on
+                    // the job already carries that exact description, which
+                    // would collide with the cloud's unique index on
+                    // (job, description, supplier).
+                    if (hasRef(defect.description) && !hasRef(dup.description) &&
+                        !(this.data.defects || []).some(d =>
+                            d !== dup && d.addressId === dup.addressId &&
+                            norm(d.description) === norm(defect.description))) {
+                        dup.description = defect.description;
+                        dup.lastUpdateAt = new Date().toISOString();
+                        this.save();
+                    }
                     // opts.quiet: the report review reports the outcome itself —
                     // it distinguishes "skipped" from "re-opened", which this
                     // can't. Two toasts fighting over one item is worse than none.
@@ -10781,6 +10821,172 @@
             return !!(window.CloudDefectLists && window.CloudDefectLists.ready() && window.CloudDefectLists.canEdit());
         }
 
+        // ===================================================================
+        //  EXPORTING A JOB'S DEFECTS AS A LIST  (Spiro 2026-10-15)
+        //  "Take a bunch of defects from a property and export as a defect
+        //   list so I can re-import it… if you've got a group of 10 properties
+        //   side by side, all the same trades worked on them, you can
+        //   anticipate all of the defects are going to be similar."
+        //
+        //  Do the first house properly, save it as a list, and the other nine
+        //  start from it. Three details make the copy actually reusable:
+        //
+        //   1. THE REPORT REFERENCE IS STRIPPED. A saved description begins
+        //      "PI #3.27 (p.53-54) — ". That is lot 5's inspector's numbering
+        //      and means nothing on lot 6, so stripReportRef takes it off.
+        //   2. THE TRADE IS KEPT, THE COMPANY IS NOT. A named sub on lot 5 may
+        //      not be the sub on lot 6, but the TRADE is what repeats — so a
+        //      real company resolves to its trade and a trade placeholder keeps
+        //      its own name.
+        //   3. THE ROOM IS KEPT. Identical houses repeat their rooms, and
+        //      re-picking ninety locations by hand would undo the saving.
+        // ===================================================================
+        let _dlExport = null;   // { addressId, ticked: Set<defectId>, name }
+
+        // The trade a defect should carry into a template. Placeholders already
+        // ARE the trade; a named company resolves to the trade it works in;
+        // anything unresolved files under Supervisor, the app's documented
+        // catch-all, rather than being dropped.
+        function _dlTradeForDefect(d) {
+            const c = (d && d.contractorId != null) ? db.getContractor(d.contractorId) : null;
+            if (!c) return 'Supervisor';
+            if (c.isTradePlaceholder) return String(c.name || 'Supervisor').trim();
+            return contractorToBpiTrade(c) || 'Supervisor';
+        }
+        // Every defect on the job, deduped. Two rows with the same wording in
+        // the same room for the same trade are one template item — but the same
+        // wording in two DIFFERENT rooms stays two, because on the next house
+        // they are still two jobs to go and do.
+        function _dlExportCandidates(addressId) {
+            const seen = new Set();
+            const out = [];
+            (db.data.defects || [])
+                .filter(d => d.addressId === addressId)
+                .forEach(d => {
+                    const text = stripReportRef(d.description || '').trim();
+                    if (!text) return;
+                    const trade = _dlTradeForDefect(d);
+                    const location = (d.location || '').trim();
+                    const key = (text + '|' + trade + '|' + location).toLowerCase();
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    out.push({ id: d.id, text, trade, location, status: defectStatusOf(d) });
+                });
+            // HOUSE ORDER, not alphabetical. DEFECT_LOCATIONS is already a walk
+            // through the property, so the list reads the way the supervisor
+            // walks it rather than putting Backyard above Bedroom 2. Anything
+            // unrecognised sits after the known rooms, and the no-room items
+            // ("Site clean required") go last, where they belong.
+            //
+            // The first cut sorted on (location || '~') to push blanks to the
+            // bottom. It did the opposite: localeCompare sorts punctuation
+            // BEFORE letters, so every roomless item came out on top.
+            const _locRank = l => {
+                if (!l) return 99999;
+                const i = DEFECT_LOCATIONS.indexOf(l);
+                return i < 0 ? 9999 : i;
+            };
+            return out.sort((a, b) =>
+                _locRank(a.location) - _locRank(b.location) ||
+                (a.location || '').localeCompare(b.location || '') ||
+                a.text.localeCompare(b.text));
+        }
+        function openDefectListExport(addressId) {
+            if (!defectListsCanEdit()) {
+                showToast('Run the defect-lists migration first — there is nowhere to save a list yet', true);
+                return;
+            }
+            const cands = _dlExportCandidates(addressId);
+            if (!cands.length) { showToast('No defects on this job to save', true); return; }
+            const addr = db.getAddress(addressId);
+            _dlExport = {
+                addressId,
+                ticked: new Set(cands.map(c => c.id)),
+                name: addr ? (addr.lot ? 'Lot ' + addr.lot : formatAddress(addr)) : 'New list',
+            };
+            _dlxRender();
+        }
+        function _dlxClose() { _dlExport = null; const ov = document.getElementById('dlx-overlay'); if (ov) ov.remove(); }
+        function _dlxToggle(id) {
+            if (!_dlExport) return;
+            const n = Number(id);
+            if (_dlExport.ticked.has(n)) _dlExport.ticked.delete(n); else _dlExport.ticked.add(n);
+            _dlxRender();
+        }
+        function _dlxSetAll(on) {
+            if (!_dlExport) return;
+            const cands = _dlExportCandidates(_dlExport.addressId);
+            _dlExport.ticked = on ? new Set(cands.map(c => c.id)) : new Set();
+            _dlxRender();
+        }
+        function _dlxName(v) { if (_dlExport) _dlExport.name = v; }
+        function _dlxRender() {
+            if (!_dlExport) return;
+            let ov = document.getElementById('dlx-overlay');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'dlx-overlay';
+                ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:flex-end;justify-content:center;';
+                ov.addEventListener('click', (e) => { if (e.target === ov) _dlxClose(); });
+                document.body.appendChild(ov);
+            }
+            const cands = _dlExportCandidates(_dlExport.addressId);
+            const n = _dlExport.ticked.size;
+            const rows = cands.map(c => {
+                const on = _dlExport.ticked.has(c.id);
+                return `
+                    <div onclick="_dlxToggle(${c.id})" style="display:flex;align-items:flex-start;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border-color,#eee);cursor:pointer;">
+                        <span style="flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:1.5px solid ${on ? 'var(--blue,#2563eb)' : 'var(--border-color,#bbb)'};background:${on ? 'var(--blue,#2563eb)' : 'transparent'};color:#fff;font-size:14px;line-height:20px;text-align:center;">${on ? '✓' : ''}</span>
+                        <span style="flex:1;min-width:0;">
+                            <span style="display:block;font-size:14px;color:var(--text-primary,#111);line-height:1.35;">${_escHtml(c.text)}</span>
+                            <span style="display:block;font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${_escHtml(c.trade)}${c.location ? ' · ' + _escHtml(c.location) : ''}</span>
+                        </span>
+                    </div>`;
+            }).join('');
+            ov.innerHTML = `
+                <div style="width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;background:var(--card-bg,#fff);border-radius:14px 14px 0 0;overflow:hidden;">
+                    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border-color,#eee);">
+                        <strong style="flex:1;font-size:16px;color:var(--text-primary,#111);">💾 Save as a defect list</strong>
+                        <button onclick="_dlxClose()" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:var(--text-secondary,#888);">✕</button>
+                    </div>
+                    <div style="padding:12px 16px;border-bottom:1px solid var(--border-color,#eee);">
+                        <input id="dlx-name" type="text" value="${_escHtml(_dlExport.name)}" oninput="_dlxName(this.value)" placeholder="Name this list…"
+                               style="width:100%;box-sizing:border-box;padding:11px;border:1px solid #c6c6c8;border-radius:10px;font-size:16px;background:var(--bg-primary,#fff);">
+                        <div style="font-size:12px;color:var(--text-secondary,#888);margin-top:7px;line-height:1.45;">
+                            The report reference is stripped and the company becomes its trade, so this reads cleanly on the next house. Rooms are kept.
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border-color,#eee);">
+                        <button onclick="_dlxSetAll(true)" style="flex:1;padding:8px;border:1px solid var(--border-color,#ccc);border-radius:8px;background:transparent;color:inherit;font-size:13px;font-weight:600;cursor:pointer;">Tick all</button>
+                        <button onclick="_dlxSetAll(false)" style="flex:1;padding:8px;border:1px solid var(--border-color,#ccc);border-radius:8px;background:transparent;color:inherit;font-size:13px;font-weight:600;cursor:pointer;">Untick all</button>
+                    </div>
+                    <div style="flex:1;overflow-y:auto;">${rows}</div>
+                    <div style="padding:12px 16px;border-top:1px solid var(--border-color,#eee);">
+                        <button onclick="_dlxSave()" ${n ? '' : 'disabled'} style="width:100%;padding:13px;border:none;border-radius:10px;background:${n ? 'var(--blue,#2563eb)' : 'var(--border-color,#ccc)'};color:#fff;font-size:15px;font-weight:700;cursor:${n ? 'pointer' : 'default'};">
+                            Save ${n} item${n === 1 ? '' : 's'} as a list
+                        </button>
+                    </div>
+                </div>`;
+        }
+        async function _dlxSave() {
+            if (!_dlExport || !_dlExport.ticked.size) return;
+            const name = String(_dlExport.name || '').trim();
+            if (!name) { showToast('Name the list first', true); return; }
+            const picked = _dlExportCandidates(_dlExport.addressId).filter(c => _dlExport.ticked.has(c.id));
+            const created = await window.CloudDefectLists.addList(name, 1);
+            if (created && created.error) { showToast('Could not create the list: ' + created.error, true); return; }
+            const res = await window.CloudDefectLists.addItems(created.id, picked.map(c => ({
+                text: c.text, trade: c.trade, location: c.location,
+            })));
+            if (res && res.error) {
+                showToast('List created but items failed: ' + res.error, true);
+            } else {
+                showToast(`"${name}" saved — ${picked.length} item${picked.length === 1 ? '' : 's'}`);
+            }
+            _dlxClose();
+            render();
+        }
+
         // ---- Importing a list onto a job ----------------------------------
         // Everything starts TICKED. The point of a list is that its items are
         // the ones that turn up every time, so the common case is "all of
@@ -10857,7 +11063,7 @@
                             <span style="flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:1.5px solid ${on ? 'var(--blue,#2563eb)' : 'var(--border-color,#bbb)'};background:${on ? 'var(--blue,#2563eb)' : 'transparent'};color:#fff;font-size:14px;line-height:20px;text-align:center;">${on ? '✓' : ''}</span>
                             <span style="flex:1;min-width:0;">
                                 <span style="display:block;font-size:14px;color:var(--text-primary,#111);line-height:1.35;">${_escHtml(i.text)}</span>
-                                <span style="display:block;font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${_escHtml(i.trade)}</span>
+                                <span style="display:block;font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${_escHtml(i.trade)}${i.location ? ' · ' + _escHtml(i.location) : ''}</span>
                             </span>
                         </div>`;
                 }).join('');
@@ -10897,7 +11103,12 @@
                     addressId,
                     contractorId: contractorId || null,
                     description: item.text,
-                    location: null,
+                    // A generic template carries no room and leaves this blank,
+                    // exactly as before. A list exported from a real job carries
+                    // the rooms across, which is the whole point for a row of
+                    // identical houses. Location is part of the duplicate key,
+                    // so two rooms with the same wording stay two defects.
+                    location: item.location || null,
                     status: 'open',
                     unassigned: !contractorId,
                 }, { matchCompleted: true, quiet: true });
@@ -11202,6 +11413,43 @@
             if (String(_dlOpenList) === String(id)) _dlOpenList = null;
             render(); showToast('List deleted');
         }
+        // Pick the job to copy from. Jobs carrying defects come first and are
+        // the only ones worth copying, so the count is on the row — picking an
+        // empty job is the one mistake this screen can make.
+        function dlNewFromJob() {
+            const counts = {};
+            (db.data.defects || []).forEach(d => { counts[d.addressId] = (counts[d.addressId] || 0) + 1; });
+            const addrs = scopeAddressesToUser(db.getAddresses() || [])
+                .filter(a => counts[a.id])
+                .sort((a, b) => counts[b.id] - counts[a.id] || formatAddress(a).localeCompare(formatAddress(b)));
+            if (!addrs.length) { showToast('No job has any defects to copy yet', true); return; }
+            let ov = document.getElementById('dlj-overlay');
+            if (!ov) {
+                ov = document.createElement('div');
+                ov.id = 'dlj-overlay';
+                ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:flex-end;justify-content:center;';
+                ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+                document.body.appendChild(ov);
+            }
+            ov.innerHTML = `
+                <div style="width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;background:var(--card-bg,#fff);border-radius:14px 14px 0 0;overflow:hidden;">
+                    <div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border-color,#eee);">
+                        <strong style="flex:1;font-size:16px;color:var(--text-primary,#111);">Copy from which job?</strong>
+                        <button onclick="document.getElementById('dlj-overlay').remove()" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:var(--text-secondary,#888);">✕</button>
+                    </div>
+                    <div style="flex:1;overflow-y:auto;">
+                        ${addrs.map(a => `
+                            <div onclick="document.getElementById('dlj-overlay').remove(); openDefectListExport(${a.id});"
+                                 style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border-color,#eee);cursor:pointer;">
+                                <span style="flex:1;min-width:0;">
+                                    <span style="display:block;font-weight:700;font-size:15px;color:var(--text-primary,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_escHtml(a.street || '')}</span>
+                                    <span style="display:block;font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${_escHtml([a.suburb || '', a.propertyNumber || ''].filter(Boolean).join(' · '))}</span>
+                                </span>
+                                <span style="flex:0 0 auto;font-family:ui-monospace,monospace;font-size:12px;color:var(--text-secondary,#888);">${counts[a.id]}</span>
+                            </div>`).join('')}
+                    </div>
+                </div>`;
+        }
         function dlStartAdd(listId) { _dlAddTo = listId; _dlEditItem = null; render(); }
         function dlCancelAdd() { _dlAddTo = null; _dlEditItem = null; render(); }
         function dlStartEditItem(id) { _dlEditItem = id; _dlAddTo = null; render(); }
@@ -11220,20 +11468,31 @@
         async function dlSaveNewItem(listId) {
             const text = (document.getElementById('dl-add-text') || {}).value || '';
             const trade = (document.getElementById('dl-add-trade') || {}).value || 'Supervisor';
+            const location = (document.getElementById('dl-add-location') || {}).value || '';
             if (!text.trim()) { showToast('Enter the defect wording', true); return; }
             const list = defectListBank().find(l => String(l.id) === String(listId));
             const nextN = list && list.items.length ? Math.max(...list.items.map(i => i.n || 0)) + 10 : 10;
-            const r = await window.CloudDefectLists.addItem(listId, text, trade, nextN);
+            const r = await window.CloudDefectLists.addItem(listId, text, trade, nextN, location);
             if (r && r.error) { showToast('Could not add: ' + r.error, true); return; }
             _dlAddTo = null; render(); showToast('Item added');
         }
         async function dlSaveItem(id) {
             const text = (document.getElementById('dl-edit-text') || {}).value || '';
             const trade = (document.getElementById('dl-edit-trade') || {}).value || 'Supervisor';
+            const location = (document.getElementById('dl-edit-location') || {}).value || '';
             if (!text.trim()) { showToast('Enter the defect wording', true); return; }
-            const r = await window.CloudDefectLists.updateItem(id, text, trade);
+            const r = await window.CloudDefectLists.updateItem(id, text, trade, location);
             if (r && r.error) { showToast('Could not save: ' + r.error, true); return; }
             _dlEditItem = null; render(); showToast('Saved');
+        }
+        // Blank is a real choice, and the default: a generic template should not
+        // presume a room. A list copied off a job arrives with rooms already set.
+        function dlLocationOptions(selected) {
+            const sel = String(selected || '');
+            const known = DEFECT_LOCATIONS.slice();
+            if (sel && !known.includes(sel)) known.unshift(sel);
+            return `<option value="" ${sel ? '' : 'selected'}>— no room (applies anywhere) —</option>` +
+                known.map(l => `<option value="${_escHtml(l)}" ${l === sel ? 'selected' : ''}>${_escHtml(l)}</option>`).join('');
         }
         async function dlRemoveItem(id) {
             if (!confirm('Remove this item from the list?')) return;
@@ -11284,6 +11543,7 @@
                             ${dlWordingPicker('dl-edit')}
                             <textarea id="dl-edit-text" rows="2" style="${inp}margin-bottom:8px;">${_escHtml(i.text)}</textarea>
                             <select id="dl-edit-trade" style="${inp}margin-bottom:8px;">${dlTradeOptions(i.trade)}</select>
+                            <select id="dl-edit-location" style="${inp}margin-bottom:8px;">${dlLocationOptions(i.location)}</select>
                             <div style="display:flex;gap:8px;">
                                 <button onclick="dlSaveItem('${_escAttrJs(i.id)}')" style="${btn}border-color:var(--blue,#2563eb);color:var(--blue,#2563eb);">Save</button>
                                 <button onclick="dlCancelAdd()" style="${btn}">Cancel</button>
@@ -11293,7 +11553,7 @@
                     return `<div style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border-color,#eee);">
                         <div style="flex:1;min-width:0;">
                             <div style="font-size:14px;color:var(--text-primary,#111);line-height:1.35;">${_escHtml(i.text)}</div>
-                            <div style="font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${_escHtml(i.trade)}</div>
+                            <div style="font-size:12px;color:var(--text-secondary,#888);margin-top:2px;">${_escHtml(i.trade)}${i.location ? ' · ' + _escHtml(i.location) : ''}</div>
                         </div>
                         ${editable ? `<button onclick="dlStartEditItem('${_escAttrJs(i.id)}')" style="${btn}">Edit</button>
                         <button onclick="dlRemoveItem('${_escAttrJs(i.id)}')" style="${btn}border-color:#dc2626;color:#dc2626;">🗑</button>` : ''}
@@ -11304,6 +11564,7 @@
                         ${dlWordingPicker('dl-add')}
                         <textarea id="dl-add-text" rows="2" placeholder="Defect wording…" style="${inp}margin-bottom:8px;"></textarea>
                         <select id="dl-add-trade" style="${inp}margin-bottom:8px;">${dlTradeOptions('Supervisor')}</select>
+                        <select id="dl-add-location" style="${inp}margin-bottom:8px;">${dlLocationOptions('')}</select>
                         <div style="display:flex;gap:8px;">
                             <button onclick="dlSaveNewItem('${_escAttrJs(l.id)}')" style="${btn}border-color:var(--blue,#2563eb);color:var(--blue,#2563eb);">Add item</button>
                             <button onclick="dlCancelAdd()" style="${btn}">Cancel</button>
@@ -11338,7 +11599,9 @@
                     </div>
                     <div class="manage-container">
                         ${banner}
-                        ${editable ? `<button onclick="dlNewList()" style="width:100%;padding:12px;margin-bottom:12px;border:1px dashed var(--blue,#2563eb);border-radius:10px;background:transparent;color:var(--blue,#2563eb);font-weight:700;font-size:15px;cursor:pointer;">＋ New list</button>` : ''}
+                        ${editable ? `
+                        <button onclick="dlNewList()" style="width:100%;padding:12px;margin-bottom:8px;border:1px dashed var(--blue,#2563eb);border-radius:10px;background:transparent;color:var(--blue,#2563eb);font-weight:700;font-size:15px;cursor:pointer;">＋ New list</button>
+                        <button onclick="dlNewFromJob()" style="width:100%;padding:12px;margin-bottom:12px;border:1px dashed var(--border-color,#ccc);border-radius:10px;background:transparent;color:var(--text-secondary,#777);font-weight:700;font-size:15px;cursor:pointer;">📋 New list from a job's defects</button>` : ''}
                         ${lists || '<div style="padding:16px;font-size:13px;color:var(--text-secondary,#888);">No lists yet.</div>'}
                     </div>
                 </div>`;
@@ -14521,7 +14784,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-09-30a';
+        const APP_VERSION = '2026-10-15a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14608,7 +14871,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-09-30a"></script>
+    <script src="cloud-sync.js?v=2026-10-15a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

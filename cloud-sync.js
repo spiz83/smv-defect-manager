@@ -985,7 +985,7 @@
       // list. Two selects rather than a join so a failure on either one is
       // visible on its own; both are small curated content, not logs.
       sb.from('dm_defect_lists').select('id, name, sort_n, active').eq('active', true),
-      sb.from('dm_defect_list_items').select('id, list_id, text, trade, sort_n, active').eq('active', true)
+      sb.from('dm_defect_list_items').select('id, list_id, text, trade, location, sort_n, active').eq('active', true)
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -1131,7 +1131,15 @@
       const byList = new Map();
       dListItems.data.forEach(r => {
         if (!r || !r.text || !r.list_id) return;
-        const item = { id: r.id, text: String(r.text).trim(), trade: String(r.trade || 'Supervisor').trim(), n: Number(r.sort_n) || 1 };
+        const item = {
+          id: r.id,
+          text: String(r.text).trim(),
+          trade: String(r.trade || 'Supervisor').trim(),
+          // Null on a generic template, a real room on a list exported from a
+          // job. Normalised to '' so the UI never has to check for both.
+          location: String(r.location || '').trim(),
+          n: Number(r.sort_n) || 1,
+        };
         const arr = byList.get(r.list_id);
         if (arr) arr.push(item); else byList.set(r.list_id, [item]);
       });
@@ -1907,7 +1915,11 @@
           bar.id = 'cs-crop-bar';
           bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;background:#1b1b1b;';
           bar.innerHTML = '<button data-act="cropcancel" style="' + bs('#333') + 'white-space:nowrap;">✕ Cancel</button>' +
-                          '<span style="color:#aaa;font-size:12px;">Drag the box · corners resize</span>' +
+                          // Shortened and clipped rather than allowed to wrap: at
+                          // 390px the long version pushed itself a line taller than
+                          // the two buttons beside it, so the bar came out two rows
+                          // deep and ate the top of the image being cropped.
+                          '<span style="flex:1;min-width:0;text-align:center;color:#aaa;font-size:12px;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Drag · corners resize</span>' +
                           '<button data-act="cropok" style="' + bs('#16a34a') + 'font-weight:700;white-space:nowrap;">Crop ✓</button>';
           topRow.style.display = 'none';
           if (colsRow) colsRow.style.display = 'none';
@@ -3533,32 +3545,60 @@
       defectLists = defectLists.filter(l => l.id !== id);
       return { ok: true };
     },
-    async addItem(listId, text, trade, sortN) {
+    async addItem(listId, text, trade, sortN, location) {
       const row = {
         list_id: listId,
         text: String(text || '').trim(),
         trade: String(trade || 'Supervisor').trim(),
+        location: String(location || '').trim() || null,
         sort_n: Number(sortN) || 1,
         updated_by: userId,
       };
       if (!row.text) return { error: 'empty' };
-      const { data, error } = await sb.from('dm_defect_list_items').insert(row).select('id, text, trade, sort_n').single();
+      const { data, error } = await sb.from('dm_defect_list_items').insert(row).select('id, text, trade, location, sort_n').single();
       if (error) return { error: error.message || String(error) };
       const hit = defectLists.find(l => l.id === listId);
-      if (hit) hit.items.push({ id: data.id, text: data.text, trade: data.trade, n: data.sort_n });
+      if (hit) hit.items.push({ id: data.id, text: data.text, trade: data.trade, location: String(data.location || ''), n: data.sort_n });
       return { ok: true, id: data.id };
     },
-    async updateItem(id, text, trade) {
+    // Several items in one round trip, for building a list out of a job's
+    // defects. One insert rather than ninety: a per-item loop over a phone
+    // connection is the difference between an export that works on site and
+    // one that half-finishes.
+    async addItems(listId, items) {
+      const rows = (items || [])
+        .map((it, i) => ({
+          list_id: listId,
+          text: String(it.text || '').trim(),
+          trade: String(it.trade || 'Supervisor').trim(),
+          location: String(it.location || '').trim() || null,
+          sort_n: (i + 1) * 10,
+          updated_by: userId,
+        }))
+        .filter(r => r.text);
+      if (!rows.length) return { error: 'empty' };
+      const { data, error } = await sb.from('dm_defect_list_items').insert(rows).select('id, text, trade, location, sort_n');
+      if (error) return { error: error.message || String(error) };
+      const hit = defectLists.find(l => l.id === listId);
+      if (hit) (data || []).forEach(d => hit.items.push({
+        id: d.id, text: d.text, trade: d.trade, location: String(d.location || ''), n: d.sort_n,
+      }));
+      return { ok: true, n: (data || []).length };
+    },
+    async updateItem(id, text, trade, location) {
       const patch = {
         text: String(text || '').trim(),
         trade: String(trade || 'Supervisor').trim(),
+        location: String(location || '').trim() || null,
         updated_at: new Date().toISOString(),
         updated_by: userId,
       };
       if (!patch.text) return { error: 'empty' };
       const { error } = await sb.from('dm_defect_list_items').update(patch).eq('id', id);
       if (error) return { error: error.message || String(error) };
-      defectLists.forEach(l => l.items.forEach(i => { if (i.id === id) { i.text = patch.text; i.trade = patch.trade; } }));
+      defectLists.forEach(l => l.items.forEach(i => {
+        if (i.id === id) { i.text = patch.text; i.trade = patch.trade; i.location = String(patch.location || ''); }
+      }));
       return { ok: true };
     },
     async removeItem(id) {

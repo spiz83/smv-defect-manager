@@ -14,7 +14,50 @@ second editor anywhere would be the mistake.
 # Next Steps / Handover
 
 STATUS: Active
-LAST UPDATED: 2026-09-19
+LAST UPDATED: 2026-10-15
+
+## ✅ Export a job's defects as a list — build `2026-10-15a` — NOT DEPLOYED
+
+Do the first house of a row properly, save it as a list, and the other nine
+start from it. Spiro's case: Lot 5 Skylark Rd, Greenvale → the rest of the
+Skylark lots.
+
+- **Settings → 📋 Defect lists → 📋 New list from a job's defects** → pick the
+  job (only jobs that have defects are offered, with the count on the row) →
+  everything starts ticked, untick what shouldn't carry over → name it → Save.
+- It lands in the normal bank, so **Add Defects → 📋 Import a defect list**
+  picks it up on the next house like any other list.
+- What is kept and what is dropped, deliberately: the **report reference comes
+  off** (lot 5's `PI #3.27 (p.53-54) —` means nothing on lot 6), the **company
+  becomes its trade** (a placeholder keeps its own name; anything unresolved
+  files under Supervisor), and the **room is kept** (ten identical houses
+  repeat their rooms). Rooms list in house order, roomless items last.
+- Items can also carry a room when added by hand — the add/edit forms now have
+  a room picker, defaulting to blank.
+
+- [ ] **Run `supabase/migrations/2026-10-15_defect_list_locations.sql`.** One
+      nullable column. Without it the export still works but the rooms are
+      lost, which is most of the value for a row of identical houses.
+- [ ] **Spiro has to make the Skylark list himself** — it comes off his own
+      data, which this session cannot read. Steps are in TASKS.md.
+
+### Also in this build
+
+- **A report reference no longer creates a second row.** `db.addDefect` now
+  compares descriptions with the reference stripped, so `PI #4.12 (p.61) —
+  Paint run to door frame.` matches the `Paint run to door frame.` that a
+  defect list put there first — and the surviving row adopts the reference, so
+  the trade can still refer to the page. This is the most load-bearing function
+  in the app; `tests/deflistexport.mjs` §5b covers both orders and the
+  collision case, and all 42 suites pass. If anything odd turns up around
+  duplicate defects, start here.
+- **Imports stack; they never replace.** Confirmed and pinned by
+  `tests/deflistexport.mjs` §8: import one list, then another, then the first
+  again — the hand-raised defects keep their photos, a completed row stays
+  completed, ids are never reassigned, and nothing from an earlier stage ever
+  disappears. Re-importing a list already on the job adds nothing.
+- **The crop toolbar fits one line again** (was wrapping at 390px and eating
+  the top of the image). Pre-existing red in `tests/photoedit.mjs`.
 
 ## ✅ Pre-loaded defect lists — build `2026-09-30a` — NOT DEPLOYED
 

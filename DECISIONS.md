@@ -2,6 +2,101 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-10-15 — export a job's defects as a reusable list — build `2026-10-15a`
+
+- **Spiro:** *"The ability to take a bunch of defects from a property and be
+  able to export as a defect list so that I can then re-import it… if you've
+  got a group of 10 properties side by side, all the same trades worked on
+  them, you can anticipate that all of the defects are going to be similar, so
+  you can pretty much import for future homes."* The worked example he asked
+  for is Lot 5 Skylark Rd, Greenvale → the rest of the Skylark lots.
+- **Decision: the export is a NORMAL list, not a new kind of object.** It lands
+  in the same bank, in the same editor, importable by the same screen. A second
+  concept ("job snapshots" alongside "defect lists") would have been two things
+  to learn and two things to maintain for one behaviour.
+- **The report reference is STRIPPED.** A saved description reads
+  `PI #3.27 (p.53-54) — Defective external paint finish.` That is lot 5's
+  inspector's numbering and is a lie on lot 6, so `stripReportRef` takes it off
+  on the way into the list.
+- **The TRADE survives; the COMPANY does not.** A trade placeholder keeps its
+  own name, a real company resolves through `contractorToBpiTrade`, and
+  anything unresolved files under Supervisor. Jameson Bros may not be the
+  painter on lot 6; "Painter" is what repeats. Trade-off accepted: re-importing
+  a list onto the house it came FROM re-raises those generalised lines as new
+  rows, because a different supplier is a different defect by the app's own
+  rule. Loosening that would start merging two real subs on one job, which is
+  worse; and re-importing onto the source is not the workflow. Pinned by a test
+  so it is a known consequence rather than a discovery.
+- **The ROOM survives — reversing the 2026-09-30 decision, on purpose.** That
+  migration deliberately left `location` off a list item, reasoning that a
+  default which is wrong most of the time is worse than blank. That holds for a
+  generic template like Standard PCI and is exactly wrong for ten identical
+  houses in a row: "Bedroom 2 door binding" on lot 5 is "Bedroom 2 door
+  binding" on lot 6, and throwing the room away would have the supervisor
+  re-pick ninety locations by hand. So the column is **nullable** and both
+  kinds of list live in the same bank — a generic template leaves it blank and
+  behaves exactly as before.
+- **Rooms come out in HOUSE order, not alphabetical.** `DEFECT_LOCATIONS` is
+  already a walk through the property, so the list reads the way the house is
+  walked instead of putting Backyard above Bedroom 2. Roomless items go last.
+  (The first cut sorted on `location || '~'` to push blanks to the bottom and
+  did the opposite — `localeCompare` sorts punctuation BEFORE letters, so every
+  roomless item came out on top. Caught by the test, not by reading it.)
+- **One insert, not ninety.** `CloudDefectLists.addItems` batches the whole
+  export into a single round trip. A per-item loop over a phone connection is
+  the difference between an export that works on site and one that
+  half-finishes, leaving a list nobody can tell is incomplete.
+- **Entry point is in the editor, not the job toolbar.** Settings → Defect
+  lists → *📋 New list from a job's defects* → pick the job → tick/untick →
+  name it. The job toolbar already carries seven buttons and `tests/hdr.mjs`
+  pins that layout; an eighth would have cost more than it bought, and this is
+  a once-per-estate action, not a per-job one. Only jobs that actually have
+  defects are offered, with the count on the row — picking an empty job is the
+  one mistake that screen can make.
+
+## 2026-10-15 (c) — imports accumulate; a job is never replaced
+
+- **Spiro asked directly:** *"Confirming that by adding additional imports to
+  a job it doesn't delete the previous job, it adds to it."*
+- **Confirmed, and now pinned.** `_dlDoImport` calls `db.addDefect` per ticked
+  item and `db.addDefect` only ever pushes — there is no clear, splice or
+  reassignment anywhere in the write path (the single `this.data.defects = []`
+  in the file is the first-boot seed). But "only ever pushes" is exactly the
+  kind of property that holds right up until someone writes a tidier importer,
+  so it is now a test rather than a thing to re-derive.
+- **`tests/deflistexport.mjs` §8** works a job by hand, then imports two
+  different lists and re-imports the first, asserting at each stage that the
+  hand-raised rows survive **with their photos**, that a completed row stays
+  completed rather than being re-opened, that ids are never reassigned (the
+  cloud keys off them), and that every id from every earlier stage is still
+  present at the end. Lists stack: 2 → 4 → 7 → 7.
+
+## 2026-10-15 (b) — a report reference no longer creates a second row
+
+- **Found while testing the export, not reported.** The workflow the feature
+  exists for is: pre-load lot 6 off lot 5's list, then read lot 6's own PI
+  report. The list item says `Paint run to door frame.`; the report says
+  `PI #4.12 (p.61) — Paint run to door frame.` `db.addDefect` compared raw
+  strings, so those were two defects — the photos split between them and the
+  trade sent to do it twice. The cloud could not catch it either: its unique
+  index is on the raw description, so it holds both happily.
+- **Decision: the duplicate matcher compares descriptions with the reference
+  stripped.** One row per real defect, which is what both the list import and
+  the report import were always trying to produce.
+- **And the surviving row ADOPTS the reference.** The pre-loaded row is the
+  same defect; it just did not know its number yet. The supervisor emails the
+  report to the trade so they can *"refer to the specific page"*, and a row
+  with no page reference is the one row they cannot look up. Guarded three
+  ways: it only ever ADDS a reference, never overwrites or removes one, and it
+  stands down when another row on the job already carries that exact wording —
+  which would collide with the cloud's unique index on
+  (job, description, supplier).
+- **Risk accepted:** this is the most load-bearing function in the app. It is
+  covered by `tests/deflistexport.mjs` section 5b in both orders plus the
+  collision case, and the full 42-suite gate passes — including every report
+  import suite (`deep`, `dupe`, `pitable`, `reportindex`, `bpidesc`, `fixes`),
+  which are the ones that would notice.
+
 ## 2026-09-30 (b) — pre-loaded defect lists — build `2026-09-30a`
 
 - **Spiro:** *"Create defect lists for inspections… there are certain things
