@@ -1938,6 +1938,14 @@
 
         /* Location picker grid */
         .loc-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        /* Inside on the left, outside on the right. Two INDEPENDENT columns,
+           not a grid that fills left-to-right — the side a room is on has to
+           stay put as the list gets longer, or the split tells you nothing. */
+        .loc-any { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .loc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+        .loc-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+        .loc-colhead { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+                       color: var(--text-secondary, #888); padding: 2px 2px 1px; }
         .loc-opt { padding: 11px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; cursor: pointer; text-align: left; }
         .loc-opt.sel { border-color: var(--blue); color: var(--blue); font-weight: 700; }
         /* Title left-aligned so the F1 theme picker doesn't cover it */
@@ -5578,9 +5586,8 @@
             const row = btn.closest('.defect-input-row');
             const cur = (row && row._location) || '';
             const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" data-val="${String(val).replace(/"/g, '&quot;')}">${label}</button>`;
-            const items = opt('', '— None —') + DEFECT_LOCATIONS.map(l => opt(l, l)).join('');
             impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body">${LOC_SEARCH_INPUT}<div class="loc-grid">${items}</div></div>`);
+                <div id="imp-body">${locPickerBody(opt)}</div>`);
             focusLocSearch();
             document.querySelectorAll('#imp-ov .loc-opt').forEach(b => {
                 b.onclick = () => {
@@ -6103,20 +6110,62 @@
         // 'Walk In Robe' were, and 'Bedroom N' outnumbered 'Bed N' 28 to 12. The four
         // elevations sit ALONGSIDE 'Facade / External' rather than folded into it:
         // which elevation a brick or render defect is on is what the trade needs.
-        const DEFECT_LOCATIONS = ['Throughout',
-            'Entry','Hallway','Stairs',
-            'Kitchen','Pantry','Meals','Dining','Living','Lounge','Family',
-            'Rumpus','Theatre','Sitting','Retreat','Study',
-            'Master Bedroom','Bedroom 1','Bedroom 2','Bedroom 3','Bedroom 4','Bedroom 5',
-            'Walk In Robe','Linen Cupboard',
-            'Ensuite','Bathroom','Powder Room','Toilet',
-            'Laundry',
-            'Garage','Garage Internal PA Door','Garage External PA Door',
-            'Front Door','Alfresco','Porch','Balcony','Driveway','Backyard',
-            'Front Elevation','Left Elevation','Right Elevation','Rear Elevation','Facade / External',
-            'Roof','Roof Space',
-            'General Internal','General External',
-            'Other'];
+        //  ORDER IS THE FEATURE, and so is the SIDE (Spiro 2026-10-18).
+        //  The picker is tapped once per defect, dozens of times on a
+        //  walk-through, so a room below the fold costs a scroll or a search
+        //  every single time. Two things follow from that:
+        //
+        //   1. INSIDE ON THE LEFT, OUTSIDE ON THE RIGHT. Spiro's words:
+        //      "left side internal rooms and right side external rooms."
+        //      Standing in a house you already know which of the two you are
+        //      in, so half the list stops being noise before you read a word.
+        //   2. WITHIN EACH SIDE, THE ORDER HE WALKS IT. In the front door,
+        //      the garage PA door, bedrooms, study, wet areas, kitchen,
+        //      living; outside, the facade and around the four elevations to
+        //      the alfresco. The rarer rooms keep their old order underneath.
+        //
+        //  'Throughout' and 'Other' belong to neither side — they sit in a row
+        //  of their own above both columns, next to None.
+        //
+        //  THIS IS THE SOURCE OF TRUTH. DEFECT_LOCATIONS is derived from it
+        //  just below, so there is one list to edit, not two that drift.
+        //  tests/loc.mjs checks the groups cover it exactly, with an
+        //  abbreviation for every entry and no duplicates.
+        const DEFECT_LOCATION_GROUPS = {
+            anywhere: ['Throughout', 'Other'],
+            inside: [
+                'Entry',
+                'Garage Internal PA Door',
+                'Master Bedroom', 'Bedroom 2', 'Bedroom 3', 'Bedroom 4',
+                'Study', 'Bathroom', 'Ensuite', 'Laundry', 'Kitchen', 'Living',
+                // ---- less often, same order as before ----
+                'Hallway', 'Stairs',
+                'Pantry', 'Meals', 'Dining', 'Lounge', 'Family',
+                'Rumpus', 'Theatre', 'Sitting', 'Retreat',
+                'Bedroom 1', 'Bedroom 5',
+                'Walk In Robe', 'Linen Cupboard',
+                'Powder Room', 'Toilet',
+                'Garage', 'Roof Space', 'General Internal',
+            ],
+            outside: [
+                'Garage External PA Door',
+                'Facade / External',
+                'Front Elevation', 'Rear Elevation', 'Left Elevation', 'Right Elevation',
+                'Alfresco',
+                // ---- less often, same order as before ----
+                'Front Door', 'Porch', 'Balcony', 'Driveway', 'Backyard',
+                'Roof', 'General External',
+            ],
+        };
+        //  Flat list, derived. Drives LOCATION_ABBR, the dropdowns, and the
+        //  sort order of a defect list exported off a job — which is why
+        //  inside comes before outside here: an exported list then reads in
+        //  the order the house is walked.
+        const DEFECT_LOCATIONS = [
+            ...DEFECT_LOCATION_GROUPS.inside,
+            ...DEFECT_LOCATION_GROUPS.outside,
+            ...DEFECT_LOCATION_GROUPS.anywhere,
+        ];
 
         // ---------------------------------------------------------------------
         //  THE LOCATION BELONGS ON THE ROW (Spiro 2026-08-12)
@@ -6265,10 +6314,24 @@
             const d = db.data.defects.find(x => x.id === defectId); if (!d) return;
             const cur = d.location || '';
             const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" onclick="pickLocation(${defectId}, '${String(val).replace(/'/g, "\\'")}')">${label}</button>`;
-            const items = opt('', '— None —') + DEFECT_LOCATIONS.map(l => opt(l, l)).join('');
             impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
-                <div id="imp-body">${LOC_SEARCH_INPUT}<div class="loc-grid">${items}</div></div>`);
+                <div id="imp-body">${locPickerBody(opt)}</div>`);
             focusLocSearch();
+        }
+        // The picker's body, built once and used by both entry points (the pin
+        // beside an Enter-defect row, and the pin on a saved defect). `opt` is
+        // supplied by the caller because the two wire their clicks differently
+        // — one stashes the value on the row, the other writes it to the db.
+        function locPickerBody(opt) {
+            const G = DEFECT_LOCATION_GROUPS;
+            const col = (key, head) =>
+                `<div class="loc-col" data-col="${key}">` +
+                `<div class="loc-colhead">${head}</div>` +
+                G[key].map(l => opt(l, l)).join('') +
+                `</div>`;
+            return LOC_SEARCH_INPUT +
+                `<div class="loc-any">${opt('', '— None —')}${G.anywhere.map(l => opt(l, l)).join('')}</div>` +
+                `<div class="loc-cols">${col('inside', 'Inside')}${col('outside', 'Outside')}</div>`;
         }
         // Live filter for the location picker grid (type to narrow, no scrolling).
         const LOC_SEARCH_INPUT = '<input id="loc-search" type="text" placeholder="🔍 Search location…" oninput="filterLocOpts(this.value)" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px 12px;margin-bottom:10px;border:1px solid var(--border-color,#ccc);border-radius:10px;font-size:16px;">';
@@ -6278,6 +6341,13 @@
                 const t = (b.textContent || '').toLowerCase();
                 const isNone = t.indexOf('none') !== -1;
                 b.style.display = (!q ? true : (!isNone && t.indexOf(q) !== -1)) ? '' : 'none';
+            });
+            // A heading over nothing reads as a column that has lost its rooms.
+            // Search "elev" and only Outside should be left standing.
+            document.querySelectorAll('#imp-ov .loc-col').forEach(c => {
+                const any = [...c.querySelectorAll('.loc-opt')].some(b => b.style.display !== 'none');
+                const head = c.querySelector('.loc-colhead');
+                if (head) head.style.display = any ? '' : 'none';
             });
         }
         function focusLocSearch() { const el = document.getElementById('loc-search'); if (el) setTimeout(() => el.focus(), 50); }
@@ -14824,7 +14894,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-10-15c';
+        const APP_VERSION = '2026-10-18a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14911,7 +14981,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-10-15c"></script>
+    <script src="cloud-sync.js?v=2026-10-18a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -143,6 +143,95 @@ const table = await page.evaluate(() => {
            sharedIsMaster: LOCATION_ABBR_SHARED.length === 1
              && LOCATION_ABBR[LOCATION_ABBR_SHARED[0][0]] === LOCATION_ABBR[LOCATION_ABBR_SHARED[0][1]] };
 });
+// ---- the SIDE and the ORDER of the picker are both features ---------------
+// Spiro 2026-10-18: "left side internal rooms and right side external rooms",
+// plus the walk order within each. The picker is tapped once per defect,
+// dozens of times on a walk-through: standing in a house you already know
+// which side you are on, so half the list should stop being noise before you
+// read a word. This pins both, and pins that the split loses nothing.
+const INSIDE_FIRST = ['Entry', 'Garage Internal PA Door', 'Master Bedroom',
+  'Bedroom 2', 'Bedroom 3', 'Bedroom 4', 'Study', 'Bathroom', 'Ensuite',
+  'Laundry', 'Kitchen', 'Living'];
+const OUTSIDE_FIRST = ['Garage External PA Door', 'Facade / External',
+  'Front Elevation', 'Rear Elevation', 'Left Elevation', 'Right Elevation',
+  'Alfresco'];
+const groups = await page.evaluate(() => ({
+  inside: DEFECT_LOCATION_GROUPS.inside.slice(),
+  outside: DEFECT_LOCATION_GROUPS.outside.slice(),
+  anywhere: DEFECT_LOCATION_GROUPS.anywhere.slice(),
+  flat: DEFECT_LOCATIONS.slice(),
+}));
+console.log('\ngroups:', groups.inside.length, 'inside /', groups.outside.length,
+            'outside /', groups.anywhere.length, 'anywhere');
+
+check('the walk-through rooms lead the INSIDE column, in the order given',
+  JSON.stringify(groups.inside.slice(0, INSIDE_FIRST.length)) === JSON.stringify(INSIDE_FIRST),
+  JSON.stringify(groups.inside.slice(0, INSIDE_FIRST.length)));
+check('…and the elevations lead the OUTSIDE column',
+  JSON.stringify(groups.outside.slice(0, OUTSIDE_FIRST.length)) === JSON.stringify(OUTSIDE_FIRST),
+  JSON.stringify(groups.outside.slice(0, OUTSIDE_FIRST.length)));
+check('an internal room is never filed outside',
+  !groups.outside.some(l => /Bedroom|Kitchen|Ensuite|Laundry|Hallway|Pantry/.test(l)),
+  JSON.stringify(groups.outside));
+check('…and an elevation is never filed inside',
+  !groups.inside.some(l => /Elevation|Alfresco|Driveway|Backyard|Porch/.test(l)),
+  JSON.stringify(groups.inside.filter(l => /Elevation|Alfresco|Driveway|Backyard|Porch/.test(l))));
+check('the two garage PA doors land on opposite sides — that is the whole point',
+  groups.inside.includes('Garage Internal PA Door') && groups.outside.includes('Garage External PA Door'),
+  'internal=' + groups.inside.includes('Garage Internal PA Door') +
+  ' external=' + groups.outside.includes('Garage External PA Door'));
+check('Throughout and Other belong to neither side',
+  JSON.stringify(groups.anywhere) === JSON.stringify(['Throughout', 'Other']),
+  JSON.stringify(groups.anywhere));
+
+// Splitting a list is an easy way to quietly lose from it.
+check('the groups cover the flat list exactly — nothing lost in the split',
+  groups.flat.length === 48 &&
+  [...groups.inside, ...groups.outside, ...groups.anywhere].sort().join('|') === groups.flat.slice().sort().join('|'),
+  `flat=${groups.flat.length} grouped=${groups.inside.length + groups.outside.length + groups.anywhere.length}`);
+check('…and no room appears on both sides',
+  new Set(groups.flat).size === groups.flat.length,
+  JSON.stringify(groups.flat.filter((x, i) => groups.flat.indexOf(x) !== i)));
+
+// It has to actually RENDER as two columns, not just be two arrays.
+const rendered = await page.evaluate(() => {
+  const d = db.data.defects[0];
+  openLocationPicker(d.id);
+  const cols = [...document.querySelectorAll('#imp-ov .loc-col')];
+  const box = c => c.getBoundingClientRect();
+  const out = {
+    cols: cols.length,
+    heads: cols.map(c => (c.querySelector('.loc-colhead') || {}).textContent),
+    counts: cols.map(c => c.querySelectorAll('.loc-opt').length),
+    sideBySide: cols.length === 2 && box(cols[0]).right <= box(cols[1]).left + 1,
+    anyRow: [...document.querySelectorAll('#imp-ov .loc-any .loc-opt')].map(b => b.textContent),
+  };
+  // Searching must leave the matching column standing and retire the other.
+  filterLocOpts('elev');
+  out.afterSearch = cols.map(c => ({
+    head: (c.querySelector('.loc-colhead') || {}).style.display,
+    visible: [...c.querySelectorAll('.loc-opt')].filter(b => b.style.display !== 'none').length,
+  }));
+  impClose();
+  return out;
+});
+console.log('rendered:', JSON.stringify(rendered));
+check('the picker renders as two real columns', rendered.cols === 2, String(rendered.cols));
+check('…labelled Inside and Outside',
+  JSON.stringify(rendered.heads) === JSON.stringify(['Inside', 'Outside']), JSON.stringify(rendered.heads));
+check('…side by side, not stacked',
+  rendered.sideBySide === true, JSON.stringify(rendered.counts));
+check('…holding 32 and 14 rooms', JSON.stringify(rendered.counts) === JSON.stringify([32, 14]),
+  JSON.stringify(rendered.counts));
+check('None, Throughout and Other sit above both columns',
+  rendered.anyRow.length === 3 && /None/.test(rendered.anyRow[0]) &&
+  rendered.anyRow[1] === 'Throughout' && rendered.anyRow[2] === 'Other',
+  JSON.stringify(rendered.anyRow));
+check('searching "elev" leaves Outside standing and retires the Inside heading',
+  rendered.afterSearch[0].visible === 0 && rendered.afterSearch[0].head === 'none' &&
+  rendered.afterSearch[1].visible === 4 && rendered.afterSearch[1].head === '',
+  JSON.stringify(rendered.afterSearch));
+
 console.log('\ntable:', JSON.stringify(table));
 check('every picker location has a code', table.missing.length === 0, table.missing.join(', '));
 check('no two locations share a code, bar the documented pair',
