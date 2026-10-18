@@ -215,6 +215,34 @@ const rendered = await page.evaluate(() => {
   impClose();
   return out;
 });
+// The keyboard must NOT come up. Spiro 2026-10-18, with a screenshot showing
+// three rooms visible above an iOS keyboard: "when location is pressed make
+// sure the keyboard isn't around — I want to be able to freely select without
+// typing." Focusing the search box on open is what summoned it, on a picker
+// whose whole point is that the room is already on screen.
+const kb = await page.evaluate(() => {
+  const d = db.data.defects[0];
+  openLocationPicker(d.id);
+  const a = document.activeElement;
+  const search = document.getElementById('loc-search');
+  const res = {
+    focusedId: a ? (a.id || a.tagName) : null,
+    searchExists: !!search,
+    searchFocused: !!search && a === search,
+  };
+  // …but it must still work when you DO tap it.
+  if (search) { search.focus(); res.focusesOnTap = document.activeElement === search; }
+  impClose();
+  return res;
+});
+console.log('keyboard:', JSON.stringify(kb));
+check('opening the picker does not focus the search box — no keyboard',
+  kb.searchFocused === false, 'focused: ' + kb.focusedId);
+check('…the search box is still there for a rare room',
+  kb.searchExists === true, String(kb.searchExists));
+check('…and still takes focus when you tap it',
+  kb.focusesOnTap === true, String(kb.focusesOnTap));
+
 console.log('rendered:', JSON.stringify(rendered));
 check('the picker renders as two real columns', rendered.cols === 2, String(rendered.cols));
 check('…labelled Inside and Outside',
