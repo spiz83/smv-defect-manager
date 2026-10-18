@@ -5588,7 +5588,12 @@
             const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" data-val="${String(val).replace(/"/g, '&quot;')}">${label}</button>`;
             impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">${locPickerBody(opt)}</div>`);
-            focusLocSearch();
+            // NO AUTOFOCUS. Focusing the search box threw up the keyboard, which
+            // ate two thirds of the screen and left three rooms showing — on a
+            // picker whose whole point is that the room you want is already
+            // visible (Spiro 2026-10-18: "I want to be able to freely select
+            // without typing"). Tapping the box still opens the keyboard for
+            // anyone hunting a rare room.
             document.querySelectorAll('#imp-ov .loc-opt').forEach(b => {
                 b.onclick = () => {
                     const val = b.getAttribute('data-val') || '';
@@ -6316,7 +6321,12 @@
             const opt = (val, label) => `<button class="loc-opt ${val === cur ? 'sel' : ''}" onclick="pickLocation(${defectId}, '${String(val).replace(/'/g, "\\'")}')">${label}</button>`;
             impOverlay(`<div id="imp-head"><strong>📍 Location</strong><button id="imp-close">✕</button></div>
                 <div id="imp-body">${locPickerBody(opt)}</div>`);
-            focusLocSearch();
+            // NO AUTOFOCUS. Focusing the search box threw up the keyboard, which
+            // ate two thirds of the screen and left three rooms showing — on a
+            // picker whose whole point is that the room you want is already
+            // visible (Spiro 2026-10-18: "I want to be able to freely select
+            // without typing"). Tapping the box still opens the keyboard for
+            // anyone hunting a rare room.
         }
         // The picker's body, built once and used by both entry points (the pin
         // beside an Enter-defect row, and the pin on a saved defect). `opt` is
@@ -6350,7 +6360,6 @@
                 if (head) head.style.display = any ? '' : 'none';
             });
         }
-        function focusLocSearch() { const el = document.getElementById('loc-search'); if (el) setTimeout(() => el.focus(), 50); }
         function pickLocation(defectId, loc) {
             db.setDefectLocation(defectId, loc);
             impClose(); render();
@@ -14894,7 +14903,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-10-18a';
+        const APP_VERSION = '2026-10-18b';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14981,7 +14990,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-10-18a"></script>
+    <script src="cloud-sync.js?v=2026-10-18b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
