@@ -6103,17 +6103,40 @@
         // 'Walk In Robe' were, and 'Bedroom N' outnumbered 'Bed N' 28 to 12. The four
         // elevations sit ALONGSIDE 'Facade / External' rather than folded into it:
         // which elevation a brick or render defect is on is what the trade needs.
-        const DEFECT_LOCATIONS = ['Throughout',
-            'Entry','Hallway','Stairs',
-            'Kitchen','Pantry','Meals','Dining','Living','Lounge','Family',
-            'Rumpus','Theatre','Sitting','Retreat','Study',
-            'Master Bedroom','Bedroom 1','Bedroom 2','Bedroom 3','Bedroom 4','Bedroom 5',
+        //  ORDER IS THE FEATURE, not housekeeping (Spiro 2026-10-18). The picker
+        //  is tapped once per defect, dozens of times on a walk-through, so the
+        //  rooms actually used have to be in the first screenful — reachable
+        //  without scrolling or typing. The order below is the one Spiro called
+        //  out, which is the order he walks a house in: in the front door,
+        //  through the garage doors, the bedrooms, the wet areas, then out and
+        //  around the elevations.
+        //
+        //  Everything after the divider is the rest of the old list, in its old
+        //  order. Nothing is removed — a room that is rare is still a room, and
+        //  the search box at the top of the modal finds it in two keystrokes.
+        //
+        //  NOTE: this array is also the sort order for a defect list exported
+        //  off a job (_locRank in _dlExportCandidates), which is deliberate —
+        //  an exported list should read in the order the house is walked.
+        const DEFECT_LOCATIONS = [
+            // ---- first line of sight ------------------------------------
+            'Entry',
+            'Garage Internal PA Door','Garage External PA Door',
+            'Master Bedroom','Bedroom 2','Bedroom 3','Bedroom 4',
+            'Study','Bathroom','Ensuite','Laundry','Kitchen','Living',
+            'Facade / External',
+            'Front Elevation','Rear Elevation','Left Elevation','Right Elevation',
+            'Alfresco',
+            // ---- everything else, in the order it has always been -------
+            'Throughout',
+            'Hallway','Stairs',
+            'Pantry','Meals','Dining','Lounge','Family',
+            'Rumpus','Theatre','Sitting','Retreat',
+            'Bedroom 1','Bedroom 5',
             'Walk In Robe','Linen Cupboard',
-            'Ensuite','Bathroom','Powder Room','Toilet',
-            'Laundry',
-            'Garage','Garage Internal PA Door','Garage External PA Door',
-            'Front Door','Alfresco','Porch','Balcony','Driveway','Backyard',
-            'Front Elevation','Left Elevation','Right Elevation','Rear Elevation','Facade / External',
+            'Powder Room','Toilet',
+            'Garage',
+            'Front Door','Porch','Balcony','Driveway','Backyard',
             'Roof','Roof Space',
             'General Internal','General External',
             'Other'];
@@ -14824,7 +14847,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-10-15c';
+        const APP_VERSION = '2026-10-18a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14911,7 +14934,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-10-15c"></script>
+    <script src="cloud-sync.js?v=2026-10-18a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

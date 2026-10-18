@@ -143,6 +143,38 @@ const table = await page.evaluate(() => {
            sharedIsMaster: LOCATION_ABBR_SHARED.length === 1
              && LOCATION_ABBR[LOCATION_ABBR_SHARED[0][0]] === LOCATION_ABBR[LOCATION_ABBR_SHARED[0][1]] };
 });
+// ---- the order of the picker IS a feature ---------------------------------
+// Spiro 2026-10-18: "the ones that I've listed to be upfront line of sight and
+// then all the others that I've missed that you originally had can follow that
+// list underneath." The picker is tapped once per defect, dozens of times on a
+// walk-through, so a room that falls below the fold costs a scroll or a search
+// EVERY time. This pins the order he gave; a later edit that reshuffles the
+// array for tidiness has to come past this test.
+const PICK_FIRST = [
+  'Entry',
+  'Garage Internal PA Door', 'Garage External PA Door',
+  'Master Bedroom', 'Bedroom 2', 'Bedroom 3', 'Bedroom 4',
+  'Study', 'Bathroom', 'Ensuite', 'Laundry', 'Kitchen', 'Living',
+  'Facade / External',
+  'Front Elevation', 'Rear Elevation', 'Left Elevation', 'Right Elevation',
+  'Alfresco',
+];
+const order = await page.evaluate(() => DEFECT_LOCATIONS.slice());
+console.log('\nfirst 19:', JSON.stringify(order.slice(0, PICK_FIRST.length)));
+check('the walk-through rooms lead the picker, in the order given',
+  JSON.stringify(order.slice(0, PICK_FIRST.length)) === JSON.stringify(PICK_FIRST),
+  JSON.stringify(order.slice(0, PICK_FIRST.length)));
+// Reordering must never be a quiet way to drop a room.
+check('nothing was lost in the reorder — still 48 locations',
+  order.length === 48, String(order.length));
+check('…and none of them is listed twice',
+  new Set(order).size === order.length,
+  JSON.stringify(order.filter((x, i) => order.indexOf(x) !== i)));
+// The rarely-used ones must still BE there, just underneath.
+check('the long tail survives below the fold',
+  ['Throughout', 'Hallway', 'Bedroom 1', 'Roof Space', 'Other'].every(l => order.includes(l)),
+  JSON.stringify(['Throughout', 'Hallway', 'Bedroom 1', 'Roof Space', 'Other'].filter(l => !order.includes(l))));
+
 console.log('\ntable:', JSON.stringify(table));
 check('every picker location has a code', table.missing.length === 0, table.missing.join(', '));
 check('no two locations share a code, bar the documented pair',
