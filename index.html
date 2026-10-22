@@ -3964,6 +3964,7 @@
         // Jump straight to View Defects for an address (used by the Add Defects
         // header — tap the job address to see that job's defects).
         function viewDefectsForAddress(addressId) {
+            touchJob(addressId);
             state.currentView = 'view-defects-address';
             state.filters = { addressId: parseInt(addressId) };
             render();
@@ -6723,6 +6724,14 @@
         // instead of opening every photo one at a time just to see what the item
         // actually is.
         function previewMode() { try { return localStorage.getItem('dm_preview') === '1'; } catch (e) { return false; } }
+        // Reading localStorage THROWS, it does not return null, when site data is
+        // blocked or cleared — a private window, Safari's storage partitioning,
+        // "clear data on quit". Every settings flag below went through a bare
+        // getItem, so on such a device showDefectMarkers() threw inside the job
+        // list builder and the whole list vanished from the home screen: no jobs,
+        // no error, nothing to tap. Found 2026-10-22 by the recents test, which
+        // blocks storage on purpose; it had been true for a long time.
+        function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
         function setPreviewMode(on) {
             try { localStorage.setItem('dm_preview', on ? '1' : '0'); } catch (e) {}
             render();
@@ -9404,7 +9413,7 @@
         ];
 
         function currentClubTheme() {
-            return localStorage.getItem('clubTheme') || 'default';
+            return lsGet('clubTheme') || 'default';
         }
 
         function applyClubTheme(id) {
@@ -9458,20 +9467,20 @@
         }
         // Home-page section visibility toggles (default HIDDEN). Pure localStorage
         // UI prefs — flip them from Manage. Follows the setDesign() pattern.
-        function showMultiContractors() { return localStorage.getItem('dm_show_multi_contractors') === '1'; }
+        function showMultiContractors() { return lsGet('dm_show_multi_contractors') === '1'; }
         function setShowMultiContractors(v) {
             localStorage.setItem('dm_show_multi_contractors', v ? '1' : '0');
             render();
             showToast(v ? 'Multiple Contractors shown on home' : 'Multiple Contractors hidden');
         }
-        function showMultiTrades() { return localStorage.getItem('dm_show_multi_trades') === '1'; }
+        function showMultiTrades() { return lsGet('dm_show_multi_trades') === '1'; }
         function setShowMultiTrades(v) {
             localStorage.setItem('dm_show_multi_trades', v ? '1' : '0');
             render();
             showToast(v ? 'Multiple Trades shown on home' : 'Multiple Trades hidden');
         }
         // Outstanding-defect markers on the jobs list (default ON).
-        function showDefectMarkers() { return localStorage.getItem('dm_show_defect_markers') !== '0'; }
+        function showDefectMarkers() { return lsGet('dm_show_defect_markers') !== '0'; }
         function setShowDefectMarkers(v) {
             localStorage.setItem('dm_show_defect_markers', v ? '1' : '0');
             render();
@@ -9519,7 +9528,10 @@
             list = [...list].sort((a, b) => streetKey(a).localeCompare(streetKey(b)) || (lotKey(a) - lotKey(b)));
             // Temp jobs last, nearest the button that makes them — a one-off
             // shouldn't push the jobs someone actually works from down the list.
-            list = list.concat(temps);
+            // They are held OUT of the recents split below and appended after
+            // it: visiting a temp job must not float it above the real work,
+            // which is the rule this line has always enforced.
+            const realJobs = list;
             // Built from <div>s (not <button>s): iOS Safari mishandles buttons as
             // flex items and was stacking the icons under the address. Icons live
             // in a fixed-width group so they always sit BESIDE the address.
@@ -9533,7 +9545,7 @@
             const baseRow = 'display:flex;flex-wrap:nowrap;align-items:center;gap:8px;width:100%;padding:10px 12px;border-bottom:1px solid var(--brd,rgba(128,128,128,.25));box-sizing:border-box;';
             const addrStyle = 'flex:1 1 auto;min-width:0;cursor:pointer;overflow:hidden;';
             const icoStyle = 'flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid var(--brd,rgba(128,128,128,.3));cursor:pointer;font-size:18px;line-height:38px;text-align:center;';
-            const rows = list.map(a => {
+            const rowHtml = (a) => {
                 const sub = [a.suburb || '', a.propertyNumber || '', isMgr ? (a.supervisorName || 'Unassigned') : '']
                     .filter(Boolean).join(' · ');
                 const key = `${a.street} ${a.suburb || ''} ${a.propertyNumber || ''} ${a.supervisorName || ''}`.toLowerCase();
@@ -9558,7 +9570,20 @@
                         ${isTempJob(a) ? `<div style="${icoStyle}color:var(--red,#DC143C);" onclick="event.stopPropagation(); deleteTempJob(${a.id})" title="Delete this temp job and everything on it">🗑️</div>` : ''}
                     </div>
                 </div>`;
-            }).join('');
+            };
+            // The few you have been in lately, then everything else A-Z. Both
+            // blocks are labelled: a list that silently reorders itself is worse
+            // than one that scrolls, because you stop trusting where things are.
+            const split = splitJobsByRecency(realJobs);
+            split.rest = split.rest.concat(temps);
+            list = realJobs.concat(temps);          // for the count in the title
+            const bandStyle = 'padding:5px 12px;font-size:10px;font-weight:800;letter-spacing:.09em;'
+                + 'text-transform:uppercase;color:var(--text-secondary,#777);'
+                + 'background:rgba(128,128,128,.10);border-bottom:1px solid var(--brd,rgba(128,128,128,.25));';
+            const rows = split.recent.length
+                ? `<div style="${bandStyle}">Recent</div>${split.recent.map(rowHtml).join('')}`
+                  + `<div style="${bandStyle}">All jobs</div>${split.rest.map(rowHtml).join('')}`
+                : list.map(rowHtml).join('');
             const title = isMgr ? 'All Active Jobs' : 'My Jobs';
             const emptyMsg = isMgr
                 ? 'Loading jobs… if this stays empty, tap ↻ Refresh at the bottom of this screen.'
@@ -9607,6 +9632,7 @@
         function startDefectsForJob(addressId) {
             const address = db.getAddress(addressId);
             if (!address) { showToast('Job not found'); return; }
+            touchJob(address.id);
             state.currentView = 'add-defects-address';
             state.filters = { addressId: address.id };
             render();
@@ -9819,9 +9845,68 @@
                 </div>`;
         }
         // Clicking a job/address defaults to VIEWING its defects.
+        // ===================================================================
+        //  RECENTLY VISITED JOBS  (Spiro 2026-10-22)
+        //  "order addresses based on those visited last… it's like a recents
+        //   list."
+        //
+        //  At 55 active jobs the alphabetical list is a scroll every time, and
+        //  a supervisor works the same three or four houses all week. Those
+        //  float to the top; everything else stays in its A-Z order underneath,
+        //  so the list is still scannable and a job does not wander somewhere
+        //  new every day.
+        //
+        //  PER DEVICE, in localStorage, deliberately. Where you have just been
+        //  is personal and it is about THIS phone — pushing it to the shared DB
+        //  would make one supervisor's morning reorder everybody else's list,
+        //  and it would need a migration for something that is worth nothing to
+        //  anyone else. Wrapped in try/catch because a private window or
+        //  cleared site data makes every read throw; the list falls back to
+        //  plain A-Z when that happens.
+        // ===================================================================
+        const JOB_RECENTS_KEY = 'dm_job_recents';
+        const JOB_RECENTS_SHOWN = 8;    // how many float to the top
+        const JOB_RECENTS_KEEP = 40;    // how many are remembered at all
+
+        function jobRecents() {
+            try {
+                const raw = localStorage.getItem(JOB_RECENTS_KEY);
+                const map = raw ? JSON.parse(raw) : {};
+                return (map && typeof map === 'object') ? map : {};
+            } catch (e) { return {}; }
+        }
+        // Stamped on OPEN, not on edit: the question this answers is "where was
+        // I", and looking at a job counts. Called from every way into one.
+        function touchJob(addressId) {
+            const id = Number(addressId);
+            if (!id) return;
+            try {
+                const map = jobRecents();
+                map[id] = Date.now();
+                // Keep the newest few dozen so the key cannot grow forever on a
+                // phone that is never cleared.
+                const trimmed = Object.keys(map)
+                    .sort((a, b) => map[b] - map[a])
+                    .slice(0, JOB_RECENTS_KEEP)
+                    .reduce((o, k) => { o[k] = map[k]; return o; }, {});
+                localStorage.setItem(JOB_RECENTS_KEY, JSON.stringify(trimmed));
+            } catch (e) { /* no storage — the list just stays A-Z */ }
+        }
+        // Split a sorted job list into [recent, therest]. Order WITHIN the rest
+        // is untouched, so the A-Z list a supervisor already knows is still
+        // there once you scroll past the few they are actually working.
+        function splitJobsByRecency(list) {
+            const map = jobRecents();
+            const seen = list.filter(a => map[a.id]).sort((a, b) => map[b.id] - map[a.id]);
+            const recent = seen.slice(0, JOB_RECENTS_SHOWN);
+            const ids = new Set(recent.map(a => a.id));
+            return { recent, rest: list.filter(a => !ids.has(a.id)) };
+        }
+
         function viewDefectsForJob(addressId) {
             const address = db.getAddress(addressId);
             if (!address) { showToast('Job not found'); return; }
+            touchJob(address.id);
             openAddressGuarded(address.id, () => {
                 state.currentView = 'view-defects-address';
                 state.filters = { addressId: address.id };
@@ -9888,7 +9973,7 @@
             { id:'framework', name:'Blueprint', sub:'Light · Professional (logistics)', vars:{'--acc':'#1E4DA8','--acc2':'#3D6FCC','--bg':'#EFEBE2','--sur':'#FFFFFF','--ele':'#F5F1E8','--inp':'#FFFFFF','--brd':'#A8A8A8','--brd2':'#D6D6D6','--t1':'#1A1A1A','--t2':'#4A4A4A','--t3':'#7A7A7A','--green':'#2D8030','--amber':'#D87E2E','--red':'#B81E2E','--accFg':'#FFFFFF'} },
             { id:'powershell', name:'Terminal', sub:'Retro · Console', vars:{'--acc':'#FFFF55','--acc2':'#FFFFAA','--bg':'#000000','--sur':'#000000','--ele':'#1A1A1A','--inp':'#000000','--brd':'#C0C0C0','--brd2':'#404040','--t1':'#FFFFFF','--t2':'#C0C0C0','--t3':'#808080','--green':'#55FF55','--amber':'#FFFF55','--red':'#FF5555','--accFg':'#000000'} }
         ];
-        function currentF1Theme() { return localStorage.getItem('f1Theme') || 'framework'; }
+        function currentF1Theme() { return lsGet('f1Theme') || 'framework'; }
         function applyF1Theme(id) {
             const t = F1_THEMES.find(x => x.id === id) || F1_THEMES[0];
             const b = document.body.style;
@@ -13855,8 +13940,13 @@
                     </div>
                     <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:6px 0 4px"><input type="checkbox" id="rb-photos" checked style="width:auto"> Include photos</label>
                     <button class="imp-btn" id="rb-go">Generate PDF →</button>
+                    <button class="imp-btn secondary" id="rb-copy" style="margin-top:8px;">📋 Copy as text</button>
+                    <div style="font-size:12px;color:var(--text-secondary,#888);margin-top:6px;line-height:1.45;text-align:center;">
+                        Same selections, no photos — straight into an email or a message.
+                    </div>
                 </div>`);
             document.getElementById('rb-go').onclick = runReportBuilder;
+            document.getElementById('rb-copy').onclick = copyReportText;
         }
 
         // Live text filter for the report-builder checkbox lists (addr / contr).
@@ -13982,6 +14072,7 @@
             const ref = typeof splitReportRef === 'function' ? splitReportRef(d.description || '') : null;
             return {
                 no,
+                addressId: d.addressId,
                 location: d.location || '',
                 desc: (ref && ref.body) || d.description || '(no description)',
                 trade: defectTradeKey(d),
@@ -13996,7 +14087,109 @@
             return c.name || 'Unassigned';
         }
 
-        async function runReportBuilder() {
+        // ===================================================================
+        //  THE SAME REPORT, AS PLAIN TEXT  (Spiro 2026-10-22)
+        //  "also have a feature to copy to clipboard without the photos as a
+        //   text (no pdf) based on the selections in this screen… whole purpose
+        //   is that it can allow you to extract more."
+        //
+        //  Same filters, same grouping, same item numbers as the PDF — this is
+        //  a second RENDERING of one report, not a second report. A PDF has to
+        //  be saved, attached and opened; text goes straight into an email, a
+        //  message to a trade, or a spreadsheet, and can be edited before it
+        //  goes. Photos are the one thing that cannot come along, which is the
+        //  point rather than a limitation.
+        // ===================================================================
+        function reportPlainText(list, o) {
+            // Grouped by JOB when the report spans more than one, because a flat
+            // list of items pasted into an email with no house against them is
+            // unusable. One job needs no repetition, so it groups by trade.
+            const addrCount = new Set(list.map(d => d.addressId)).size;
+            const opts = Object.assign({}, o, { groupBy: addrCount > 1 ? 'address' : 'trade' });
+            const sections = reportSections(list, opts);
+            const numberOf = jobItemNumberer();
+            const L = [];
+
+            const statusWord = { open: 'Open', pending: 'Pending', completed: 'Completed' };
+            L.push(`DEFECT REPORT — ${list.length} item${list.length === 1 ? '' : 's'}`);
+            if (addrCount === 1) {
+                const a = db.getAddress(list[0].addressId);
+                if (a) L.push(formatAddress(a));
+            } else {
+                L.push(`${addrCount} jobs`);
+            }
+            L.push(`Status: ${(o.statuses || []).map(x => statusWord[x] || x).join(', ') || 'any'}`);
+            if (o.from || o.to) L.push(`Dates: ${o.from || 'any'} to ${o.to || 'any'}`);
+            L.push(`Generated ${new Date().toLocaleDateString('en-AU')}`);
+            L.push('');
+
+            sections.forEach(sec => {
+                L.push(sec.label.toUpperCase());
+                sec.subs.forEach(sub => {
+                    // With one job the section heading IS the trade, so repeating
+                    // it under itself is noise.
+                    if (opts.groupBy === 'address') L.push(`  ${sub.trade}`);
+                    sub.items.forEach(d => {
+                        const no = numberOf(d);
+                        const st = defectStatusOf(d);
+                        // ROOM · DESCRIPTION, with the description left exactly as
+                        // the app shows it — report reference and all, because
+                        // "PI #3.27 (p.53-54) —" is how the trade finds the page.
+                        // Splitting the reference off and re-joining it put the
+                        // room in the middle of it ("PI #3.27 (p.53-54)
+                        // Throughout — Defective…"), which is unreadable in an
+                        // email, so it stays whole and the room goes in front.
+                        const desc = (d.description || '(no description)').trim();
+                        const head = d.location ? `${d.location} · ${desc}` : desc;
+                        // Only say the status when the report MIXES them — on an
+                        // open-items-only report every line saying "Open" is noise.
+                        // Parentheses, not brackets: the description may itself
+                        // carry a bracketed page reference.
+                        const tail = (o.statuses || []).length > 1 ? `  (${statusWord[st] || st})` : '';
+                        L.push(`${opts.groupBy === 'address' ? '    ' : '  '}#${no}  ${head}${tail}`);
+                    });
+                });
+                L.push('');
+            });
+            return L.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+        }
+
+        // Clipboard writes are refused outside a user gesture and in some
+        // in-app browsers, and the failure is silent. So: try it, and on any
+        // refusal put the text on screen selected, which always works.
+        async function copyReportText() {
+            const o = readReportBuilderOptions();
+            if (!o) return;
+            const list = reportFilteredDefects(o);
+            if (!list.length) { showToast('No defects match those filters', true); return; }
+            const text = reportPlainText(list, o);
+            try {
+                if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('no clipboard');
+                await navigator.clipboard.writeText(text);
+                impClose();
+                showToast(`${list.length} item${list.length === 1 ? '' : 's'} copied — paste into an email`);
+            } catch (e) {
+                showReportTextFallback(text, list.length);
+            }
+        }
+        // The copy that always works: the text, selected, with the keyboard's
+        // own copy. Never a dead end.
+        function showReportTextFallback(text, n) {
+            impOverlay(`
+                <div id="imp-head"><strong>📋 ${n} item${n === 1 ? '' : 's'}</strong><button id="imp-close">✕</button></div>
+                <div id="imp-body">
+                    <div style="font-size:13px;color:var(--text-secondary,#888);margin-bottom:8px;line-height:1.45;">
+                        This device would not let the app write to the clipboard. The text is selected — copy it, then paste where you need it.
+                    </div>
+                    <textarea id="rb-text-out" readonly style="width:100%;box-sizing:border-box;height:46vh;font-family:ui-monospace,monospace;font-size:12px;line-height:1.5;padding:10px;border:1px solid var(--brd,#ccc);border-radius:10px;"></textarea>
+                </div>`);
+            const ta = document.getElementById('rb-text-out');
+            if (ta) { ta.value = text; ta.focus(); ta.select(); }
+        }
+
+        // Read once, used by both buttons — the whole point is that the text and
+        // the PDF come off the same selections.
+        function readReportBuilderOptions() {
             const o = {
                 statuses: ['open', 'pending', 'completed'].filter(s => document.getElementById('rb-st-' + s).checked),
                 addressIds: Array.from(document.querySelectorAll('.rb-addr:checked')).map(x => parseInt(x.value)).filter(Boolean),
@@ -14005,7 +14198,13 @@
                 to: document.getElementById('rb-to').value || null,
                 photos: document.getElementById('rb-photos').checked
             };
-            if (!o.statuses.length) { showToast('Tick at least one status to include', true); return; }
+            if (!o.statuses.length) { showToast('Tick at least one status to include', true); return null; }
+            return o;
+        }
+
+        async function runReportBuilder() {
+            const o = readReportBuilderOptions();
+            if (!o) return;
             const list = reportFilteredDefects(o);
             if (!list.length) { showToast('No defects match those filters', true); return; }
             impSetBusy('Generating PDF… (' + list.length + ' defect' + (list.length > 1 ? 's' : '') + ')' + (o.photos ? ' with photos' : ''));
@@ -14522,19 +14721,53 @@
                     { k: 'page', w: 13, t: 'Page', a: 'center' },
                     { k: 'rect', w: 21, t: 'Rectified', a: 'center' },
                 ];
-                const LH = 3.1, ROWPAD = 2.2, HEADH = 7;
+                const LH = 3.1, ROWPAD = 2.2, HEADH = 7, SUBH = 6.4;
                 const TOP_FIRST = 46, TOP_REST = M + 6, BOTTOM = pageH - 16;
                 doc.setFontSize(7.5);
+                // ── ADDRESS SUBHEADERS (Spiro 2026-10-22) ────────────────
+                // "I have selected MULTIPLE addresses… I get that it is ideal
+                //  for 1 ADDRESS jobs BUT need to have ADDRESS subheaders.
+                //  Both for when only 1 trade selected or multiple trades."
+                //
+                // The item number belongs to the JOB, not the report (see the
+                // numbering note above), which is right — but it means a
+                // multi-address contents table lists item 7 twice, item 10
+                // twice, with nothing saying which house either belongs to.
+                // The table was unusable the moment a second address was
+                // ticked, whatever the trade selection.
+                //
+                // So: when the report spans more than one job, the rows are
+                // grouped under a banded address row. One job keeps the flat
+                // table it has always had — a header repeating the address
+                // already in the title would be noise.
+                const tocAddrIds = [...new Set(toc.map(r => r.addressId))];
+                const groupByAddr = tocAddrIds.length > 1;
+                const entries = [];
+                if (groupByAddr) {
+                    // Ordered by first appearance, so the contents runs in the
+                    // same order as the body rather than inventing its own.
+                    tocAddrIds.forEach(aid => {
+                        const mine = toc.filter(r => r.addressId === aid);
+                        const a = db.getAddress(aid);
+                        entries.push({ head: formatAddress(a) || 'Unknown job',
+                                       count: mine.length });
+                        mine.forEach(r => entries.push({ row: r }));
+                    });
+                } else {
+                    toc.forEach(r => entries.push({ row: r }));
+                }
                 // Wrap once, keep it: measuring and drawing must agree, and
                 // splitTextToSize is the expensive part of this whole page.
-                const wrapped = toc.map(r => {
+                const wrapped = entries.map(e => {
+                    if (e.head) return { head: e.head, count: e.count, h: SUBH };
+                    const r = e.row;
                     const cells = {};
                     COLS.forEach(c => {
                         const v = c.k === 'rect' ? '' : String(r[c.k] == null ? '' : r[c.k]);
                         cells[c.k] = v ? doc.splitTextToSize(v, c.w - 3) : [''];
                     });
                     const lines = Math.max(...COLS.map(c => cells[c.k].length));
-                    return { cells, h: lines * LH + ROWPAD };
+                    return { cells, row: r, h: lines * LH + ROWPAD };
                 });
                 // How many pages does it need? Measured before anything is drawn,
                 // because the answer is also the offset added to every page number
@@ -14572,10 +14805,23 @@
                 doc.setFont('helvetica', 'bold'); doc.setFontSize(12); ink(INK);
                 doc.text(doc.splitTextToSize(heading, contentW)[0], M, 40);
                 let ty = drawHead(TOP_FIRST);
-                wrapped.forEach((w, i) => {
+                wrapped.forEach((w) => {
                     if (ty + w.h > BOTTOM) {
                         tp++; doc.setPage(tp);
                         ty = drawHead(TOP_REST);
+                    }
+                    // An address band: full width, no column rules through it,
+                    // so it reads as a heading rather than another defect.
+                    if (w.head) {
+                        fill([226, 232, 243]); stroke(LINE);
+                        doc.rect(M, ty, contentW, w.h, 'FD');
+                        doc.setFont('helvetica', 'bold'); doc.setFontSize(8); ink(NAVY);
+                        doc.text(doc.splitTextToSize(w.head, contentW - 24)[0], M + 1.8, ty + 4.4);
+                        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.2); ink(MUTE);
+                        doc.text(`${w.count} item${w.count === 1 ? '' : 's'}`,
+                            M + contentW - 1.8, ty + 4.4, { align: 'right' });
+                        ty += w.h;
+                        return;
                     }
                     stroke(LINE);
                     doc.rect(M, ty, contentW, w.h, 'S');
@@ -14585,7 +14831,7 @@
                         const isNo = c.k === 'no';
                         doc.setFont('helvetica', isNo ? 'bold' : 'normal');
                         doc.setFontSize(7.5); ink(isNo ? NAVY : INK);
-                        const val = c.k === 'page' ? [String(toc[i].page + tocPages)] : w.cells[c.k];
+                        const val = c.k === 'page' ? [String(w.row.page + tocPages)] : w.cells[c.k];
                         doc.text(val, c.a === 'center' ? cx + c.w / 2 : cx + 1.5, ty + 3.4,
                             c.a === 'center' ? { align: 'center' } : undefined);
                         cx += c.w;
@@ -14903,7 +15149,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-10-18b';
+        const APP_VERSION = '2026-10-22a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -14990,7 +15236,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-10-18b"></script>
+    <script src="cloud-sync.js?v=2026-10-22a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
