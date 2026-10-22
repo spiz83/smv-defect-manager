@@ -14,7 +14,47 @@ second editor anywhere would be the mistake.
 # Next Steps / Handover
 
 STATUS: Active
-LAST UPDATED: 2026-10-15
+LAST UPDATED: 2026-10-22
+
+## ✅ Shipped and live — build `2026-10-22a`
+
+Everything below 2026-10-15a is DEPLOYED and verified live (live bytes hashed
+against the tested tree on each deploy). The defect-list migrations have been
+run on the production database and the bank is working.
+
+### Recently visited jobs
+Jobs you have opened float to the top of the home list under a **Recent** band,
+capped at 8; the rest stay A-Z under **All jobs**. Per device
+(`localStorage` key `dm_job_recents`), so it never reorders anybody else's
+list. Temp jobs stay last — they are deliberately held out of the float.
+
+### Copy the report as text
+Generate Report → **📋 Copy as text**, beside Generate PDF. Same statuses,
+addresses, contractors and dates; no photos. Groups by job when it spans more
+than one. If the device refuses clipboard access it shows the text selected
+instead. Both buttons read the sheet through `readReportBuilderOptions()` — if
+you add a filter, add it there once and both get it.
+
+### Address bands in the PDF contents
+A multi-address Summary Of Defects now groups rows under a banded address row
+with its item count, with one trade selected or many. Single-address reports
+are unchanged. **`tests/tocaddr.mjs` renders the real PDF** (jsPDF served from
+`tests/node_modules`, read back with `pdfjs-dist`) — reuse that pattern for any
+future PDF change rather than repeating "the drawing cannot be tested".
+
+### The location picker
+Inside on the left, outside on the right, in walk order, with no keyboard on
+open. `DEFECT_LOCATION_GROUPS` is the source of truth; `DEFECT_LOCATIONS` is
+derived from it and also drives the export sort — edit the groups, not the flat
+list.
+
+### ⚠️ Worth knowing
+`localStorage` reads THROW, they do not return null, when site data is blocked
+or cleared. Four settings readers did that unguarded and took the whole job
+list off the home screen on such a device. They now go through `lsGet()`. **Any
+new `localStorage.getItem` in a render path must be guarded** — use `lsGet`.
+
+---
 
 ## ✅ Export a job's defects as a list — build `2026-10-15a` — NOT DEPLOYED
 

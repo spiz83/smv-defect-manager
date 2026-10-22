@@ -1,6 +1,21 @@
 # Tasks
 
 ## Current sprint
+- [x] **Recently visited jobs** — Recent band (8) above All jobs (A-Z) on the
+      home list, per device, temp jobs still last. `tests/jobrecents.mjs`.
+- [x] **Copy the report as text** — Generate Report → 📋 Copy as text. Same
+      selections as the PDF, no photos. `tests/reporttext.mjs`.
+- [x] **Address bands in the PDF contents** — multi-address Summary Of Defects
+      groups under banded address rows, with one trade or many.
+      `tests/tocaddr.mjs`, which renders the REAL PDF.
+- [x] **Location picker: inside left / outside right, walk order, no keyboard**
+      — `tests/loc.mjs`. `DEFECT_LOCATION_GROUPS` is the source of truth.
+- [x] **Guard every localStorage read in a render path** — four unguarded ones
+      took the job list off the home screen when site data is blocked. Use
+      `lsGet()` for any new one.
+- [x] **Defect-list migrations run on production** — the bank is live, the
+      Skylark list is in use. `supabase/FIX_defect_lists_now.sql` is the
+      idempotent one-paste version if it is ever needed again.
 - [x] **Export a job's defects as a reusable list** — Settings → Defect lists →
       *New list from a job's defects* → pick the job → tick/untick → name it.
       The report reference is stripped, the company becomes its trade, the room

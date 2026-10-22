@@ -2,6 +2,83 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-10-22 — a recents list, the report as text, and address bands — build `2026-10-22a`
+
+- **Recently visited jobs float to the top.** Spiro: *"order addresses based on
+  those visited last… it's like a recents list."* At 55 active jobs the A-Z
+  list is a scroll every time and a supervisor works the same three or four
+  houses all week.
+  - **Capped at 8, with the rest left A-Z**, under two bands (`Recent`,
+    `All jobs`). Full recency ordering across 55 jobs would scramble the list
+    permanently and destroy the alphabetical mental model people already have;
+    a list that silently reorders itself is worse than one that scrolls.
+  - **localStorage, per device.** Where you have just been is personal and it
+    is about THIS phone. In the shared DB one supervisor's morning would
+    reorder everybody else's list, and it would need a migration for something
+    worth nothing to anyone else.
+  - **Temp jobs are held OUT of the float.** `tempjob.mjs` caught this on the
+    first run: visiting one floated it above the real work, breaking the rule
+    that line has enforced since 2026-09-02.
+- **The report, as plain text.** Spiro: *"copy to clipboard without the photos
+  as a text (no pdf) based on the selections in this screen… so it can allow
+  you to extract more."* Same filters, same grouping, same per-job item
+  numbers — **one report, two renderings**, both reading the sheet through
+  `readReportBuilderOptions()` so they cannot drift. Groups by job when it
+  spans more than one, because a flat list pasted into an email with no house
+  against each item is unusable. The report reference stays WHOLE with the room
+  in front of it (`Throughout · PI #3.27 (p.53-54) — …`); splitting the
+  reference and re-joining it put the room in the middle of it. A refused
+  clipboard shows the text selected rather than failing silently.
+- **Address bands in the PDF contents.** Spiro, with a screenshot of 158 items
+  across several jobs: *"need to have ADDRESS subheaders. Both for when only 1
+  trade selected or multiple trades selected."* The item number belongs to the
+  JOB, not the report (2026-08-16) — still right, and exactly why a
+  multi-address Summary Of Defects listed item 7 twice with nothing saying
+  which house either was on. Rows now sit under a banded address row carrying
+  its item count. A single-address report is untouched: the address is already
+  in the title, so a band over its own rows is noise.
+- **`tests/tocaddr.mjs` renders the REAL PDF.** The other report suites state
+  the drawing "cannot be tested" because jsPDF loads from a CDN the harness
+  blocks. For a change living entirely in the drawing that was not good enough,
+  so this suite serves jsPDF from `tests/node_modules` and reads the result back
+  with `pdfjs-dist`. Worth reusing for any future PDF change.
+
+## 2026-10-22 (b) — blocked localStorage took the whole job list with it
+
+- **Not reported — found by the recents suite,** which blocks storage on
+  purpose to prove recents degrade gracefully. Reading `localStorage` THROWS
+  rather than returning null when site data is blocked or cleared: a private
+  window, Safari's storage partitioning, "clear data on quit".
+- `showDefectMarkers()` did exactly that, **inside the job-list builder**, so on
+  such a device the entire list vanished from the home screen. No jobs, no
+  error, nothing to tap. `showMultiContractors`, `showMultiTrades` and
+  `currentF1Theme` had the same shape.
+- **All four now go through a guarded `lsGet()`.** Long-standing, and it would
+  have stayed invisible — the people it hits cannot report it, because to them
+  the app simply has no jobs in it.
+
+## 2026-10-18 — the location picker: sides, order, and no keyboard — builds `2026-10-18a` / `2026-10-18b`
+
+- **Inside on the left, outside on the right.** Spiro's words. The picker is
+  tapped once per defect, dozens of times on a walk-through; standing in a
+  house you already know which of the two you are in, so half the list stops
+  being noise before you read a word. The old 2-column grid filled
+  left-to-right, so a room's side moved as the list changed and the columns
+  told you nothing. Now two INDEPENDENT columns. The two garage PA doors
+  landing on opposite sides is the clearest case for the split existing.
+- **Within each side, the order he walks it**, not grouped by kind. The old
+  order read tidily and buried Ensuite, Laundry and the elevations.
+- **`DEFECT_LOCATION_GROUPS` is the source of truth**, `DEFECT_LOCATIONS` is
+  derived — one list to edit rather than two that drift. Knock-on, deliberate:
+  that array is also the sort order for an exported defect list, so exported
+  lists now read inside-then-outside in walk order.
+- **No autofocus on the search box (`2026-10-18b`).** Spiro: *"make sure the
+  keyboard isn't around — I want to be able to freely select without typing."*
+  `focusLocSearch()` summoned the iOS keyboard, which ate two thirds of the
+  screen — on a picker whose whole point is that the room is already visible,
+  and an hour after the column split doubled how much was worth seeing. The box
+  stays, unfocused; tapping it still opens the keyboard for a rare room.
+
 ## 2026-10-15 — export a job's defects as a reusable list — build `2026-10-15a`
 
 - **Spiro:** *"The ability to take a bunch of defects from a property and be
