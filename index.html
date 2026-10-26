@@ -14049,9 +14049,13 @@
                 const k = byAddress ? String(d.addressId) : defectTradeKey(d);
                 (groups[k] = groups[k] || []).push(d);
             });
+            // numeric:true so "Lot 10" sorts after "Lot 9" rather than between
+            // Lot 1 and Lot 2 — a plain string compare reads the digits one
+            // character at a time, which looks fine on a six-lot street and
+            // wrong on the eleventh.
             const keys = byAddress
                 ? Object.keys(groups).sort((a, b) => formatAddress(db.getAddress(parseInt(a, 10)))
-                    .localeCompare(formatAddress(db.getAddress(parseInt(b, 10)))))
+                    .localeCompare(formatAddress(db.getAddress(parseInt(b, 10))), undefined, { numeric: true }))
                 : Object.keys(groups).sort(tradeSortKey);
             return keys.map(k => {
                 const items = groups[k];
@@ -14415,6 +14419,26 @@
         }
 
         async function generateDefectPDF(list, opts) {
+            // A MULTI-JOB REPORT IS LAID OUT JOB BY JOB (Spiro 2026-10-26):
+            // "the table of contents seems like it's in order of the addresses,
+            //  however the photos don't appear to be in the order of the
+            //  addresses."
+            //
+            // Right, and it was my own inconsistency: 2026-10-22 banded the
+            // CONTENTS by address but left the BODY grouped by trade, so the
+            // two disagreed and the contents' page numbers ran backwards and
+            // forwards. The email and per-supplier paths have always passed
+            // groupBy:'address' for exactly this reason; the report builder
+            // passes nothing and got the trade default. (The text export added
+            // the same day got this right, which is how the two drifted.)
+            //
+            // So, decided ONCE, here at the top, before anything reads opts:
+            // unless a caller asks for something specific, a report spanning
+            // more than one job groups by job. A single-job report keeps trade
+            // grouping, which is what makes like items combine on one house.
+            if (!opts.groupBy && new Set(list.map(d => d.addressId)).size > 1) {
+                opts = Object.assign({}, opts, { groupBy: 'address' });
+            }
             await ensureJsPdf();
             const { jsPDF } = window.jspdf;
             // compress: flate the content streams. Does nothing for the JPEGs
@@ -15149,7 +15173,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-10-22a';
+        const APP_VERSION = '2026-10-26a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -15236,7 +15260,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-10-22a"></script>
+    <script src="cloud-sync.js?v=2026-10-26a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

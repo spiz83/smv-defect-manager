@@ -32,8 +32,9 @@ const server = http.createServer((q, r) => {
 await new Promise(r => server.listen(PORT, r));
 
 const ADDRS = [
-  { id: 1, lot: '1', street: 'Lot 1, 14 Skylark Road', streetName: 'Skylark Road', lotNo: 1, suburb: 'GREENVALE', propertyNumber: '306634', active: true },
-  { id: 2, lot: '2', street: 'Lot 2, 16 Skylark Road', streetName: 'Skylark Road', lotNo: 2, suburb: 'GREENVALE', propertyNumber: '306635', active: true },
+  { id: 1, lot: '2', street: 'Lot 2, 16 Skylark Road', streetName: 'Skylark Road', lotNo: 2, suburb: 'GREENVALE', propertyNumber: '306634', active: true },
+  // Lot 10 is the one a plain string sort puts between Lot 1 and Lot 2.
+  { id: 2, lot: '10', street: 'Lot 10, 32 Skylark Road', streetName: 'Skylark Road', lotNo: 10, suburb: 'GREENVALE', propertyNumber: '306635', active: true },
   { id: 3, lot: '3', street: 'Lot 3, 18 Skylark Road', streetName: 'Skylark Road', lotNo: 3, suburb: 'GREENVALE', propertyNumber: '306636', active: true },
 ];
 // Same wordings across the three houses on purpose: without address bands the
@@ -141,19 +142,52 @@ if (pdfB64) {
   console.log('\n--- contents text (p1) ---\n' + texts[0].slice(0, 900) + '\n---');
 
   check('it is the Summary Of Defects page', /Summary Of Defects/.test(toc), '');
-  for (const a of ['Lot 1, 14 Skylark Road', 'Lot 2, 16 Skylark Road', 'Lot 3, 18 Skylark Road']) {
+  for (const a of ['Lot 2, 16 Skylark Road', 'Lot 3, 18 Skylark Road', 'Lot 10, 32 Skylark Road']) {
     check(`"${a}" appears as a subheader in the contents`, toc.includes(a), '');
   }
   check('each band says how many items are under it',
     (toc.match(/3 items/g) || []).length >= 3, JSON.stringify(toc.match(/\d+ items/g)));
   // The thing that made it unreadable: repeated numbers with no house against them.
   check('…so repeated item numbers are no longer ambiguous',
-    /Lot 1[\s\S]*Lot 2[\s\S]*Lot 3/.test(toc), '');
+    /Lot 2,[\s\S]*Lot 3,[\s\S]*Lot 10,/.test(toc), '');
+  check('lots sort NUMERICALLY — Lot 10 after Lot 3, not between 1 and 2',
+    toc.indexOf('Lot 10,') > toc.indexOf('Lot 3,'), '');
   // Each house really does restart at 1 — that is the behaviour the bands
   // exist to disambiguate, not a bug to fix.
   check('every job restarts its numbering, three times over',
     (toc.match(/ 1 Entry /g) || []).length === 3, String((toc.match(/ 1 Entry /g) || []).length));
   check('no page errors while drawing', errs.length === 0, JSON.stringify(errs));
+}
+
+// ================= THE BODY MUST FOLLOW THE CONTENTS =====================
+// Spiro 2026-10-26: "the table of contents seems like it's in order of the
+// addresses, however the photos don't appear to be in the order of the
+// addresses." The contents was banded by address while the body was still
+// grouped by trade, so the two disagreed and the page numbers ran backwards
+// and forwards. A contents that does not match the document it indexes is
+// worse than no contents.
+{
+  const _p4 = await import('./node_modules/pdfjs-dist/legacy/build/pdf.js');
+  const { getDocument } = _p4.default || _p4;
+  const d4 = await getDocument({ data: new Uint8Array(Buffer.from(pdfB64, 'base64')), useSystemFonts: true }).promise;
+  const pages = [];
+  for (let p = 1; p <= d4.numPages; p++) {
+    const tc = await (await d4.getPage(p)).getTextContent();
+    pages.push(tc.items.map(i => i.str).join(' ').replace(/\s+/g, ' '));
+  }
+  const all = pages.join('\n');
+  const want = ['Lot 2, 16 Skylark Road', 'Lot 3, 18 Skylark Road', 'Lot 10, 32 Skylark Road'];
+  // Where each address LAST appears in the contents vs where its body section
+  // header falls: both must run in the same order.
+  const bodyText = pages.slice(1).join('\n');   // page 1 is the contents
+  const bodyPos = want.map(a => bodyText.indexOf(a));
+  console.log('\nbody section order:', JSON.stringify(bodyPos));
+  check('every job gets its own section in the BODY, not just the contents',
+    bodyPos.every(i => i >= 0), JSON.stringify(bodyPos));
+  check('…and the body runs in the same order as the contents',
+    bodyPos[0] < bodyPos[1] && bodyPos[1] < bodyPos[2], JSON.stringify(bodyPos));
+  check('…so a page number in the contents points forwards, not backwards',
+    /Lot 2,[\s\S]*Lot 3,[\s\S]*Lot 10,/.test(all), '');
 }
 
 // Spiro was explicit: "Both for when on only 1 trade selected or multiple
@@ -179,7 +213,7 @@ if (oneTrade) {
   const t3 = (await (await d3.getPage(1)).getTextContent()).items.map(i => i.str).join(' ').replace(/\s+/g, ' ');
   console.log('\n--- one trade, three addresses ---\n' + t3.slice(0, 500) + '\n---');
   check('one trade across three jobs still gets address bands',
-    ['Lot 1, 14 Skylark', 'Lot 2, 16 Skylark', 'Lot 3, 18 Skylark'].every(a => t3.includes(a)), '');
+    ['Lot 2, 16 Skylark', 'Lot 3, 18 Skylark', 'Lot 10, 32 Skylark'].every(a => t3.includes(a)), '');
   check('…and only that trade is in it',
     /Carpenter/.test(t3) && !/Painter/.test(t3), '');
 }
@@ -206,8 +240,8 @@ if (singleToc) {
   check('a single-address report says the address in the TITLE, as before',
     /Summary Of Defects For .*Skylark/.test(t), t.slice(0, 120));
   check('…and does not repeat it as a band over its own rows',
-    (t.match(/Lot 1, 14 Skylark Road/g) || []).length === 1,
-    String((t.match(/Lot 1, 14 Skylark Road/g) || []).length));
+    (t.match(/Lot 2, 16 Skylark Road/g) || []).length === 1,
+    String((t.match(/Lot 2, 16 Skylark Road/g) || []).length));
 }
 
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
