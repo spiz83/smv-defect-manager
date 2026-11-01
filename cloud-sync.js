@@ -2448,7 +2448,28 @@
   // The outbox is the freshest copy and needs no reception, so it is the first
   // place to look, not the fallback. An upload deletes the outbox entry, so a
   // photo is in one place or the other and cannot be counted twice.
-  async function photoDataUrlsForDefect(legacyId, limit = 3) {
+  // PHOTOS PER DEFECT IN A PDF (raised from 3 to 12, Spiro 2026-11-01).
+  //
+  // "Posted six photos however only three showed up on the report." The cap
+  // was 3, applied here in the FETCH, while the drawing side was written for
+  // any number — photoBlock() in index.html deliberately shrinks its cells
+  // until the grid fits a page so that "every photo still appears". The two
+  // halves disagreed and the fetch won, silently: nothing on the card said
+  // three more existed.
+  //
+  // Six angles on one defect is ordinary on site, so 3 was simply too low.
+  // 12 is not arbitrary: the card's photo grid is 2 across, so 12 is 6 rows,
+  // and photoBlock caps the grid at 230mm — 6 rows still land ~37mm tall,
+  // well inside it. Each image is also resized to the cell it will occupy
+  // before it goes in, so twelve small cells cost far less than twelve full
+  // photos; the bytes grow much slower than the count.
+  //
+  // It stays bounded rather than unlimited because these PDFs get emailed to
+  // trades, and one defect with eighty photos should not produce a report
+  // nobody can receive.
+  const PDF_PHOTOS_PER_DEFECT = 12;
+
+  async function photoDataUrlsForDefect(legacyId, limit = PDF_PHOTOS_PER_DEFECT) {
     const out = [];
     try {
       const pend = (await pendingAll()).filter(it => Number(it.legacyId) === Number(legacyId));
@@ -2896,7 +2917,9 @@
     // the original File ("use as-is"), or null (cancelled). Used by defect-entry
     // row photos so markup works on every screen, not just the gallery.
     editPhoto: (file) => openPhotoEditor(file),
-    getForPdf: (legacyId) => photoDataUrlsForDefect(legacyId),
+    // Explicit, so the cap is visible at the call site rather than hiding in a
+    // default argument — which is how it sat at 3 unnoticed.
+    getForPdf: (legacyId, limit) => photoDataUrlsForDefect(legacyId, limit || PDF_PHOTOS_PER_DEFECT),
     // ONE signed URL per defect, for MANY defects, in two round trips.
     // Preview mode shows a photo inline on every card, so the per-defect
     // getLinks() below would fire a query per card — 24 defects, 48 requests,

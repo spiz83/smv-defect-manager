@@ -244,6 +244,67 @@ if (singleToc) {
     String((t.match(/Lot 2, 16 Skylark Road/g) || []).length));
 }
 
+// ================= EVERY PHOTO ON A DEFECT REACHES THE PDF ================
+// Spiro 2026-11-01: "posted six photos however only three showed up on the
+// report." The fetch capped at 3 while photoBlock() was written to shrink its
+// cells so every photo fits — the two halves disagreed and the fetch won,
+// silently. Counting the images actually painted into the PDF is the only
+// check that would have caught that, because both halves "looked right".
+console.log('\n--- six photos on one defect ---');
+const sixPhotos = await page.evaluate(async () => {
+  // A 2x2 JPEG, enough to be a real image in the document.
+  const mk = (n) => {
+    const c = document.createElement('canvas');
+    c.width = 40; c.height = 30;
+    const g = c.getContext('2d');
+    g.fillStyle = ['#c00', '#0c0', '#00c', '#cc0', '#0cc', '#c0c'][n % 6];
+    g.fillRect(0, 0, 40, 30);
+    return { dataUrl: c.toDataURL('image/jpeg', 0.8), w: 40, h: 30 };
+  };
+  const six = [0, 1, 2, 3, 4, 5].map(mk);
+  window.CloudPhotos = { getForPdf: async () => six.slice() };
+  window.__pdfBlobs = [];
+  const o = { statuses: ['open'], addressIds: [1], contractorIds: [], from: null, to: null, photos: true };
+  const list = reportFilteredDefects(o).slice(0, 1);   // one defect, six photos
+  await generateDefectPDF(list, o);
+  const b = (window.__pdfBlobs || []).slice(-1)[0];
+  if (!b) return null;
+  const buf = await b.arrayBuffer();
+  let str = ''; const u8 = new Uint8Array(buf);
+  for (let i = 0; i < u8.length; i++) str += String.fromCharCode(u8[i]);
+  return { b64: btoa(str), asked: six.length };
+});
+
+if (sixPhotos) {
+  const _p5 = await import('./node_modules/pdfjs-dist/legacy/build/pdf.js');
+  const { getDocument, OPS } = _p5.default || _p5;
+  const d5 = await getDocument({ data: new Uint8Array(Buffer.from(sixPhotos.b64, 'base64')), useSystemFonts: true }).promise;
+  let painted = 0;
+  for (let p = 1; p <= d5.numPages; p++) {
+    const ops = await (await d5.getPage(p)).getOperatorList();
+    painted += ops.fnArray.filter(fn => fn === OPS.paintImageXObject || fn === OPS.paintJpegXObject).length;
+  }
+  // The company logo is drawn on the contents page and on each body page.
+  console.log(`images painted: ${painted} (6 photos + logos)`);
+  check('all six photos are painted into the PDF, not three',
+    painted >= 6, `painted ${painted}, expected at least 6`);
+}
+
+// And the cap itself, read off the source rather than trusted from memory.
+const capSrc = fs.readFileSync(join(REPO, 'cloud-sync.js'), 'utf8');
+const capMatch = capSrc.match(/const PDF_PHOTOS_PER_DEFECT = (\d+);/);
+check('the per-defect photo cap is declared once, as a named constant',
+  !!capMatch, capMatch ? capMatch[0] : 'not found');
+check('…and is well above the six angles a supervisor actually takes',
+  capMatch && Number(capMatch[1]) >= 12, capMatch && capMatch[1]);
+check('…with no stray default of 3 left behind',
+  !/photoDataUrlsForDefect\(legacyId, limit = 3\)/.test(capSrc), '');
+// Honest about what the check above does and does not reach: the stub feeds
+// six images straight to the drawing, so it proves photoBlock lays out six —
+// it does NOT exercise the fetch that was doing the capping. That path is
+// buried in cloud-sync's closure behind IndexedDB and Supabase, so the cap
+// itself is guarded by reading the constant, not by running it.
+
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
 await browser.close();
 server.close();
