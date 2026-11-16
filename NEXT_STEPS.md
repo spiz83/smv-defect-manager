@@ -13,7 +13,7 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
-## ✉ Pinned suppliers, general email first, tick boxes — build `2026-11-16c` — NOT DEPLOYED
+## ✉ Pinned suppliers, general email first, tick boxes — build `2026-11-16c` — DEPLOYED 2026-11-16, live bytes hashed identical
 
 Replaces 16a's rules (Spiro 2026-11-16). The Look Up directory is the source of
 truth and is wiped/reloaded daily; our short names stay as they are.
