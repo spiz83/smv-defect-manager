@@ -315,6 +315,14 @@
       #cs-banner.offline{background:#b45309;}      /* amber-brown: saved, waiting */
       #cs-banner.syncing{background:#1d4ed8;}       /* blue: uploading */
       #cs-banner.ok{background:#047857;}            /* green: done */
+      /* The pending-photo pill sits bottom-left; the sync banner is full width
+         along the same edge. They collided and read as one broken overlapping
+         mess on a phone (Spiro 2026-11-16, before a demo). When the banner is
+         up, the pill steps above it. */
+      /* The bottom offset lives HERE, not in the element's inline style, or
+         the inline one wins and the pill never moves. */
+      #cs-photo-pending{bottom:8px;}
+      html.cs-banner-up #cs-photo-pending{bottom:56px;}
 
       /* Photo gallery */
       #cs-gallery{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);
@@ -744,9 +752,27 @@
       };
     }
   }
+  // How many photos are still sitting in the outbox. Kept here so the status
+  // line can tell the truth: the header said a green "Synced" while the pill
+  // five centimetres below it said 7 photos were still on the phone. Two parts
+  // of one screen contradicting each other reads as a broken app, and at a demo
+  // it is the thing people notice (Spiro 2026-11-16).
+  let photosWaiting = 0;
+  let lastStatus = { text: 'Synced', kind: undefined };
   function setStatus(text, kind) {
+    lastStatus = { text, kind };
+    paintStatus();
+  }
+  function paintStatus() {
     const dot = document.getElementById('cs-dot');
     const st = document.getElementById('cs-status');
+    let { text, kind } = lastStatus;
+    // Only qualify the good state. "Offline" with photos waiting is already
+    // saying the right thing, and stacking two warnings helps nobody.
+    if (photosWaiting > 0 && text === 'Synced') {
+      text = `Synced · ${photosWaiting} photo${photosWaiting > 1 ? 's' : ''} to upload`;
+      kind = 'syncing';
+    }
     if (dot) dot.className = 'dot' + (kind ? ' ' + kind : '');
     if (st) st.textContent = text;
   }
@@ -759,12 +785,14 @@
     if (!b) { b = document.createElement('div'); b.id = 'cs-banner'; document.body.appendChild(b); }
     b.textContent = text;
     b.className = 'show ' + (kind || '');
+    try { document.documentElement.classList.add('cs-banner-up'); } catch (e) {}
     clearTimeout(bannerTimer);
     if (autohideMs) bannerTimer = setTimeout(hideBanner, autohideMs);
   }
   function hideBanner() {
     const b = document.getElementById('cs-banner');
     if (b) b.className = b.className.replace('show', '').trim();
+    try { document.documentElement.classList.remove('cs-banner-up'); } catch (e) {}
   }
 
   // ---- Persistent outbox -----------------------------------------------------
@@ -2113,7 +2141,10 @@
   // whichever app imported it (Spiro 2026-07-30).
   async function uploadDefectPhoto(legacyId, file, idKey, quiet, keepDays) {
     const uuid = await resolveDefectUuid(legacyId);
-    if (!uuid) { return false; }   // defect not in cloud yet — keep the photo queued, retry later
+    // Worth naming rather than failing mutely: a photo cannot go up before the
+    // defect it belongs to exists in the cloud, and that reads from outside as
+    // the photo being stuck for no reason.
+    if (!uuid) { lastPhotoError = 'the defect it belongs to has not synced yet'; return false; }
     // Honest failure wording: only claim "No connection" when the device is
     // actually offline; otherwise say what really happened (server error).
     const failMsg = () => (typeof navigator !== 'undefined' && navigator.onLine === false)
@@ -2136,7 +2167,12 @@
       const up = await withTimeout(
         sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: !!idKey }),
         60000, 'photo upload');
-      if (up.error) { console.error('[CloudSync] upload', up.error); if (!quiet) photoProgError(failMsg()); return false; }
+      if (up.error) {
+        console.error('[CloudSync] upload', up.error);
+        lastPhotoError = String(up.error.message || up.error).slice(0, 120);
+        if (!quiet) photoProgError(failMsg());
+        return false;
+      }
       // Idempotent record: if a prior attempt already inserted this path, don't
       // double-insert (deterministic path + upsert means the object is the same).
       let already = false;
@@ -2678,19 +2714,50 @@
 
   // A small always-honest indicator: "📸 N photo(s) saved on this phone, waiting
   // to upload". Gives the user confidence nothing is lost in a bad-reception spot.
+  // Why the last upload attempt failed, in the server's own words. Shown when
+  // the pill is tapped, because "uploading when you have signal" is no help at
+  // all to someone sitting on full wifi watching it not upload.
+  let lastPhotoError = '';
   function updatePendingBanner(n) {
+    photosWaiting = n;
+    paintStatus();
     let el = document.getElementById('cs-photo-pending');
-    if (!n) { if (el) el.style.display = 'none'; return; }
+    if (!n) { if (el) el.style.display = 'none'; lastPhotoError = ''; return; }
     if (!el) {
       el = document.createElement('div');
       el.id = 'cs-photo-pending';
-      el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9998;background:#1f2937;color:#fff;font:600 12px/1.3 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:70vw;cursor:pointer';
-      el.title = 'These photos are safely stored on this phone and upload automatically when you have signal.';
-      el.onclick = () => { uploadPendingPhotos().catch(() => {}); };
+      el.style.cssText = 'position:fixed;left:8px;z-index:9998;background:#1f2937;color:#fff;font:600 12px/1.3 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:70vw;cursor:pointer';
+      el.onclick = () => {
+        // Say what is actually happening, then try again. The retry loop is
+        // already running on its own; this is for the person who wants to see
+        // it move now rather than wait out the timer.
+        showToastSafe(photoWaitingReason());
+        uploadPendingPhotos().catch(() => {});
+      };
       document.body.appendChild(el);
     }
     el.style.display = 'block';
-    el.textContent = `📸 ${n} photo${n > 1 ? 's' : ''} saved on this phone · uploading when you have signal`;
+    el.title = photoWaitingReason();
+    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+    // THREE different situations were all being described as "waiting for
+    // signal", including the one where there is signal and the server is
+    // refusing. That is what made a working retry loop look like a stuck app.
+    el.textContent = offline
+      ? `📸 ${n} photo${n > 1 ? 's' : ''} saved on this phone · uploading when you have signal`
+      : (lastPhotoError
+          ? `📸 ${n} photo${n > 1 ? 's' : ''} waiting · tap to see why`
+          : `📸 ${n} photo${n > 1 ? 's' : ''} uploading…`);
+  }
+  // One sentence a supervisor can act on, or repeat to someone who can.
+  function photoWaitingReason() {
+    const n = photosWaiting;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return `${n} photo${n > 1 ? 's' : ''} saved on this phone. They upload by themselves as soon as you have signal — nothing is lost if you close the app.`;
+    }
+    if (!lastPhotoError) {
+      return `${n} photo${n > 1 ? 's' : ''} uploading now. They are already saved on this phone, so nothing is lost either way.`;
+    }
+    return `${n} photo${n > 1 ? 's' : ''} still on this phone. Last attempt: ${lastPhotoError}. It keeps retrying by itself; the photos are safe on the phone meanwhile.`;
   }
 
   // Upload every persisted pending photo whose defect now has a cloud uuid.
@@ -2720,7 +2787,7 @@
           const ok = isLocalOnlyDefect(it.legacyId)
             ? await uploadTempPhoto(it.legacyId, it.blob, it.key)
             : await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays);
-          if (ok) { delete photoFailCounts[it.key]; await pendingDelete(it.key); await refreshPendingCounts(); }
+          if (ok) { delete photoFailCounts[it.key]; lastPhotoError = ''; await pendingDelete(it.key); await refreshPendingCounts(); }
           else photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1;
         } catch (e) { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; /* leave it queued; next sweep retries */ }
       }
@@ -3485,7 +3552,11 @@
       const up = await withTimeout(
         sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: true }),
         60000, 'temp photo upload');
-      if (up.error) { console.warn('[CloudSync] temp photo upload', up.error.message || up.error); return false; }
+      if (up.error) {
+        console.warn('[CloudSync] temp photo upload', up.error.message || up.error);
+        lastPhotoError = String(up.error.message || up.error).slice(0, 120);
+        return false;
+      }
     } catch (e) { return false; }
     a.tempPhotos = Array.isArray(a.tempPhotos) ? a.tempPhotos : [];
     if (!a.tempPhotos.some(p => p && p.path === path)) {
@@ -4212,6 +4283,22 @@
     pull: () => pullAll(),
     commitDefect: (legacyId) => commitDefect(legacyId),
     commitContractor: (legacyId) => commitContractor(legacyId),
+    // The offline indicator, named so it can be driven without a network, a
+    // camera or a dead spot. cloud-sync keeps these in step by itself and the
+    // app never calls them; tests/offlinephotos.mjs does, to put the indicator
+    // into each of its states and check what it says.
+    //
+    // DISPLAY ONLY. Nothing here touches a photo, a row or the outbox, so a
+    // mistaken call cannot lose work — which is why this is safe to expose
+    // and why the queue itself deliberately is not.
+    indicator: {
+      setStatus: (t, k) => setStatus(t, k),
+      setBanner: (t, k) => setBanner(t, k),
+      hideBanner: () => hideBanner(),
+      updatePendingBanner: (n) => updatePendingBanner(n),
+      photoWaitingReason: () => photoWaitingReason(),
+      setPhotoError: (m) => { lastPhotoError = String(m || ''); },
+    },
   };
 
   // The app (index.html) only needs one thing from auth: a way to open the
@@ -4328,7 +4415,20 @@
       // for installed PWAs).
       try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
       refreshPendingCounts().catch(() => {});   // restore the "N waiting" indicator
-      uploadPendingPhotos().catch(() => {});    // resume any photo from a previous app close / dead zone
+      // ALREADY-TOLD. photoFailCounts lives in memory, so every app open made
+      // each queued photo look like a brand new first failure and fired the
+      // "Photo upload failed" warning again — on a PWA that is resumed a dozen
+      // times a day, a warning a dozen times a day about photos the person was
+      // already told about. The pill is the standing indicator; the toast is
+      // for news. Anything already in the outbox at boot is not news.
+      (async () => {
+        try {
+          for (const it of await pendingAll()) {
+            if (!photoFailCounts[it.key]) photoFailCounts[it.key] = 1;
+          }
+        } catch (e) { /* no outbox to read — nothing to quieten */ }
+        uploadPendingPhotos().catch(() => {});   // resume any photo from a previous app close / dead zone
+      })();
     } catch (err) {
       console.error('[CloudSync] init failed', err);
       // Stale/expired session (e.g. password changed): clear it and re-show login
