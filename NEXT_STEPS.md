@@ -13,7 +13,7 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
-## ✉ Supplier emails come from CH Tracker's Look Up — build `2026-11-16a` — NOT DEPLOYED
+## ✉ Supplier emails come from CH Tracker's Look Up — build `2026-11-16a` — DEPLOYED 2026-11-16, live bytes hashed identical
 
 Every ✉ now addresses the supplier from `supplier_directory` (Framework's
 "VIC Supplier Details", rewritten by every CH Tracker Sync), pulled with the
