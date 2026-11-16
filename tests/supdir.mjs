@@ -6,12 +6,13 @@
 // suppliers here had no email saved, and at least 9 saved ones disagreed with
 // the directory (one was a Creation Homes staff address).
 //
-// The rule (Spiro's call): THE DIRECTORY WINS. A supplier the directory has
-// gets its address; one it doesn't keeps the saved email and the existing
-// "No email saved" ask. A TRADE is never looked up.
-//
-// Matching mirrors CH Tracker's src/lib/supplierDirectory.ts so both apps
-// choose the same inbox.
+// The rules (Spiro, 2026-11-16):
+//  * The directory is the source of truth; our short names stay. A supplier
+//    PINNED to a Framework code reads that code (codes survive the daily
+//    reload); unpinned, an exact-name match. A TRADE is never looked up.
+//  * General business email first, then call-up, then what was saved here.
+//    Any accounts@ address is dropped.
+//  * 🔗 with several addresses: tick boxes, #1 ticked, "Open email".
 import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -35,9 +36,9 @@ server.unref();
 const SEED = {
   addresses: [{ id: 1, lot: '905', street: 'Lot 905, (11) Woodlawn Rd', suburb: 'Wollert', propertyNumber: '306648', jobStatus: 'active', active: true }],
   contractors: [
-    // Saved address is stale — the directory has a different one.
+    // Name match. Saved address is kept but goes LAST.
     { id: 1, name: 'Quick Fit Glass', trades: 'Glazier', tradeIds: [], email: 'info@quickfitglass.com' },
-    // Nothing saved; the directory has it (with different case/spacing).
+    // Name match (case/spacing). General cell leads with accounts@ — dropped.
     { id: 2, name: 'BAYSIDE  JOINERY', trades: 'Carpenter', tradeIds: [] },
     // A TRADE — never looked up, even though the directory has a "Carpenter".
     { id: 3, name: 'Carpenter', trades: 'Carpenter', tradeIds: [], isTradePlaceholder: true, isActive: true },
@@ -45,8 +46,12 @@ const SEED = {
     { id: 4, name: 'Dean Rawle', trades: 'Painter', tradeIds: [], email: 'deanrawle@yahoo.com' },
     // Not in the directory, nothing saved — still gets the ask.
     { id: 5, name: 'Nowhere Roofing', trades: 'Roof Plumber', tradeIds: [] },
-    // Framework cut this name off; the directory has the full one.
-    { id: 6, name: 'Rybalko Holdings Pty Ltd T/A Pinnacle Plumbing Gro', trades: 'Plumber', tradeIds: [] },
+    // PINNED by code: its short name matches nothing in the directory.
+    { id: 6, name: 'Vic Plaster Adam', trades: 'Plasterer', tradeIds: [], email: 'adam.o@vicplaster.com.au', supplierCode: 'VICPLA' },
+    // PINNED to a code the directory no longer has — no name guess, saved only.
+    { id: 7, name: 'Quick Fit Glass', trades: 'Glazier', tradeIds: [], email: 'kept@qfg.com', supplierCode: 'GONE01' },
+    // Only accounts@ anywhere — nothing usable.
+    { id: 8, name: 'Bills Only', trades: 'Cleaner', tradeIds: [], email: 'accounts@billsonly.com.au' },
   ],
   trades: [],
   defects: [
@@ -54,21 +59,21 @@ const SEED = {
     { id: 2, addressId: 1, contractorId: 2, description: 'Refit robe shelf.', status: 'open', completed: false },
     { id: 3, addressId: 1, contractorId: 4, description: 'Touch up skirting.', status: 'open', completed: false },
     { id: 4, addressId: 1, contractorId: 5, description: 'Reseal valley gutter.', status: 'open', completed: false },
+    { id: 5, addressId: 1, contractorId: 6, description: 'Patch ceiling at manhole.', status: 'open', completed: false },
   ],
 };
 
 // Shaped like supplier_directory rows as cloud-sync pulls them.
 const DIR = [
-  { id: 'a', name: 'Quick Fit Glass', callup_email: null, email: 'suzz@quickfitglass.com', active: true },
-  { id: 'b', name: 'Bayside Joinery', callup_email: 'callups@bayside.com.au', email: 'accounts@bayside.com.au, callups@bayside.com.au', active: true },
-  { id: 'c', name: 'Carpenter', callup_email: 'someone@carpenter.com.au', email: null, active: true },
-  { id: 'd', name: 'Rybalko Holdings Pty Ltd T/A Pinnacle Plumbing Group', callup_email: 'jobs@pinnacle.com.au; office@pinnacle.com.au', email: null, active: true },
-  // Two entries of one name — the ACTIVE one must win.
-  { id: 'e', name: 'Envy Electrical', callup_email: 'old@envy.com', email: null, active: false },
-  { id: 'f', name: 'Envy Electrical', callup_email: 'scheduling@envyelec.com', email: null, active: true },
-  // Two directory names start with the same short cut — ambiguous, match none.
-  { id: 'g', name: 'Australian Building Services North', callup_email: 'n@abs.com', email: null, active: true },
-  { id: 'h', name: 'Australian Building Services South', callup_email: 's@abs.com', email: null, active: true },
+  { id: 'a', code: 'QFG001', name: 'Quick Fit Glass', callup_email: null, email: 'suzz@quickfitglass.com', active: true },
+  { id: 'b', code: 'BAY001', name: 'Bayside Joinery', callup_email: 'callups@bayside.com.au', email: 'accounts@bayside.com.au, office@bayside.com.au; callups@bayside.com.au', active: true },
+  { id: 'c', code: 'CARP01', name: 'Carpenter', callup_email: 'someone@carpenter.com.au', email: null, active: true },
+  { id: 'd', code: 'PIN001', name: 'Rybalko Holdings Pty Ltd T/A Pinnacle Plumbing Group', callup_email: null, email: 'jobs@pinnacle.com.au; office@pinnacle.com.au', active: true },
+  // One code, two rows (Framework does this) — the ACTIVE one must win.
+  { id: 'e', code: 'VICPLA', name: 'VIC Plaster Pty Ltd', callup_email: null, email: 'old@vicplaster.com.au', active: false },
+  { id: 'f', code: 'VICPLA', name: 'VIC Plaster Pty Ltd', callup_email: 'callups@vicplaster.com.au', email: 'accountsadmin@vicplaster.com.au; admin@vicplaster.com.au, Accounts.Payable@vicplaster.com.au', active: true },
+  { id: 'g', code: 'ABSN01', name: 'Australian Building Services North', callup_email: null, email: 'n@abs.com', active: true },
+  { id: 'h', code: 'ABSS01', name: 'Australian Building Services South', callup_email: null, email: 's@abs.com', active: true },
 ];
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
@@ -86,7 +91,7 @@ const errs = [];
 page.on('dialog', async d => { errs.push('dialog: ' + d.message().slice(0, 80)); await d.dismiss().catch(() => {}); });
 page.on('pageerror', e => errs.push('pageerror: ' + String(e).slice(0, 220)));
 page.on('console', m => { if (m.type() === 'error' && !/supabase-js|Failed to load resource|jspdf|pdf/i.test(m.text())) errs.push('console: ' + m.text().slice(0, 200)); });
-// Seed ONCE (first load only) so the reload in section E sees what the app
+// Seed ONCE (first load only) so the reload in section H sees what the app
 // itself persisted, not a fresh seed.
 await page.addInitScript(seed => {
   if (sessionStorage.getItem('seeded')) return;
@@ -100,128 +105,137 @@ await page.waitForFunction(() => typeof window.render === 'function');
 
 const fail = [];
 const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? '  ' + d : '')); if (!c) fail.push(l); };
+const J = JSON.stringify;
 
 // What a pull does: hand the rows over with the contractor list.
 await page.evaluate((dir) => window.SupplierDirectory.setRows(dir, db.data.contractors), DIR);
+const addrsOf = () => page.evaluate(() => Object.fromEntries(db.data.contractors.map(c => [c.id, contractorAddresses(c).map(a => a.email + ' [' + a.src + ']')])));
 
-// ================= A. matching and choosing ==================================
-console.log('\n--- A · which directory entry, which address ---');
+// ================= A. order, and accounts@ dropped ===========================
+console.log('\n--- A · which addresses, in which order ---');
 {
-  const r = await page.evaluate(() => {
-    const f = (n) => window.SupplierDirectory.emailsFor(n);
-    return {
-      exact: f('Quick Fit Glass'),
-      loose: f('  bayside   JOINERY '),
-      cut: f('Rybalko Holdings Pty Ltd T/A Pinnacle Plumbing Gro'),
-      active: f('Envy Electrical'),
-      ambiguous: f('Australian Building Services'),
-      short: f('Quick Fit'),
-      none: f('Nowhere Roofing'),
-    };
-  });
-  console.log(JSON.stringify(r));
-  check('exact name → its address', JSON.stringify(r.exact) === '["suzz@quickfitglass.com"]', JSON.stringify(r.exact));
-  check('case and spacing ignored; call-up email chosen over the general one',
-    JSON.stringify(r.loose) === '["callups@bayside.com.au"]', JSON.stringify(r.loose));
-  check('a name Framework cut off still finds the full entry, every address in the cell',
-    JSON.stringify(r.cut) === '["jobs@pinnacle.com.au","office@pinnacle.com.au"]', JSON.stringify(r.cut));
-  check('the ACTIVE entry wins over an inactive one of the same name',
-    JSON.stringify(r.active) === '["scheduling@envyelec.com"]', JSON.stringify(r.active));
-  check('a cut-off that fits two names matches neither (no guessing)', r.ambiguous.length === 0, JSON.stringify(r.ambiguous));
-  check('a SHORT name never prefix-matches', r.short.length === 0, JSON.stringify(r.short));
-  check('a name not in the directory → nothing', r.none.length === 0, JSON.stringify(r.none));
+  const r = await addrsOf();
+  console.log(J(r, null, 1));
+  check('general email FIRST, then the saved one last',
+    J(r[1]) === J(['suzz@quickfitglass.com [Look Up]', 'info@quickfitglass.com [saved]']), J(r[1]));
+  check('accounts@ dropped; rest of the general cell, then call-up; no duplicate of callups@',
+    J(r[2]) === J(['office@bayside.com.au [Look Up]', 'callups@bayside.com.au [Look Up]']), J(r[2]));
+  check('a TRADE is never looked up', J(r[3]) === '[]', J(r[3]));
+  check('a supplier the directory lacks keeps its saved address', J(r[4]) === J(['deanrawle@yahoo.com [saved]']), J(r[4]));
+  check('…and one with neither has none', J(r[5]) === '[]', J(r[5]));
+  check('an accounts@ address saved by hand is dropped too', J(r[8]) === '[]', J(r[8]));
 }
 
-// ================= B. directory wins; saved and trade rules ==================
-console.log('\n--- B · which address each contractor gets ---');
+// ================= B. pinned by Framework code ================================
+console.log('\n--- B · a pinned supplier reads its code, not its name ---');
 {
-  const r = await page.evaluate(() => Object.fromEntries(db.data.contractors.map(c => [c.id, contractorEmails(c)])));
-  console.log(JSON.stringify(r));
-  check('directory WINS over a stale saved address',
-    r[1].fromDirectory && r[1].to.join() === 'suzz@quickfitglass.com', JSON.stringify(r[1]));
-  check('a supplier with nothing saved gets the directory address',
-    r[2].fromDirectory && r[2].to.join() === 'callups@bayside.com.au', JSON.stringify(r[2]));
-  check('a TRADE is never looked up', !r[3].fromDirectory && r[3].to.length === 0, JSON.stringify(r[3]));
-  check('a supplier the directory lacks keeps its saved address',
-    !r[4].fromDirectory && r[4].to.join() === 'deanrawle@yahoo.com', JSON.stringify(r[4]));
-  check('…and one with neither has none', r[5].to.length === 0, JSON.stringify(r[5]));
+  const r = await addrsOf();
+  check('pinned short name → the code\'s ACTIVE entry; accountsadmin@ and Accounts.Payable@ dropped; saved address kept last',
+    J(r[6]) === J(['admin@vicplaster.com.au [Look Up]', 'callups@vicplaster.com.au [Look Up · call-up]', 'adam.o@vicplaster.com.au [saved]']), J(r[6]));
+  check('pinned to a code no longer in the directory → saved only, NO fall-back to a name guess',
+    J(r[7]) === J(['kept@qfg.com [saved]']), J(r[7]));
+  const cut = await page.evaluate(() => contractorAddresses({ name: 'Rybalko Holdings Pty Ltd T/A Pinnacle Plumbing Gro' }).map(a => a.email));
+  check('unpinned: a name Framework cut off still finds its entry', J(cut) === J(['jobs@pinnacle.com.au', 'office@pinnacle.com.au']), J(cut));
+  const amb = await page.evaluate(() => contractorAddresses({ name: 'Australian Building Services' }).length);
+  check('unpinned: a cut-off fitting two names matches neither', amb === 0, String(amb));
 }
 
-// ================= C/D. the ✉ on a supplier group ============================
-// The server route is the one place the recipient can be read back — mailto
-// navigation can't be stubbed in a real browser. Share is refused so the flow
-// reaches it.
+// ================= C. 📧 falls through to #1 only ============================
 async function arm() {
   await page.evaluate(() => {
-    window.__sent = []; window.__toasts = [];
+    window.__sent = []; window.__mailto = []; window.__toasts = [];
     window.CloudShare = { uploadTempPdf: async () => 'https://example.test/go.html?f=x/R.pdf', lastKey: () => 'x/R.pdf' };
     window.CloudMail = { sendSupplierDefects: async (a) => { window.__sent.push(a); return { ok: true }; } };
+    window.goMailto = (h) => window.__mailto.push(h);
     navigator.canShare = () => false;
     navigator.share = undefined;
     window.generateDefectPDF = async () => new File([new Blob(['%PDF-1.4'])], 'D.pdf', { type: 'application/pdf' });
     render();
   });
 }
-console.log('\n--- C · ✉ sends to the directory address ---');
+const toLine = (h) => decodeURIComponent(String(h || '').replace(/^mailto:/, '').split('?')[0]);
+console.log('\n--- C · 📧 (attach) falling through to the server sends to #1 only ---');
 {
   await arm();
-  await page.evaluate(() => emailSupplier(1, 1));
+  await page.evaluate(() => emailSupplier(6, 1));
   await page.waitForTimeout(300);
-  const sent = await page.evaluate(() => window.__sent);
-  console.log(JSON.stringify(sent.map(s => s.to)));
-  check('Quick Fit Glass goes to the directory address, not the stale saved one',
-    sent.length === 1 && JSON.stringify(sent[0].to) === '["suzz@quickfitglass.com"]', JSON.stringify(sent));
+  const r = await page.evaluate(() => ({ sent: window.__sent.map(s => s.to), chooser: !!document.getElementById('rcp-go') }));
+  check('no tick boxes on 📧', !r.chooser);
+  check('…sent to the general email only', J(r.sent) === J([['admin@vicplaster.com.au']]), J(r.sent));
 }
-console.log('\n--- D · the "No email saved" ask ---');
+
+// ================= D. 🔗 tick boxes ===========================================
+console.log('\n--- D · 🔗 with several addresses: tick boxes, #1 ticked ---');
 {
   await arm();
-  await page.evaluate(() => { emailSupplier(2, 1); });
-  await page.waitForTimeout(400);
-  const r = await page.evaluate(() => ({ ask: !!document.getElementById('ask-email'), sent: window.__sent.map(s => s.to) }));
-  check('NOT asked when the directory has the supplier', !r.ask, JSON.stringify(r));
-  check('…and it sends straight to that address', JSON.stringify(r.sent) === '[["callups@bayside.com.au"]]', JSON.stringify(r.sent));
+  await page.evaluate(() => { emailSupplier(6, 1, true); });
+  await page.waitForSelector('#rcp-go', { timeout: 3000 }).catch(() => {});
+  const boxes = await page.evaluate(() => [...document.querySelectorAll('#imp-ov .rcp-cb')].map(b => b.checked));
+  check('one tick box per address', boxes.length === 3, J(boxes));
+  check('…only #1 (the general email) ticked to start', J(boxes) === J([true, false, false]), J(boxes));
+  await page.evaluate(() => document.querySelectorAll('#imp-ov .rcp-cb')[2].click());   // add Adam
+  await page.evaluate(() => document.getElementById('rcp-go').click());
+  await page.waitForTimeout(900);
+  const m = await page.evaluate(() => window.__mailto);
+  check('"Open email" opens the mail app with exactly the ticked addresses',
+    m.length === 1 && toLine(m[0]) === 'admin@vicplaster.com.au,adam.o@vicplaster.com.au', toLine(m[0]));
+  check('…subject still filled in', /subject=Defects%20-%20/.test(m[0] || ''), (m[0] || '').slice(0, 120));
 
   await arm();
-  await page.evaluate(() => { emailSupplier(5, 1); });
+  await page.evaluate(() => { emailSupplier(6, 1, true); });
+  await page.waitForSelector('#rcp-go', { timeout: 3000 }).catch(() => {});
+  await page.evaluate(() => document.getElementById('imp-close').click());
+  await page.waitForTimeout(500);
+  check('✕ cancels — no email opened', (await page.evaluate(() => window.__mailto.length)) === 0);
+}
+
+// ================= E/F. one address / none ===================================
+console.log('\n--- E · one address goes straight through; F · none still asks ---');
+{
+  await arm();
+  await page.evaluate(() => { emailSupplier(4, 1, true); });
+  await page.waitForTimeout(900);
+  const r = await page.evaluate(() => ({ chooser: !!document.getElementById('rcp-go'), m: window.__mailto }));
+  check('a single address: no tick boxes, mail opens to it', !r.chooser && r.m.length === 1 && toLine(r.m[0]) === 'deanrawle@yahoo.com', J(r));
+
+  await arm();
+  await page.evaluate(() => { emailSupplier(5, 1, true); });
   await page.waitForSelector('#ask-email', { timeout: 3000 }).catch(() => {});
-  const asked = await page.evaluate(() => !!document.getElementById('ask-email'));
-  check('still asked for a supplier with no address anywhere', asked);
+  check('no address anywhere: the "No email saved" ask', await page.evaluate(() => !!document.getElementById('ask-email')));
   await page.evaluate(() => { const x = document.getElementById('imp-close'); if (x) x.click(); });
 }
 
-// ================= F. the contractor screen says where it came from ==========
-console.log('\n--- F · contractor screen ---');
+// ================= G. the contractor screen ===================================
+console.log('\n--- G · contractor screen lists every address and its source ---');
 {
-  await page.evaluate(() => { viewDefectsForContractor(1); });
+  await page.evaluate(() => { viewDefectsForContractor(6); });
   await page.waitForTimeout(300);
-  const r = await page.evaluate(() => {
-    const a = [...document.querySelectorAll('a[href^="mailto:"]')].map(x => ({ href: x.getAttribute('href'), text: x.textContent }));
-    return { a, tag: !!document.querySelector('.supdir-tag') };
-  });
-  console.log(JSON.stringify(r));
-  check('the header mailto is the directory address',
-    r.a.some(x => x.text === 'suzz@quickfitglass.com' && x.href === 'mailto:suzz%40quickfitglass.com'), JSON.stringify(r.a));
-  check('…marked "from Look Up"', r.tag);
+  const r = await page.evaluate(() => ({
+    a: [...document.querySelectorAll('a[href^="mailto:"]')].map(x => x.textContent),
+    tags: [...document.querySelectorAll('.supdir-tag')].map(x => x.textContent.replace(/^·\s*/, '')),
+  }));
+  console.log(J(r));
+  check('all three addresses, best first', J(r.a) === J(['admin@vicplaster.com.au', 'callups@vicplaster.com.au', 'adam.o@vicplaster.com.au']), J(r.a));
+  check('…each says where it came from', J(r.tags) === J(['Look Up', 'Look Up · call-up', 'saved']), J(r.tags));
 }
 
-// ================= E. offline: the copy survives a reload ====================
-console.log('\n--- E · a phone that boots offline keeps the addresses ---');
+// ================= H. offline =================================================
+console.log('\n--- H · a phone that boots offline keeps the addresses ---');
 {
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('dm_supdir_v1') || '{}'));
-  console.log('stored:', JSON.stringify(stored));
-  check('only the names matching a contractor are stored (not the whole directory)',
-    Object.keys(stored).sort().join('|') === ['bayside joinery', 'quick fit glass', 'rybalko holdings pty ltd t/a pinnacle plumbing gro'].join('|'),
-    JSON.stringify(Object.keys(stored)));
+  const stored = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('dm_supdir_v2') || '{}')).sort());
+  check('only what our contractors use is stored, the pin under its code',
+    J(stored) === J(['#vicpla', 'bayside joinery', 'quick fit glass']), J(stored));
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.render === 'function');
   const r = await page.evaluate(() => ({
-    qfg: contractorEmails(db.getContractor(1)),
-    trade: contractorEmails(db.getContractor(3)),
+    pinned: contractorAddresses(db.getContractor(6)).map(a => a.email),
+    gone: contractorAddresses(db.getContractor(7)).map(a => a.email),
+    trade: contractorAddresses(db.getContractor(3)).length,
   }));
-  console.log(JSON.stringify(r));
-  check('after a reload with no pull, the directory address is still used',
-    r.qfg.fromDirectory && r.qfg.to.join() === 'suzz@quickfitglass.com', JSON.stringify(r.qfg));
-  check('…and a trade is still never looked up', !r.trade.fromDirectory, JSON.stringify(r.trade));
+  check('after a reload with no pull, the pinned supplier still has its addresses',
+    J(r.pinned) === J(['admin@vicplaster.com.au', 'callups@vicplaster.com.au', 'adam.o@vicplaster.com.au']), J(r.pinned));
+  check('…a pin to a vanished code still gets no name guess', J(r.gone) === J(['kept@qfg.com']), J(r.gone));
+  check('…and a trade is still never looked up', r.trade === 0);
 }
 
 check('no page errors or browser dialogs', errs.length === 0, JSON.stringify(errs));

@@ -1012,7 +1012,7 @@
       // refreshed by every Tracker Sync) — the email a ✉ goes to. ~2,800 rows,
       // so paged. Best-effort: an error leaves the last good copy in place and
       // mail falls back to the saved addresses.
-      selectAllRows('supplier_directory', 'id, name, callup_email, email, active', 'id')
+      selectAllRows('supplier_directory', 'id, code, name, callup_email, email, active', 'id')
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -1050,7 +1050,11 @@
         isShared: c.is_shared !== false,        // false = private to its adder
         addedBy: c.added_by || null,            // supervisor who added it (if private)
         isTradePlaceholder: !!c.is_trade_placeholder,  // it's a "Trade" option, not a real sub
-        isActive: c.is_active !== false                // manager has it switched on
+        isActive: c.is_active !== false,               // manager has it switched on
+        // Framework supplier code it's pinned to (mig 190) — where its email
+        // addresses come from. READ-ONLY here: no push row carries it, so a
+        // phone can never wipe a pin.
+        supplierCode: c.supplier_code || null
       });
     });
 
