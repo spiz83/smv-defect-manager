@@ -1007,7 +1007,7 @@
     // from idMap.defects, so reconcileLocalDefectsUp read ~1000 cloud rows as
     // un-synced local work and re-uploaded them on every boot ("Uploaded 1000
     // change(s) from this phone").
-    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, wordings, dLists, dListItems] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, wordings, dLists, dListItems, supDir] = await Promise.all([
       selectAllRows('dm_trades', '*', 'id'),
       selectAllRows('dm_contractors', '*', 'id'),
       selectAllRows('dm_contractor_trades', 'contractor_id, trade_id', 'contractor_id'),
@@ -1035,7 +1035,12 @@
       // list. Two selects rather than a join so a failure on either one is
       // visible on its own; both are small curated content, not logs.
       sb.from('dm_defect_lists').select('id, name, sort_n, active').eq('active', true),
-      selectDefectListItems()
+      selectDefectListItems(),
+      // CH Tracker's Look Up directory (Framework's "VIC Supplier Details",
+      // refreshed by every Tracker Sync) — the email a ✉ goes to. ~2,800 rows,
+      // so paged. Best-effort: an error leaves the last good copy in place and
+      // mail falls back to the saved addresses.
+      selectAllRows('supplier_directory', 'id, name, callup_email, email, active', 'id')
     ]);
     for (const r of [trades, contractors, links, jobs, defects]) {
       if (r.error) throw r.error;
@@ -1293,6 +1298,14 @@
     // Apply to the running app, without echoing it back as a push.
     suppressPush = true;
     db.data = newData;
+    // Supplier emails (see SupplierDirectory in index.html). Given the new
+    // contractor list so the offline copy holds just the names that match.
+    if (supDir && !supDir.error && Array.isArray(supDir.data) && window.SupplierDirectory) {
+      try { window.SupplierDirectory.setRows(supDir.data, newData.contractors); }
+      catch (e) { console.warn('[CloudSync] supplier directory', e); }
+    } else if (supDir && supDir.error) {
+      console.info('[CloudSync] supplier directory unavailable — using saved emails.', supDir.error.message || '');
+    }
     // Baseline = the CLOUD state, taken BEFORE re-adding un-pushed rows, so the
     // diff engine still sees those as un-synced and keeps trying to push them.
     snapshot = cloneSnap(db.data);

@@ -13,6 +13,26 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## ✉ Supplier emails come from CH Tracker's Look Up — build `2026-11-16a` — DEPLOYED 2026-11-16, live bytes hashed identical
+
+Every ✉ now addresses the supplier from `supplier_directory` (Framework's
+"VIC Supplier Details", rewritten by every CH Tracker Sync), pulled with the
+other tables in `pullAll()` and held by `SupplierDirectory` in index.html.
+
+- **The directory WINS** (Spiro's call, 2026-11-16). A matched supplier's
+  hand-saved email is ignored. Unmatched suppliers keep the saved email and the
+  "No email saved" ask. Trades are never looked up.
+- **Matching = CH Tracker's `matchDirectory` / `bookingEmailFor`**: case and
+  spacing ignored, active entry preferred, 20+ char names prefix-match ONE
+  directory name (Framework truncates), call-up email before the general one.
+  Change it in both apps or they will pick different inboxes.
+- Live data on 16 Nov: 323 real suppliers, 194 with no email; 162 of those now
+  get one. ~125 don't match the directory by name at all.
+- Offline: a slim map (matched names only) in `localStorage['dm_supdir_v1']`.
+- No DB change: `supdir_read` already lets every company member read it.
+- Suite `tests/supdir.mjs` (gate 3).
+
+
 STATUS: Active
 LAST UPDATED: 2026-10-22
 
