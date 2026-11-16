@@ -66,7 +66,7 @@ const SEED = {
 // Shaped like supplier_directory rows as cloud-sync pulls them.
 const DIR = [
   { id: 'a', code: 'QFG001', name: 'Quick Fit Glass', callup_email: null, email: 'suzz@quickfitglass.com', active: true },
-  { id: 'b', code: 'BAY001', name: 'Bayside Joinery', callup_email: 'callups@bayside.com.au', email: 'accounts@bayside.com.au, office@bayside.com.au; callups@bayside.com.au', active: true },
+  { id: 'b', code: 'BAY001', name: 'Bayside Joinery', callup_email: 'callups@bayside.com.au', email: 'accounts@bayside.com.au, ar@bayside.com.au; receivables@bayside.com.au, arvic@bayside.com.au, office@bayside.com.au; callups@bayside.com.au, art@bayside.com.au', active: true },
   { id: 'c', code: 'CARP01', name: 'Carpenter', callup_email: 'someone@carpenter.com.au', email: null, active: true },
   { id: 'd', code: 'PIN001', name: 'Rybalko Holdings Pty Ltd T/A Pinnacle Plumbing Group', callup_email: null, email: 'jobs@pinnacle.com.au; office@pinnacle.com.au', active: true },
   // One code, two rows (Framework does this) — the ACTIVE one must win.
@@ -118,8 +118,8 @@ console.log('\n--- A · which addresses, in which order ---');
   console.log(J(r, null, 1));
   check('general email FIRST, then the saved one last',
     J(r[1]) === J(['suzz@quickfitglass.com [Look Up]', 'info@quickfitglass.com [saved]']), J(r[1]));
-  check('accounts@ dropped; rest of the general cell, then call-up; no duplicate of callups@',
-    J(r[2]) === J(['office@bayside.com.au [Look Up]', 'callups@bayside.com.au [Look Up]']), J(r[2]));
+  check('accounts@, ar@, arvic@, receivables@ dropped (art@ kept); then call-up; no duplicate of callups@',
+    J(r[2]) === J(['office@bayside.com.au [Look Up]', 'callups@bayside.com.au [Look Up]', 'art@bayside.com.au [Look Up]']), J(r[2]));
   check('a TRADE is never looked up', J(r[3]) === '[]', J(r[3]));
   check('a supplier the directory lacks keeps its saved address', J(r[4]) === J(['deanrawle@yahoo.com [saved]']), J(r[4]));
   check('…and one with neither has none', J(r[5]) === '[]', J(r[5]));

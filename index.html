@@ -6827,8 +6827,11 @@
         // every way), minus accounts@ ones. Spiro 2026-11-16: "disregard any
         // emails that have accounts@" — 79 of 416 active suppliers' general
         // email started that way; it's the bill inbox, not who fixes defects.
-        // Any "account" before the @ — accounts@, accountsadmin@, accounts.payable@.
-        const isAccountsEmail = (e) => /account/i.test(String(e).split('@')[0]);
+        // Billing inboxes, dropped everywhere: any "account" before the @
+        // (accounts@, accountsadmin@, accounts.payable@) and, Spiro 2026-11-16
+        // "drop those too", accounts-receivable ones — ar@, arvic@,
+        // receivable(s)@ (11 active suppliers' general email on 16 Nov).
+        const isAccountsEmail = (e) => /account|receivabl|^ar(vic)?$/i.test(String(e).split('@')[0]);
         function splitEmailCell(cell) {
             return [...new Set(String(cell || '').split(/[\s,;]+/).map(s => s.trim())
                 .filter(s => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)))].filter(e => !isAccountsEmail(e));

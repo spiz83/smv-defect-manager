@@ -27,7 +27,7 @@ truth and is wiped/reloaded daily; our short names stay as they are.
 - **🔗** with 2+ addresses: tick boxes, #1 ticked, "Open email" (chooseRecipients).
   📧 (share sheet) can't take a recipient; it keeps the plain ask, #1 on fallback.
 - Mail hand-off goes through `goMailto()` so tests can read the To line.
-- Open question: receivables inboxes (ar@, receivables@) are still allowed.
+- Receivables inboxes (ar@, arvic@, receivable(s)@) are dropped too (Spiro 2026-11-16).
 
 ## ✉ Supplier emails come from CH Tracker's Look Up — build `2026-11-16a` — DEPLOYED 2026-11-16, live bytes hashed identical
 
