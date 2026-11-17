@@ -198,6 +198,82 @@ check('no addresses means no empty rows', empty.rows === 0, String(empty.rows));
 check('…it says so, and says what to do about it', empty.says === true, String(empty.says));
 check('…and sending still works', empty.stillHasAttach === true, String(empty.stillHasAttach));
 
+// ================= 4. the copy survives the Attach tap ====================
+// Spiro: "the paste feature after I have copied a bunch of email addresses
+// selected doesn't work". It wasn't the copy — it was what happened next.
+// Tapping Attach copied the SUBJECT over the top of the addresses in the same
+// tap, so by the time Mail opened the clipboard held "Defects - Lot 511".
+// Pasting into To then produced recipient chips made of the subject line,
+// which is exactly what the screenshot showed.
+console.log('\n--- what is on the clipboard when Mail opens ---');
+const survive = await page.evaluate(async () => {
+  const copied = [];
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: (t) => { copied.push(t); return Promise.resolve(); } },
+    configurable: true,
+  });
+  const file = new File([new Blob(['x'])], 'R.pdf', { type: 'application/pdf' });
+  navigator.canShare = () => true;
+  navigator.share = () => new Promise(() => {});
+  const book = emailBookForDefects(db.getDefects({ addressId: 1 }));
+
+  // (a) the user ticks and copies, then taps Attach
+  sharePdfOnTap(file, 'Attach to email', 'note', { subject: 'Defects - Lot 511', body: 'b', book });
+  await new Promise(r => setTimeout(r, 60));
+  [...document.querySelectorAll('#imp-ov .sh-addr')].forEach((r, i) => { if (i) r.click(); });
+  document.querySelector('#imp-ov .sh-copysel').click();
+  await new Promise(r => setTimeout(r, 30));
+  const afterCopy = copied[copied.length - 1];
+  document.getElementById('sh-go').click();
+  await new Promise(r => setTimeout(r, 60));
+  const afterAttach = copied[copied.length - 1];
+  const ov = document.getElementById('imp-ov'); if (ov) ov.remove();
+
+  // (b) the user copies nothing — the subject is still a useful thing to hand
+  //     them, so that behaviour has to stay.
+  const copied2 = [];
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: (t) => { copied2.push(t); return Promise.resolve(); } },
+    configurable: true,
+  });
+  sharePdfOnTap(file, 'Attach to email', 'note', { subject: 'Defects - Lot 511', body: 'b', book });
+  await new Promise(r => setTimeout(r, 60));
+  document.getElementById('sh-go').click();
+  await new Promise(r => setTimeout(r, 60));
+  const ov2 = document.getElementById('imp-ov'); if (ov2) ov2.remove();
+
+  // (c) the single-address 📋 counts as the user copying, too
+  const copied3 = [];
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: (t) => { copied3.push(t); return Promise.resolve(); } },
+    configurable: true,
+  });
+  sharePdfOnTap(file, 'Attach to email', 'note', { subject: 'Defects - Lot 511', body: 'b', book });
+  await new Promise(r => setTimeout(r, 60));
+  document.querySelector('#imp-ov .sh-addr .sh-one').click();
+  await new Promise(r => setTimeout(r, 30));
+  const oneCopy = copied3[copied3.length - 1];
+  document.getElementById('sh-go').click();
+  await new Promise(r => setTimeout(r, 60));
+  const ov3 = document.getElementById('imp-ov'); if (ov3) ov3.remove();
+
+  return { afterCopy, afterAttach, noCopy: copied2, oneCopy, afterOne: copied3[copied3.length - 1] };
+});
+console.log('survive:', JSON.stringify(survive, null, 1));
+check('copying a selection puts the addresses on the clipboard',
+  /@/.test(survive.afterCopy || ''), JSON.stringify(survive.afterCopy));
+check('…and tapping Attach LEAVES THEM THERE, so To pastes addresses',
+  survive.afterAttach === survive.afterCopy,
+  `was ${JSON.stringify(survive.afterCopy)}, became ${JSON.stringify(survive.afterAttach)}`);
+check('…so the subject never lands in the To field',
+  !/Defects - Lot 511/.test(survive.afterAttach || ''), JSON.stringify(survive.afterAttach));
+check('with nothing copied, Attach still hands over the subject',
+  survive.noCopy.length === 1 && survive.noCopy[0] === 'Defects - Lot 511',
+  JSON.stringify(survive.noCopy));
+check('one address copied on its own also survives the Attach tap',
+  survive.afterOne === survive.oneCopy && /@/.test(survive.oneCopy || ''),
+  `was ${JSON.stringify(survive.oneCopy)}, became ${JSON.stringify(survive.afterOne)}`);
+
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
 await browser.close();
