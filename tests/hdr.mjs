@@ -216,7 +216,8 @@ for (const theme of ['default', 'modern', 'f1']) {
     state.currentView = 'home'; render();
     const h = document.querySelector('.app-header.home-hero');
     if (!h) return { error: 'no home hero' };
-    const img = h.querySelector('.hero-logo');
+    const img = h.querySelector('.hero-logo');          // the white panel
+    const mark = img && img.querySelector('img');      // the artwork inside it
     const title = h.querySelector('.header-title');
     const H = h.getBoundingClientRect();
     const I = img && img.getBoundingClientRect();
@@ -224,12 +225,17 @@ for (const theme of ['default', 'modern', 'f1']) {
     const cs = img && getComputedStyle(img);
     return {
       hasLogo: !!img,
-      src: img ? (img.getAttribute('src') || '') : '',
+      src: mark ? (mark.getAttribute('src') || '') : '',
       chip: cs ? cs.backgroundColor : '',
       logoLeftOfTitle: !!(I && T) && I.right <= T.left + 1,
       titleCentre: T ? Math.round(T.x + T.width / 2) : 0,
       pageCentre: Math.round(H.width / 2),
-      titleLines: T ? (T.height > 34 ? 2 : 1) : 0,
+      // "No blue background around the logo" — the panel has to reach the top,
+      // bottom and left edges of the bar, not float inside its padding.
+      panelLeft: I ? Math.round(I.x - H.x) : -1,
+      panelTop: I ? Math.round(I.y - H.y) : -1,
+      panelCoversHeight: !!I && I.height >= H.height - 1.5,
+      titleLines: title ? title.getClientRects().length : 0,
       // The old app-icon badge must not come back alongside it.
       badge: getComputedStyle(h, '::before').content,
       fitsWidth: !!(I && T) && T.right <= H.right + 1,
@@ -253,8 +259,13 @@ for (const theme of ['default', 'modern', 'f1']) {
   check(`[${theme}] …on a white chip, so dark artwork survives a coloured hero`,
     /255,\s*255,\s*255/.test(hero.chip || ''), hero.chip);
   check(`[${theme}] …to the LEFT of the title`, hero.logoLeftOfTitle === true, JSON.stringify(hero));
-  check(`[${theme}] the title sits right of centre, not dead centre`,
-    hero.titleCentre > hero.pageCentre + 15, `title ${hero.titleCentre} vs centre ${hero.pageCentre}`);
+  check(`[${theme}] the title is pushed hard right`,
+    hero.titleCentre > hero.pageCentre + 50, `title ${hero.titleCentre} vs centre ${hero.pageCentre}`);
+  check(`[${theme}] the white panel reaches the left edge — no blue beside it`,
+    hero.panelLeft === 0, `${hero.panelLeft}px from the edge`);
+  check(`[${theme}] …and the top`, hero.panelTop === 0, `${hero.panelTop}px from the top`);
+  check(`[${theme}] …and runs the full height, so no blue above or below it`,
+    hero.panelCoversHeight === true, JSON.stringify(hero));
   check(`[${theme}] …still on one line at phone width`, hero.titleLines === 1, String(hero.titleLines));
   check(`[${theme}] …and not pushed off the right edge`, hero.fitsWidth === true, JSON.stringify(hero));
   check(`[${theme}] no second mark beside it`,

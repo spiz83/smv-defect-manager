@@ -142,30 +142,58 @@
            On a white chip, as on the report cover: the artwork is dark navy and
            would disappear into the blue hero otherwise, and every theme paints
            that hero a different colour. */
+        /* A FULL-HEIGHT WHITE PANEL, AND THE TITLE HARD RIGHT (Spiro
+           2026-11-17): "the Defect Manager text to be put far right, and the
+           Creation Homes logo larger so the white background covers the blue —
+           no blue background around the logo."
+           The padding moves OFF the hero and onto the title. That is what lets
+           the panel bleed to the top, bottom and left edges while the bar keeps
+           the exact height it had: the height is now the title's own padding
+           plus its line box, the same sum as before. Hard-coding negative
+           margins instead would have had to know each theme's padding, and
+           they differ. */
+        .app-header.home-hero {
+            padding: 0;
+            gap: 0;
+            overflow: hidden;      /* clip the panel to the hero's own corners */
+        }
+        /* The panel is the SPAN, not the image. align-self:stretch does not
+           stretch a replaced element — an <img> keeps its intrinsic height and
+           the bar grew to 180px. So a span stretches, and the image fills it. */
         .app-header.home-hero .hero-logo {
             flex: 0 0 auto;
-            /* THE HEADER MUST NOT GET TALLER (Spiro 2026-11-17): "don't alter
-               the height of the little header section, it needs to fit in
-               there so the screen is the main focus."
-               The hero's height is its padding plus its TALLEST child. The
-               title's line box is 25px, so anything up to 25px rides along for
-               free and 30px pushed the bar 5px taller. Sized to the line box,
-               not to what the logo would like to be. */
-            height: 25px;
-            width: auto;
+            align-self: stretch;   /* full height of the bar, so no blue shows */
+            display: flex;
+            align-items: center;
             background: #fff;
-            border-radius: 5px;
-            padding: 2px 5px;
-            box-shadow: 0 1px 5px rgba(0,0,0,.18);
+            border-radius: 0;
+            padding: 5px 11px;
+            box-shadow: none;
         }
-        /* At 390px the logo plus 900-weight italic caps is a tight fit, and a
-           masthead that wraps to two lines looks like a mistake. Let the words
-           shrink instead, and never wrap. */
+        .app-header.home-hero .hero-logo img {
+            display: block;
+            /* A FIXED height, not 100%. The bar's height is its tallest item,
+               so an image sized from the bar sizes the bar from itself — the
+               circle that made it 180px tall. Pinning the image below the
+               title's line box leaves the TITLE deciding the height, and the
+               panel then stretches to whatever that is. 34px is comfortably
+               under the 55px the title occupies in every theme. */
+            height: 34px;
+            width: auto;
+        }
+        /* The title carries the hero's padding now. Right-aligned and hard over,
+           as asked. At 390px a 900-weight italic caps wordmark beside a logo is
+           a tight fit, and a masthead that wraps to two lines looks like a
+           mistake — let the words shrink instead, and never wrap. */
         .app-header.home-hero .header-title {
             min-width: 0;
             white-space: nowrap;
+            text-align: right;
+            padding: 15px 20px;
             font-size: clamp(15px, 4.6vw, 22px);
         }
+        /* The modern theme's own rules carry its padding; they are edited in
+           place further down rather than fought with an override here. */
 
         /* The chevron alone — the word "Back" is hidden, not deleted, so it is
            still the link's accessible name for a screen reader. "‹ Back" sat
@@ -1059,10 +1087,10 @@
             box-shadow: var(--shadow-md);
             border: none;
             border-radius: 0 0 24px 24px;
-            padding: 20px 18px;
+            padding: 0;        /* moved onto .header-title — see the panel note */
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 0;
             backdrop-filter: none;
             -webkit-backdrop-filter: none;
         }
@@ -1071,6 +1099,12 @@
            rather than branding. */
         body.design-modern .app-header.home-hero .header-title {
             color: #fff; font-size: 22px; font-weight: 800;
+            /* The hero's old padding, moved here. The safe-area top comes with
+               it (it was on the hero at the bottom of this sheet) — otherwise
+               the white panel would stop short of the notch and leave a blue
+               strip above it. */
+            padding: 20px 18px;
+            padding-top: calc(20px + env(safe-area-inset-top));
         }
 
         /* Section titles: accent bar */
@@ -1237,9 +1271,8 @@
            can stack underneath the fixed status bar instead of sliding beneath
            it. Signed out there is no bar, so the fallback 0px applies. */
         body.cs-authed { padding-top: var(--cs-bar-h); --cs-bar-h: calc(26px + env(safe-area-inset-top)); }
-        body.design-modern .app-header.home-hero {
-            padding-top: calc(20px + env(safe-area-inset-top));
-        }
+        /* (The hero's safe-area top now lives on .header-title above, so the
+           white logo panel reaches the very top of the bar.) */
         body.design-modern .home-container,
         body.design-modern .defects-container {
             padding-bottom: calc(24px + env(safe-area-inset-bottom));
@@ -2908,8 +2941,8 @@
         function renderHomeView() {
             return `
                 <div class="app-header home-hero">
-                    <img class="hero-logo" src="creation-homes-logo.png" alt="Creation Homes"
-                         onerror="this.remove()">
+                    <span class="hero-logo"><img src="creation-homes-logo.png" alt="Creation Homes"
+                         onerror="this.closest('.hero-logo').remove()"></span>
                     <div class="header-title">Defect Manager</div>
                 </div>
                 <div class="home-container">
@@ -15449,7 +15482,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17c';
+        const APP_VERSION = '2026-11-17d';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -15536,7 +15569,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17c"></script>
+    <script src="cloud-sync.js?v=2026-11-17d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
