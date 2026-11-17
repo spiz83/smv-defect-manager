@@ -1646,7 +1646,28 @@
         body.design-f1 .modal { background: rgba(0,0,0,.72) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
         body.design-f1 .modal-content { background: var(--sur) !important; border: 1px solid var(--brd) !important; border-radius: 8px !important; box-shadow: 0 16px 48px rgba(0,0,0,.7) !important; }
         body.design-f1 .modal-header { font-family: 'Titillium Web', sans-serif !important; font-weight: 900 !important; font-style: italic; text-transform: uppercase; }
-        body.design-f1 #cs-statusbar { background: var(--sur) !important; border-bottom: 1px solid var(--brd); }
+        /* A BACKGROUND OVERRIDE HAS TO BRING ITS TEXT COLOUR WITH IT
+           (Spiro 2026-11-17: "can't see text in white background, fix").
+           cloud-sync paints this bar dark navy and sets near-white text to
+           match. This rule repainted it in the theme's surface colour and left
+           the text alone — fine while every F1 palette was dark, and wrong the
+           day one was not. The DEFAULT palette is 'framework' (Blueprint,
+           Light · Professional) whose --sur is #FFFFFF, so the bar was
+           near-white text on white: unreadable, on a fresh install, for
+           everyone. Each F1 palette carries a matching --t1, so the fix is to
+           use it rather than to pick a colour here. */
+        body.design-f1 #cs-statusbar {
+            background: var(--sur) !important;
+            border-bottom: 1px solid var(--brd);
+            color: var(--t1) !important;
+        }
+        body.design-f1 #cs-statusbar button {
+            color: var(--t1) !important;
+            border-color: var(--brd) !important;
+        }
+        /* .7 opacity on near-black is readable; on the old near-white it was
+           the faintest thing on the screen. Lift it a little now it is dark. */
+        body.design-f1 #cs-statusbar .cs-who { opacity: .85 !important; }
         /* The teal tint is mixed INTO the surface rather than layered over it —
            the header is frozen now, so a semi-transparent top edge would let the
            scrolling defect list show through it. */
@@ -15527,7 +15548,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17e';
+        const APP_VERSION = '2026-11-17f';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -15614,7 +15635,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17e"></script>
+    <script src="cloud-sync.js?v=2026-11-17f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
