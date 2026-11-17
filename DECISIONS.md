@@ -3592,3 +3592,40 @@ one at the new position, Terminal no longer does but keeps it harmlessly.
 
 None of this would have been visible to a token-based contrast check. The
 tokens did not change; where the type sits on the gradient did.
+
+## Still stuck — a bug in the fix, and a swallowed error (2026-11-17, `2026-11-17r`)
+
+Spiro: "Actually issue still there." Two reasons, and the first was mine.
+
+**The resolver was capped at 1000 rows.** `resolveJobUuidForAddress` used a
+raw `sb.from('jobs').select('id')`. Supabase caps a plain select at 1000
+rows, and this query deliberately carries NO status filter — it asks for
+every job ever, completed ones included, which on a builder's history is
+well past a thousand. So the fix written to find old completed jobs would
+have missed exactly those. It uses `selectAllRows` now, which is what the
+rest of this file has always used and what I should have reached for.
+Same for `dm_contractors`.
+
+The test did not catch it because the stub did not model `.range()` — the
+paginated call threw and read as "no rows", which is precisely how the
+1000-row cap would have failed in production: silently. The stub now
+pages, and the suite puts the wanted job at row 1100 of 1200 so the
+pagination has to work for the test to pass.
+
+**`commitDefect` swallowed every real write failure.** Its catch did
+`console.warn` and re-queued. An RLS refusal on `dm_defects`, a constraint
+violation, a dead connection — all identical from outside: "still waiting
+to upload", for ever, no reason. `lastPushError` is now set there, and on
+the other silent returns too (lost cloud id, unreachable tombstone check).
+The pill can only ever be as honest as what reaches it.
+
+**One bad defect aborted the other thirty-five.** `flushDefectOutbox`
+looped `await commitDefect(id)` with no per-item catch. commitDefect
+guards its own write, but anything thrown before that `try` — the column
+probe, a dropped connection — escaped and killed the loop, so one bad
+item held up everything behind it. Each item is now wrapped.
+
+**Honest status:** the 1000-row cap is a confirmed defect and a plausible
+cause. The swallowed error means nobody can yet say whether it was THE
+cause — which is the point of recording it. The next screenshot of that
+pill will name the real failure instead of a symptom.

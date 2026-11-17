@@ -72,12 +72,22 @@ await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
     const o = { data: rows || [], error: null };
     const self = () => p;
     const p = Promise.resolve(o);
-    ['select', 'eq', 'is', 'in', 'not', 'order', 'limit', 'gte', 'lte', 'filter'].forEach(k => { p[k] = self; });
+    // `range` matters: selectAllRows paginates with it, and a stub that did
+    // not model it made the real paginated call throw and look like "no rows"
+    // — which is exactly how a 1000-row cap would have failed in production,
+    // silently.
+    ['select', 'eq', 'is', 'in', 'not', 'order', 'limit', 'range', 'gte', 'lte', 'filter']
+      .forEach(k => { p[k] = self; });
     p.maybeSingle = () => Promise.resolve({ data: (rows && rows[0]) || null, error: null });
     p.single = () => Promise.resolve({ data: (rows && rows[0]) || null, error: null });
     return p;
   };
   window.__jobsFetches = 0; window.__conFetches = 0;
+  // 1200 jobs, the wanted one at index 1100 — past the first page.
+  window.__allJobs = Array.from({ length: 1200 }, (_, i) => ({
+    id: i === 1100 ? JOB_UUID : `0000${String(i).padStart(4, '0')}-0000-4000-8000-00000000ffff`,
+    active: false, status: 'completed',
+  }));
   const table = (name) => ({
     // The server always knows which job a defect belongs to. That is the whole
     // point of the fallback.
@@ -95,11 +105,29 @@ await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
       }
       if (name === 'jobs') {
         window.__jobsFetches++;
-        // DELIBERATELY completed. CH Tracker marks a job completed while a
-        // supervisor is still logging defects on it; the old recovery applied
-        // the job LIST's visibility filter to this write path and left it
-        // unmapped, so those defects could never leave the phone.
-        return chain([{ id: JOB_UUID, active: false, status: 'completed' }]);
+        // A REAL pager, with the wanted job on the SECOND page. The jobs table
+        // is shared with CH Tracker and this query carries no status filter on
+        // purpose, so it asks for every job ever — well past a thousand on a
+        // builder's history. A plain .select() is capped at 1000 rows and
+        // would miss exactly the old completed jobs the fix exists to find.
+        //
+        // The target is also DELIBERATELY completed: CH Tracker marks a job
+        // completed while a supervisor is still logging defects on it, and the
+        // old recovery applied the job LIST's visibility filter to this write
+        // path, leaving it unmapped for ever.
+        const all = window.__allJobs;
+        const p2 = Promise.resolve({ data: all.slice(0, 1000), error: null });
+        ['select', 'eq', 'is', 'in', 'not', 'order', 'limit', 'gte', 'lte', 'filter']
+          .forEach(k => { p2[k] = () => p2; });
+        p2.range = (from, to) => {
+          window.__pages = (window.__pages || 0) + 1;
+          const page = all.slice(from, to + 1);
+          const r = Promise.resolve({ data: page, error: null });
+          ['select', 'eq', 'is', 'in', 'not', 'order', 'limit', 'gte', 'lte', 'filter', 'range']
+            .forEach(k => { r[k] = () => r; });
+          return r;
+        };
+        return p2;
       }
       return chain();
     },
@@ -174,17 +202,15 @@ const jobMap = await page.evaluate(async (JOB_UUID) => {
   const h = window.CloudSync.indicator;
   h.forgetJobMap();
   const lid = h.hashId(JOB_UUID);
-  const before = window.__jobsFetches;
-  return {
-    lid,
-    localOnly: h.jobForAddressLocalOnly(lid),
-    resolved: await h.jobForAddress(lid),
-    fetches: window.__jobsFetches - before,
-    // A failing flush calls this once per queued defect; thirty-six of those
-    // must not be thirty-six round trips.
-    secondCall: await h.jobForAddress(999999999),
-    fetchesAfterSecond: window.__jobsFetches - before,
-  };
+  const localOnly = h.jobForAddressLocalOnly(lid);
+  window.__pages = 0;
+  const resolved = await h.jobForAddress(lid);
+  const pagesForFirst = window.__pages;
+  // A failing flush asks once per queued defect; thirty-six of those must not
+  // be thirty-six trips to the server.
+  const secondCall = await h.jobForAddress(999999999);
+  return { lid, localOnly, resolved, pagesForFirst, secondCall,
+           pagesAfterSecond: window.__pages };
 }, JOB_UUID);
 console.log('jobMap:', JSON.stringify(jobMap));
 check('the local map cannot name the job — the state the defect got stuck in',
@@ -192,10 +218,12 @@ check('the local map cannot name the job — the state the defect got stuck in',
 check('…so it is resolved from the server, even though the job is COMPLETED',
   jobMap.resolved === JOB_UUID, JSON.stringify(jobMap.resolved));
 check('…which is the point: hiding a finished job is a display decision, not a write one',
-  jobMap.fetches === 1, `${jobMap.fetches} fetch(es)`);
-check('a second miss does not mean a second round trip',
-  jobMap.fetchesAfterSecond === 1 && jobMap.secondCall === null,
-  `${jobMap.fetchesAfterSecond} fetch(es) total, second lookup ${JSON.stringify(jobMap.secondCall)}`);
+  jobMap.resolved === JOB_UUID, '');
+check('…and it pages past the first 1000 rows to reach it',
+  jobMap.pagesForFirst >= 2, `${jobMap.pagesForFirst} page(s); the job sits at row 1100 of 1200`);
+check('a second miss within the window costs nothing',
+  jobMap.pagesAfterSecond === jobMap.pagesForFirst && jobMap.secondCall === null,
+  `${jobMap.pagesAfterSecond} page(s) in total, second lookup ${JSON.stringify(jobMap.secondCall)}`);
 
 // The contractor map is the same hole one map over. An ASSIGNED defect whose
 // contractor is unmapped is deferred rather than written — correct, since

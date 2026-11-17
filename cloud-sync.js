@@ -4081,7 +4081,13 @@
       // the display filter to this write path, so a defect raised on a job
       // that CH Tracker had marked completed could never leave the phone —
       // and neither could its photos, which wait on the defect.
-      const { data: jobs } = await withTimeout(sb.from('jobs').select('id'), 25000, 'job map');
+      // selectAllRows, NOT a raw select. A plain .select() is capped at
+      // Supabase's default 1000 rows, and this query deliberately carries no
+      // status filter — so it asks for every job ever, completed ones
+      // included, which on a builder's history is well past a thousand. The
+      // first version of this fix used a raw select and would have missed
+      // exactly the old jobs it was written to find.
+      const { data: jobs } = await selectAllRows('jobs', 'id', 'id');
       // Forward map only. The reverse map is built per-pull and scoped there;
       // writing needs local id -> uuid and nothing else.
       (jobs || []).forEach((j) => {
@@ -4104,8 +4110,7 @@
       // No is_active filter, for the same reason jobs carry no status filter:
       // a contractor being hidden from the picker is a display decision, and a
       // defect already assigned to them still has to upload.
-      const { data: cons } = await withTimeout(
-        sb.from('dm_contractors').select('id, legacy_id'), 25000, 'contractor map');
+      const { data: cons } = await selectAllRows('dm_contractors', 'id, legacy_id', 'id');
       (cons || []).forEach((c) => {
         const lid = c.legacy_id != null ? c.legacy_id : hashId(c.id);
         if (!idMap.contractors[lid]) idMap.contractors[lid] = c.id;
@@ -4138,7 +4143,7 @@
     if (!idMap.addresses[d.addressId]) {
       const jobUuid = await resolveJobUuidForAddress(d.addressId);
       if (!jobUuid) {
-        lastPushError = 'the job it belongs to could not be found in the cloud';
+        lastPushError = 'the job it belongs to is not one this login can see';
         return;   // genuinely unresolvable — stays queued, and now SAYS so
       }
     }
@@ -4228,12 +4233,16 @@
         // the next pull restore the uuid.
         if (!knownUuid && snapshot.defects && snapshot.defects[d.id]) {
           outboxAdd(legacyId);
+          lastPushError = 'it lost its cloud id and is waiting for the next refresh';
           console.warn('[CloudSync] defect #' + d.id + ' lost its cloud id — deferring rather than inserting a duplicate');
           return;
         }
         const tombsOk = await ensureTombstones(!!knownUuid);
         if (isTombstoned(d)) { purgeLocalDefect(legacyId); persistSyncState(); return; }
-        if (knownUuid && !tombsOk) { return; }   // can't verify — retry via outbox later
+        if (knownUuid && !tombsOk) {
+          lastPushError = 'the deleted-items check could not be reached';
+          return;   // can't verify — retry via outbox later
+        }
         const row = defectRow(d);
         const res = await sb.from('dm_defects').upsert(row, { onConflict: 'legacy_id' }).select('id, legacy_id').maybeSingle();
         data = res.data; error = res.error;
@@ -4303,6 +4312,12 @@
       persistSyncState();
     } catch (e) {
       outboxAdd(legacyId);   // offline / transient → replay on reconnect
+      // RECORD IT. This swallowed every real write failure into a console
+      // warning nobody reads — an RLS refusal on dm_defects, a constraint, a
+      // dead connection all looked identical from the outside: "still waiting
+      // to upload", for ever, with no reason given. The pill can only be as
+      // honest as what reaches it.
+      lastPushError = String((e && e.message) || e || 'the upload was refused').slice(0, 120);
       console.warn('[CloudSync] commitDefect queued #' + legacyId, e && e.message);
     }
   }
@@ -4312,8 +4327,16 @@
   async function flushDefectOutbox() {
     if (flushingOutbox || !defectOutbox.length) return;
     flushingOutbox = true;
-    try { for (const id of [...defectOutbox]) await commitDefect(id); }
-    finally { flushingOutbox = false; }
+    // Per-item try. commitDefect catches its own write errors, but anything
+    // thrown before that try — the column probe, a dead connection — escaped
+    // and aborted the whole loop, so one bad defect held up every one behind
+    // it and the queue never drained.
+    try {
+      for (const id of [...defectOutbox]) {
+        try { await commitDefect(id); }
+        catch (e) { console.warn('[CloudSync] outbox item #' + id + ' failed', e && e.message); }
+      }
+    } finally { flushingOutbox = false; }
   }
 
   // RECOVERY: push every LOCAL-ONLY defect (one that's in the local cache but
@@ -4401,7 +4424,10 @@
     if (!locals.length) return;
     setBanner('⬆️ Uploading ' + locals.length + ' change(s) saved on this phone…', 'syncing');
     let ok = 0;
-    for (const d of locals) { await commitDefect(d.id); if (idMap.defects[d.id]) ok++; }
+    for (const d of locals) {
+      try { await commitDefect(d.id); } catch (e) { /* recorded in lastPushError */ }
+      if (idMap.defects[d.id]) ok++;
+    }
     await flushDefectOutbox();   // and any photos waiting on those defects
     uploadPendingPhotos().catch(() => {});
     if (ok) { lastPushError = ''; setBanner('✅ Uploaded ' + ok + ' change(s) from this phone', 'ok', 4000); }
