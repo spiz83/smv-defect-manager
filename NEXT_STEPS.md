@@ -13,6 +13,22 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## ✉ Pinned suppliers, general email first, tick boxes — build `2026-11-16c` — DEPLOYED 2026-11-16, live bytes hashed identical
+
+Replaces 16a's rules (Spiro 2026-11-16). The Look Up directory is the source of
+truth and is wiped/reloaded daily; our short names stay as they are.
+
+- **Pins:** `dm_contractors.supplier_code` (CH Tracker mig 190) pins a supplier
+  to a Framework code. Pinned → that code's entry, never a name guess.
+  Unpinned → 16a's exact-name match. 67 pinned by mig 191. Pull reads it; NO
+  push row carries it, so a phone can't wipe a pin.
+- **Order:** directory GENERAL email(s) → call-up → saved here. Any address with
+  "account" before the @ is dropped everywhere.
+- **🔗** with 2+ addresses: tick boxes, #1 ticked, "Open email" (chooseRecipients).
+  📧 (share sheet) can't take a recipient; it keeps the plain ask, #1 on fallback.
+- Mail hand-off goes through `goMailto()` so tests can read the To line.
+- Receivables inboxes (ar@, arvic@, receivable(s)@) are dropped too (Spiro 2026-11-16).
+
 ## ✉ Supplier emails come from CH Tracker's Look Up — build `2026-11-16a` — DEPLOYED 2026-11-16, live bytes hashed identical
 
 Every ✉ now addresses the supplier from `supplier_directory` (Framework's

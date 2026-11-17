@@ -3033,12 +3033,12 @@
                         <div style="flex: 1;">
                             <div style="margin-bottom: 5px;">
                                 ${(() => {
-                                    // Directory address when the supplier is in CH Tracker's
-                                    // Look Up; the saved one otherwise. Says which.
-                                    const em = contractorEmails(contractor);
-                                    if (!em.to.length) return `📧 <span style="color: var(--text-secondary);">No email</span>`;
-                                    return `📧 <a href="mailto:${em.to.map(encodeURIComponent).join(',')}" style="color: var(--blue); text-decoration: none;">${_escHtml(em.to.join(', '))}</a>`
-                                        + (em.fromDirectory ? ` <span class="supdir-tag" style="font-size:11px;color:var(--text-secondary);">· from Look Up</span>` : '');
+                                    // Every address, best first, each labelled with where it
+                                    // came from (Look Up / call-up / saved).
+                                    const em = contractorAddresses(contractor);
+                                    if (!em.length) return `📧 <span style="color: var(--text-secondary);">No email</span>`;
+                                    return em.map(a => `📧 <a href="mailto:${encodeURIComponent(a.email)}" style="color: var(--blue); text-decoration: none;">${_escHtml(a.email)}</a>`
+                                        + ` <span class="supdir-tag" style="font-size:11px;color:var(--text-secondary);">· ${_escHtml(a.src)}</span>`).join('<br>');
                                 })()}
                             </div>
                             <div>
@@ -6765,35 +6765,35 @@
         function lsGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
 
         // ── Supplier emails from CH Tracker's Look Up directory ─────────────
-        // Spiro 2026-11-16: "I've got these updated in real time, I'd like to
-        // utilise them". CH Tracker's Sync writes Framework's "VIC Supplier
-        // Details" sheet into `supplier_directory` every day; cloud-sync pulls it
-        // and hands the rows to SupplierDirectory.setRows().
+        // Spiro 2026-11-16. CH Tracker's Sync DELETES and re-inserts every row of
+        // `supplier_directory` (Framework's "VIC Supplier Details") each day. That
+        // list is the SOURCE OF TRUTH; this app works around it and never writes
+        // to it. Our short names stay as they are.
         //
-        // THE DIRECTORY WINS (Spiro's call). When a supplier matches, every ✉
-        // goes to the directory address and a hand-saved one is ignored — on
-        // 16 Nov at least 9 saved addresses were stale, one was a Creation Homes
-        // staff address. A supplier the directory doesn't have keeps its saved
-        // email and the "No email saved" ask, exactly as before. A TRADE is a
-        // placeholder, never looked up.
+        // WHICH ENTRY. A supplier PINNED to a Framework supplier code
+        // (dm_contractors.supplier_code, mig 190, set by a manager) reads that
+        // code's entry — codes survive the daily reload, names may not. Unpinned:
+        // the exact-name match from build 2026-11-16a (case and spacing ignored,
+        // active preferred; a 20+ char name prefix-matches ONE directory name,
+        // since Framework cuts names off). A TRADE is never looked up.
         //
-        // Matching and choosing mirror CH Tracker's src/lib/supplierDirectory.ts
-        // (matchDirectory / bookingEmailFor) so both apps pick the same inbox:
-        // names compared ignoring case and spacing, an active entry preferred;
-        // a long name (20+) also matches the ONE directory name it is the start
-        // of, because Framework cuts names off ("…T/A Pinnacle Plumbing Gro").
-        // Call-up email first, the general email when there is none.
+        // WHICH ADDRESS (Spiro 2026-11-16, replacing 16a's call-up-first):
+        //   1. the GENERAL business email(s) — the `email` cell, in its order
+        //   2. the call-up email(s)
+        //   3. the address(es) saved by hand in this app
+        // Any accounts@ address is DROPPED, everywhere ("disregard any emails
+        // that have accounts@"). #1 is the default; 🔗 offers the rest as tick
+        // boxes (chooseRecipients).
         //
-        // Held in memory from the pull, and a slim copy (only the names that
-        // match a contractor — a few KB, not the 230 KB directory) in
-        // localStorage so a phone that boots offline still has the addresses.
+        // Held in memory from the pull, and a slim copy (only the entries our
+        // contractors use — a few KB, not the 230 KB directory) in localStorage
+        // so a phone that boots offline still has the addresses.
         const SupplierDirectory = (() => {
-            const KEY = 'dm_supdir_v1';
+            const KEY = 'dm_supdir_v2';
             const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-            const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-            const split = (cell) => [...new Set(String(cell || '').split(/[\s,;]+/).map(s => s.trim()).filter(s => EMAIL_RE.test(s)))];
-            let rows = null;   // [{ n, active, callup, email }] from the last pull
-            let cache = null;  // { normName: [emails] } — persisted
+            let rows = null;    // [{ code, n, active, callup, email }] from the last pull
+            let byCode = null;  // code -> row (active preferred)
+            let cache = null;   // { '#CODE' | normName : [{ email, src }] } — persisted
             function loadCache() {
                 if (cache) return cache;
                 try { cache = JSON.parse(lsGet(KEY) || '{}') || {}; } catch (e) { cache = {}; }
@@ -6809,50 +6809,74 @@
                 if (new Set(pre.map(r => r.n)).size !== 1) return null;
                 return pre.find(r => r.active) || pre[0];
             }
-            function pick(r) {
+            function entryFor(c) {
+                if (!rows) return null;
+                const code = String(c.supplierCode || '').trim();
+                if (code) return byCode.get(code.toLowerCase()) || null;   // pinned: the code, never a name guess
+                return match(c.name);
+            }
+            const keyFor = (c) => { const code = String(c.supplierCode || '').trim(); return code ? '#' + code.toLowerCase() : norm(c.name); };
+            function addrs(r) {
                 if (!r) return [];
-                const callup = split(r.callup);
-                return callup.length ? callup : split(r.email);
+                return splitEmailCell(r.email).map(email => ({ email, src: 'Look Up' }))
+                    .concat(splitEmailCell(r.callup).map(email => ({ email, src: 'Look Up · call-up' })));
             }
             return {
-                /** Rows from `supplier_directory` (name, callup_email, email, active). */
+                /** Rows from `supplier_directory` (code, name, callup_email, email, active). */
                 setRows(data, contractors) {
                     if (!Array.isArray(data)) return;
-                    rows = data.filter(r => r && r.name).map(r => ({
-                        n: norm(r.name), active: !!r.active, callup: r.callup_email, email: r.email,
+                    rows = data.filter(r => r && (r.name || r.code)).map(r => ({
+                        code: String(r.code || '').trim().toLowerCase(), n: norm(r.name),
+                        active: !!r.active, callup: r.callup_email, email: r.email,
                     }));
+                    byCode = new Map();
+                    rows.forEach(r => { if (r.code && (!byCode.has(r.code) || (r.active && !byCode.get(r.code).active))) byCode.set(r.code, r); });
                     const slim = {};
                     (contractors || []).forEach(c => {
                         if (!c || c.isTradePlaceholder) return;
-                        const to = pick(match(c.name));
-                        if (to.length) slim[norm(c.name)] = to;
+                        const a = addrs(entryFor(c));
+                        if (a.length) slim[keyFor(c)] = a;
                     });
                     cache = slim;
                     try { localStorage.setItem(KEY, JSON.stringify(slim)); } catch (e) {}
                 },
-                /** The directory's addresses for a supplier name, [] when none. */
-                emailsFor(name) {
-                    if (rows) return pick(match(name));
-                    return loadCache()[norm(name)] || [];
+                /** The directory's addresses for a contractor, in order: [{ email, src }]. */
+                addressesFor(c) {
+                    if (!c || c.isTradePlaceholder) return [];
+                    if (rows) return addrs(entryFor(c));
+                    return loadCache()[keyFor(c)] || [];
                 },
             };
         })();
         window.SupplierDirectory = SupplierDirectory;
 
-        /** Where mail to this contractor goes: the directory's address(es) when it
-         *  has the supplier, else the saved one. Never looked up for a trade.
-         *  { to: string[], fromDirectory: boolean } */
-        function contractorEmails(c) {
-            if (!c) return { to: [], fromDirectory: false };
-            if (!c.isTradePlaceholder) {
-                const dir = SupplierDirectory.emailsFor(c.name);
-                if (dir.length) return { to: dir, fromDirectory: true };
-            }
-            const saved = String(c.email || '').trim();
-            return { to: saved ? [saved] : [], fromDirectory: false };
+        // Every address in a cell ("a@x.com, b@x.com;" — Framework joins them
+        // every way), minus accounts@ ones. Spiro 2026-11-16: "disregard any
+        // emails that have accounts@" — 79 of 416 active suppliers' general
+        // email started that way; it's the bill inbox, not who fixes defects.
+        // Billing inboxes, dropped everywhere: any "account" before the @
+        // (accounts@, accountsadmin@, accounts.payable@) and, Spiro 2026-11-16
+        // "drop those too", accounts-receivable ones — ar@, arvic@,
+        // receivable(s)@ (11 active suppliers' general email on 16 Nov).
+        const isAccountsEmail = (e) => /account|receivabl|^ar(vic)?$/i.test(String(e).split('@')[0]);
+        function splitEmailCell(cell) {
+            return [...new Set(String(cell || '').split(/[\s,;]+/).map(s => s.trim())
+                .filter(s => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s)))].filter(e => !isAccountsEmail(e));
         }
-        /** The To line, comma-joined ('' when there is none). */
-        function contractorEmail(c) { return contractorEmails(c).to.join(','); }
+
+        /** Every address for this contractor, best first, deduped (case-
+         *  insensitive): directory general → directory call-up → saved here.
+         *  [{ email, src }]. A trade has only what's saved on it. */
+        function contractorAddresses(c) {
+            if (!c) return [];
+            const out = [], seen = new Set();
+            const add = (email, src) => { const k = email.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push({ email, src }); } };
+            SupplierDirectory.addressesFor(c).forEach(a => add(a.email, a.src));
+            splitEmailCell(c.email).forEach(e => add(e, 'saved'));
+            return out;
+        }
+        /** The default address — #1 — or '' when there is none. */
+        function contractorEmail(c) { const a = contractorAddresses(c); return a.length ? a[0].email : ''; }
 
         function setPreviewMode(on) {
             try { localStorage.setItem('dm_preview', on ? '1' : '0'); } catch (e) {}
@@ -7656,6 +7680,49 @@
             });
         }
 
+        // Who gets this email — Spiro 2026-11-16: "check box of people to add and
+        // option to proceed to email client". #1 (the general business email) is
+        // ticked; the others are there to add. One address → straight through,
+        // no extra tap. None → the existing "No email saved" ask.
+        // Resolves the ticked addresses (possibly []), or null to cancel.
+        // The one hand-off to the mail app, so a test can read the To line
+        // (a real browser won't let window.location be stubbed).
+        function goMailto(href) { window.location.href = href; }
+
+        function chooseRecipients(c) {
+            return new Promise(async (resolve) => {
+                let list = contractorAddresses(c);
+                if (!list.length) {
+                    if ((await askSupplierEmail(c)) !== 'go') return resolve(null);
+                    list = contractorAddresses(c);          // a just-saved address
+                }
+                if (list.length <= 1) return resolve(list.map(a => a.email));
+                let done = false;
+                const finish = (r) => { if (done) return; done = true; impClose(); resolve(r); };
+                impOverlay(`
+                    <div id="imp-head"><strong>Email ${_escHtml(c.name || 'supplier')}</strong><button id="imp-close">✕</button></div>
+                    <div id="imp-body">
+                        <p style="font-size:13px;line-height:1.4;margin:0 0 10px;color:var(--text-secondary,#666)">Tick who it goes to.</p>
+                        ${list.map((a, i) => `
+                        <label class="rcp-row" style="display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border-color,#eee);cursor:pointer">
+                            <input type="checkbox" class="rcp-cb" data-i="${i}" ${i === 0 ? 'checked' : ''} style="width:20px;height:20px;flex:none">
+                            <span style="flex:1;min-width:0">
+                                <span style="display:block;font-size:15px;word-break:break-all">${_escHtml(a.email)}</span>
+                                <span style="font-size:11px;color:var(--text-secondary,#888)">${i === 0 ? 'Main · ' : ''}${_escHtml(a.src)}</span>
+                            </span>
+                        </label>`).join('')}
+                        <button class="imp-btn" id="rcp-go" style="width:100%;margin-top:14px">Open email</button>
+                    </div>`);
+                const ov = document.getElementById('imp-ov');
+                const x = document.getElementById('imp-close'); if (x) x.onclick = () => finish(null);
+                if (ov) ov.addEventListener('click', (e) => { if (e.target === ov) finish(null); });
+                document.getElementById('rcp-go').onclick = () => {
+                    const picked = [...document.querySelectorAll('#imp-ov .rcp-cb')].filter(b => b.checked).map(b => list[+b.dataset.i].email);
+                    finish(picked);
+                };
+            });
+        }
+
         async function emailSupplier(contractorId, addressId, asLink = false) {
             const c = db.getContractor(contractorId);
             const addr = formatAddress(db.getAddress(addressId));
@@ -7664,7 +7731,18 @@
             if (!defects.length) { showToast('No open items for this supplier', true); return; }
             if (!c) { showToast('Supplier not found', true); return; }
             // Offered, never required — and never asked at all for a trade.
-            if ((await askSupplierEmail(c)) !== 'go') return;
+            // 🔗 opens the mail app, so the To line can be chosen: tick boxes
+            // when there's more than one address. 📧 hands a FILE to the share
+            // sheet, which no web page can address — it keeps the plain ask, and
+            // #1 is used if it falls through to the server or a mailto.
+            let toList;
+            if (asLink) {
+                toList = await chooseRecipients(c);
+                if (toList === null) return;
+            } else {
+                if ((await askSupplierEmail(c)) !== 'go') return;
+                toList = contractorEmail(c) ? [contractorEmail(c)] : [];
+            }
             showToast('Building PDF…');
             const booking = db.getContractorBooking(contractorId, addressId);
             const subject = 'Defects - ' + addr;
@@ -7734,7 +7812,6 @@
             // Hoisted so the link path below reuses this upload instead of
             // sending the same PDF up a second time on mobile data.
             let hosted = null;
-            const toList = contractorEmails(c).to;
             if (!asLink && scopedPdf && toList.length && window.CloudMail && window.CloudShare) {
                 hosted = await window.CloudShare.uploadTempPdf(scopedPdf, scopedPdf.name).catch(() => null);
                 const pdfKey = window.CloudShare.lastKey && window.CloudShare.lastKey();
@@ -7781,8 +7858,8 @@
 
             // No address on file (a trade, or Skip) → open Mail with the To line
             // empty rather than the literal string "undefined" in it.
-            window.location.href = 'mailto:' + toList.map(encodeURIComponent).join(',') +
-                '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+            goMailto('mailto:' + toList.map(encodeURIComponent).join(',') +
+                '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body));
             markEmailedPending();   // mail client opened → items are now ordered
         }
 
@@ -7876,7 +7953,7 @@
                     if (!seenContractors.has(d.contractorId)) {
                         seenContractors.add(d.contractorId);
                         const contractor = db.getContractor(d.contractorId);
-                        if (contractor) contractorEmails(contractor).to.forEach(e => { if (!toAll.includes(e)) toAll.push(e); });
+                        const e = contractor ? contractorEmail(contractor) : ''; if (e && !toAll.includes(e)) toAll.push(e);
                     }
                 });
                 recipient = toAll.join(',');
@@ -8501,7 +8578,7 @@
                                             <div style="font-size: 13px; color: ${(!c.tradeIds || c.tradeIds.length === 0) ? '#FF3B30' : '#8e8e93'}; margin-top: 2px;">
                                                 ${c.trades || '⚠️ No Trade Assigned'}
                                             </div>
-                                            ${contractorEmail(c) ? `<div style="font-size: 12px; color: #8e8e93; margin-top: 2px;">📧 ${_escHtml(contractorEmails(c).to.join(', '))}</div>` : ''}
+                                            ${contractorEmail(c) ? `<div style="font-size: 12px; color: #8e8e93; margin-top: 2px;">📧 ${_escHtml(contractorEmail(c))}${contractorAddresses(c).length > 1 ? ' +' + (contractorAddresses(c).length - 1) : ''}</div>` : ''}
                                             ${c.phone ? `<div style="font-size: 12px; color: #8e8e93; margin-top: 2px;">📞 ${c.phone}</div>` : ''}
                                         </div>
                                         <div style="display: flex; flex-direction: column; gap: 5px;">
