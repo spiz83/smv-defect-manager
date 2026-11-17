@@ -3480,3 +3480,55 @@ is exactly the failure this suite exists to catch.
 **Not fixed, and not ours to fix:** a phone that already has the app
 installed keeps the old icon and label until it is removed and re-added.
 The home-screen shortcut is a copy the OS took at install time.
+
+## 36 changes that could never upload (2026-11-17, `2026-11-17p`)
+
+Spiro, on a pill telling him the photos would go up "within a minute of
+signal": "Yes but I have wifi atm". He was right, and the message was only
+the surface of it. His screen also showed "⬆️ Uploading 36 change(s) saved
+on this phone…", which had been sitting there indefinitely.
+
+**The chain.** A photo waits on its defect reaching the cloud. A defect
+waits on its JOB being mapped local-id → uuid. `commitDefect` had:
+
+    if (!idMap.addresses[d.addressId]) { return; }   // retry later
+
+That `return` is silent and, like the photo bug before it, **nothing about
+it is retryable** — an id map does not heal by attempting the write again.
+So the defect sat in the outbox for ever, and every photo behind it
+reported the defect's symptom as its own.
+
+**Why the map was missing those jobs.** Two faults, stacked:
+
+1. The recovery that rebuilds the map only ran `if
+   (!Object.keys(idMap.addresses).length)` — a map holding fifty jobs but
+   missing the three you need never triggered it.
+2. When it did run, it applied the job LIST's visibility filter, which
+   hides `status === 'completed'`. **That is a display decision applied to
+   a write path.** CH Tracker marks a job completed while a supervisor is
+   still logging defects and photos on it; those defects then could never
+   leave the phone. The filter is correct for deciding what to SHOW and is
+   data loss when deciding what to UPLOAD.
+
+`commitDefect` now asks the server, which knows every job, with no status
+filter — rate-limited to one fetch a minute, because a failing flush calls
+it once per queued defect and thirty-six of those should not be thirty-six
+round trips.
+
+**A total failure looked exactly like progress.** `pushLocalOnlyDefects`
+set "⬆️ Uploading N change(s)…" and then only replaced it `if (ok)`. When
+every commit failed, `ok` stayed 0 and the syncing banner stayed up for
+ever. There is now an `else` that says the changes could not be uploaded,
+why, and that they are safe on the phone.
+
+**The message no longer blames signal.** When changes are queued in front
+of the photos it names them and points at the number that should be going
+down; when those are stuck too it says so and gives the reason. The suite
+asserts that no message mentions signal while the phone is online.
+
+**The shape worth remembering**, because this is the third time in two
+days: a lookup that reads only local state, fails silently, and is retried
+on a loop. It presents as "working on it" for ever. `resolveDefectUuid` was
+hardened against it, then `jobUuidForDefect` was found with the same hole,
+and now `commitDefect`. Any `if (!someMap[x]) return;` inside a retry loop
+is this bug waiting to happen.

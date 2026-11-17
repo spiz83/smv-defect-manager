@@ -76,6 +76,7 @@ await page.addInitScript(([JOB_UUID, DEF_UUID]) => {
     p.single = () => Promise.resolve({ data: (rows && rows[0]) || null, error: null });
     return p;
   };
+  window.__jobsFetches = 0;
   const table = (name) => ({
     // The server always knows which job a defect belongs to. That is the whole
     // point of the fallback.
@@ -83,6 +84,14 @@ await page.addInitScript(([JOB_UUID, DEF_UUID]) => {
       if (name === 'dm_defects' && String(cols).includes('job_id')) {
         window.__dmJobLookups++;
         return chain([{ job_id: JOB_UUID }]);
+      }
+      if (name === 'jobs') {
+        window.__jobsFetches++;
+        // DELIBERATELY completed. CH Tracker marks a job completed while a
+        // supervisor is still logging defects on it; the old recovery applied
+        // the job LIST's visibility filter to this write path and left it
+        // unmapped, so those defects could never leave the phone.
+        return chain([{ id: JOB_UUID, active: false, status: 'completed' }]);
       }
       return chain();
     },
@@ -148,6 +157,38 @@ console.log('cached:', JSON.stringify(cached));
 check('the answer is cached, so the next photo on the job costs no round trip',
   cached.again === JOB_UUID && cached.extra === 0, JSON.stringify(cached));
 
+// ================= 1b. the job the DEFECT write needs =====================
+// The photos wait on the defect; the defect waits on its job being mapped.
+// commitDefect used to just `return` when it was not — silently, every sweep,
+// for ever. That is the whole 36-changes-stuck chain.
+console.log('\n--- the job lookup the defect write depends on ---');
+const jobMap = await page.evaluate(async (JOB_UUID) => {
+  const h = window.CloudSync.indicator;
+  h.forgetJobMap();
+  const lid = h.hashId(JOB_UUID);
+  const before = window.__jobsFetches;
+  return {
+    lid,
+    localOnly: h.jobForAddressLocalOnly(lid),
+    resolved: await h.jobForAddress(lid),
+    fetches: window.__jobsFetches - before,
+    // A failing flush calls this once per queued defect; thirty-six of those
+    // must not be thirty-six round trips.
+    secondCall: await h.jobForAddress(999999999),
+    fetchesAfterSecond: window.__jobsFetches - before,
+  };
+}, JOB_UUID);
+console.log('jobMap:', JSON.stringify(jobMap));
+check('the local map cannot name the job — the state the defect got stuck in',
+  jobMap.localOnly === null, JSON.stringify(jobMap.localOnly));
+check('…so it is resolved from the server, even though the job is COMPLETED',
+  jobMap.resolved === JOB_UUID, JSON.stringify(jobMap.resolved));
+check('…which is the point: hiding a finished job is a display decision, not a write one',
+  jobMap.fetches === 1, `${jobMap.fetches} fetch(es)`);
+check('a second miss does not mean a second round trip',
+  jobMap.fetchesAfterSecond === 1 && jobMap.secondCall === null,
+  `${jobMap.fetchesAfterSecond} fetch(es) total, second lookup ${JSON.stringify(jobMap.secondCall)}`);
+
 // ================= 2. what the pill says ==================================
 console.log('\n--- what the message tells a supervisor ---');
 const msgs = await page.evaluate(() => {
@@ -162,9 +203,18 @@ const msgs = await page.evaluate(() => {
     net: 'Failed to fetch',
     notsynced: 'the defect it belongs to has not synced yet',
   };
+  h.setPushState(0, '');
   for (const [k, v] of Object.entries(cases)) { h.setPhotoError(v); out[k] = h.photoWaitingReason(); }
   h.setPhotoError('');
   out.clean = h.photoWaitingReason();
+  // The state Spiro was actually in: on wifi, 36 changes queued in front of
+  // the photos. The photo was reporting its own symptom and blaming signal.
+  h.setPhotoError('the defect it belongs to has not synced yet');
+  h.setPushState(36, '');
+  out.queued = h.photoWaitingReason();
+  h.setPushState(36, 'the job it belongs to could not be found in the cloud');
+  out.queuedStuck = h.photoWaitingReason();
+  h.setPushState(0, '');
   return out;
 });
 for (const [k, v] of Object.entries(msgs)) console.log(` ${k}: ${JSON.stringify(v)}`);
@@ -186,6 +236,17 @@ check('a genuinely transient failure still says there is nothing to do',
   /nothing to do/i.test(msgs.net) && !/Technical detail/.test(msgs.net), msgs.net.slice(0, 60));
 check('a defect that has not synced yet is described as waiting, not broken',
   /on their own/i.test(msgs.notsynced) && !/Technical detail/.test(msgs.notsynced), '');
+// Spiro, on wifi, being told to wait for signal: "Yes but I have wifi atm".
+check('nothing blames signal while the phone is online',
+  !Object.entries(msgs).some(([, v]) => /signal/i.test(v)),
+  JSON.stringify(Object.entries(msgs).filter(([, v]) => /signal/i.test(v)).map(([k]) => k)));
+check('with changes queued in front, it names them instead of the defect',
+  /36 changes they belong to/.test(msgs.queued), msgs.queued);
+check('…and points at the number that should be going down',
+  /not going down/i.test(msgs.queued), '');
+check('when those changes are stuck too, it says so and why',
+  /stuck too/i.test(msgs.queuedStuck) && /could not be found in the cloud/.test(msgs.queuedStuck),
+  msgs.queuedStuck.slice(0, 120));
 check('with no error at all it still reads as uploading',
   /uploading now/.test(msgs.clean), msgs.clean.slice(0, 50));
 

@@ -2818,13 +2818,28 @@
       return { what: 'the server refused the file size',
                fix: 'Tell whoever manages the app — this one needs fixing at their end.',
                stuck: true };
-    if (/has not synced yet/i.test(m))
+    if (/has not synced yet/i.test(m)) {
+      // Spiro, on wifi, being told to wait for signal (2026-11-17): "Yes but I
+      // have wifi atm". Signal was never the blocker — the DEFECT was stuck,
+      // and the photo was only reporting its own symptom. Say what is actually
+      // in the way, and how much of it.
+      const n = (typeof defectOutbox !== 'undefined' && defectOutbox.length) || 0;
+      if (n) return { what: `the ${n} change${n > 1 ? 's' : ''} they belong to ${n > 1 ? 'are' : 'is'} still waiting to upload`,
+                      fix: lastPushError
+                        ? `Those are stuck too — ${lastPushError}. Send this screen to whoever manages the app.`
+                        : 'The photos follow them up automatically. If the number above is not going down, send this screen on.',
+                      stuck: !!lastPushError };
       return { what: 'the defect they belong to has not reached the cloud yet',
-               fix: 'They go up on their own once it does, usually within a minute of signal.',
+               fix: 'They go up on their own once it does, usually within a minute.',
                stuck: false };
+    }
     if (/timeout|network|fetch|failed to fetch/i.test(m))
       return { what: 'the connection dropped partway',
                fix: 'It keeps trying on its own — nothing to do.', stuck: false };
+    if (/could not be found in the cloud/i.test(m))
+      return { what: 'the job they belong to is not in the cloud for this login',
+               fix: 'Pull down to refresh. If it still says this, send this screen to whoever set up your account.',
+               stuck: true };
     return { what: m, fix: 'It keeps trying on its own.', stuck: false };
   }
 
@@ -4032,6 +4047,36 @@
   // Write ONE defect straight to dm_defects (upsert by legacy_id). Advances the
   // diff baseline so the legacy engine won't also touch it. On any failure the
   // id is queued in the outbox for retry — so an offline edit is never lost.
+  // Why a push is not happening, in the server's own words — so the banner
+  // can stop claiming it is uploading when nothing is going up.
+  let lastPushError = '';
+  // Jobs are mapped local-id -> uuid by hashId(uuid). Going the other way needs
+  // the job list, so this fetches it — but at most once a minute, because a
+  // failing flush calls it once per queued defect and thirty-six of those
+  // should not be thirty-six round trips.
+  let jobMapFetchedAt = 0;
+  async function resolveJobUuidForAddress(addressLegacyId) {
+    if (idMap.addresses[addressLegacyId]) return idMap.addresses[addressLegacyId];
+    if (Date.now() - jobMapFetchedAt < 60000) return null;
+    jobMapFetchedAt = Date.now();
+    try {
+      // EVERY job, with no status filter, and that is the point. Hiding a
+      // completed job from the list is a DISPLAY decision; refusing to upload
+      // a defect that belongs to one is data loss. The old recovery applied
+      // the display filter to this write path, so a defect raised on a job
+      // that CH Tracker had marked completed could never leave the phone —
+      // and neither could its photos, which wait on the defect.
+      const { data: jobs } = await withTimeout(sb.from('jobs').select('id'), 25000, 'job map');
+      // Forward map only. The reverse map is built per-pull and scoped there;
+      // writing needs local id -> uuid and nothing else.
+      (jobs || []).forEach((j) => {
+        const lid = hashId(j.id);
+        if (!idMap.addresses[lid]) idMap.addresses[lid] = j.id;
+      });
+      return idMap.addresses[addressLegacyId] || null;
+    } catch (e) { return null; }
+  }
+
   async function commitDefect(legacyId) {
     const d = (db.data.defects || []).find((x) => String(x.id) === String(legacyId));
     if (!d) { outboxRemove(legacyId); return; }   // deleted locally — nothing to write
@@ -4046,7 +4091,20 @@
     // that window would rebuild db.data with this edit still unguarded.
     outboxAdd(legacyId);
     await ensureOrderColumn();                    // before defectRow() is built
-    if (!idMap.addresses[d.addressId]) { return; }   // job not mapped yet (RLS) — stays queued, retry later
+    // The job this defect belongs to must be mapped before it can be written.
+    // This used to just `return` — silently, every sweep, for ever. Nothing
+    // about that was retryable: an id map does not heal by trying the write
+    // again, so the defect sat in the outbox permanently, the banner sat on
+    // "Uploading N change(s)…" because nothing ever succeeded, and the photos
+    // waiting on that defect reported "has not synced yet" indefinitely. Ask
+    // the server, which knows every job.
+    if (!idMap.addresses[d.addressId]) {
+      const jobUuid = await resolveJobUuidForAddress(d.addressId);
+      if (!jobUuid) {
+        lastPushError = 'the job it belongs to could not be found in the cloud';
+        return;   // genuinely unresolvable — stays queued, and now SAYS so
+      }
+    }
     // DATA-LOSS GUARD: a defect IS assigned locally but the contractor map isn't
     // built yet (cold boot / pre-pull reconcile). Writing now would resolve the
     // contractor to NULL and WIPE the assignment. Defer instead — the outbox
@@ -4298,7 +4356,12 @@
     for (const d of locals) { await commitDefect(d.id); if (idMap.defects[d.id]) ok++; }
     await flushDefectOutbox();   // and any photos waiting on those defects
     uploadPendingPhotos().catch(() => {});
-    if (ok) setBanner('✅ Uploaded ' + ok + ' change(s) from this phone', 'ok', 4000);
+    if (ok) { lastPushError = ''; setBanner('✅ Uploaded ' + ok + ' change(s) from this phone', 'ok', 4000); }
+    // `if (ok)` alone left the "⬆️ Uploading N change(s)…" banner on screen
+    // for ever when EVERY commit failed — a total failure looked exactly like
+    // work in progress, which is how 36 stuck changes read as a busy app.
+    else setBanner('⚠️ ' + locals.length + ' change(s) could not be uploaded'
+      + (lastPushError ? ' — ' + lastPushError : '') + '. They are safe on this phone.', 'offline', 9000);
     persistSyncState();
   }
 
@@ -4390,7 +4453,19 @@
       // between them rather than take the fallback on trust.
       jobFolderLocalOnly: (legacyId) => jobUuidForDefect(legacyId),
       jobFolderFor: (legacyId, uuid) => resolveJobUuidForDefect(legacyId, uuid),
+      // The job lookup the DEFECT write depends on — the one in front of the
+      // photos in the queue.
+      jobForAddress: (addressLegacyId) => resolveJobUuidForAddress(addressLegacyId),
+      jobForAddressLocalOnly: (addressLegacyId) => idMap.addresses[addressLegacyId] || null,
+      hashId: (uuid) => hashId(uuid),
+      forgetJobMap: () => { idMap.addresses = {}; jobMapFetchedAt = 0; },
       setStuckJobs: (a) => { stuckPhotoJobs = Array.isArray(a) ? a : []; },
+      // The defect queue the photos wait behind, so a test can put the pill in
+      // the state Spiro was looking at: on wifi, with changes stuck in front.
+      setPushState: (n, err) => {
+        defectOutbox = Array.from({ length: Number(n) || 0 }, (_, i) => i + 1);
+        lastPushError = String(err || '');
+      },
     },
   };
 
