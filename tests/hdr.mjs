@@ -202,6 +202,59 @@ for (const [go, want] of [['viewDefectsForAddress(1)', 'View Defects'], ['startD
   check('…and the title fits on ONE line', h.lines === 1, String(h.lines));
 }
 
+// ---- the home masthead carries the company logo ---------------------------
+// Spiro 2026-11-17: "push the title to the centre or centre-right and make way
+// for the Creation Homes logo, so it feels more like an organisational thing."
+// Checked in every theme, because each paints the hero a different colour and
+// the logo artwork is dark navy — it rides a white chip for exactly that
+// reason, and a theme that lost the chip would lose the logo into the
+// background without anything failing.
+for (const theme of ['default', 'modern', 'f1']) {
+  const hero = await page.evaluate((t) => {
+    document.body.classList.toggle('design-modern', t === 'modern');
+    document.body.classList.toggle('design-f1', t === 'f1');
+    state.currentView = 'home'; render();
+    const h = document.querySelector('.app-header.home-hero');
+    if (!h) return { error: 'no home hero' };
+    const img = h.querySelector('.hero-logo');
+    const title = h.querySelector('.header-title');
+    const H = h.getBoundingClientRect();
+    const I = img && img.getBoundingClientRect();
+    const T = title && title.getBoundingClientRect();
+    const cs = img && getComputedStyle(img);
+    return {
+      hasLogo: !!img,
+      src: img ? (img.getAttribute('src') || '') : '',
+      chip: cs ? cs.backgroundColor : '',
+      logoLeftOfTitle: !!(I && T) && I.right <= T.left + 1,
+      titleCentre: T ? Math.round(T.x + T.width / 2) : 0,
+      pageCentre: Math.round(H.width / 2),
+      titleLines: T ? (T.height > 34 ? 2 : 1) : 0,
+      // The old app-icon badge must not come back alongside it.
+      badge: getComputedStyle(h, '::before').content,
+      fitsWidth: !!(I && T) && T.right <= H.right + 1,
+    };
+  }, theme);
+  console.log(`\n--- home masthead · ${theme} ---`);
+  console.log(JSON.stringify(hero));
+  check(`[${theme}] the company logo is in the masthead`, hero.hasLogo === true, JSON.stringify(hero));
+  check(`[${theme}] …it is the logo the PDF cover already uses`,
+    /creation-homes-logo\.png/.test(hero.src), hero.src);
+  check(`[${theme}] …on a white chip, so dark artwork survives a coloured hero`,
+    /255,\s*255,\s*255/.test(hero.chip || ''), hero.chip);
+  check(`[${theme}] …to the LEFT of the title`, hero.logoLeftOfTitle === true, JSON.stringify(hero));
+  check(`[${theme}] the title sits right of centre, not dead centre`,
+    hero.titleCentre > hero.pageCentre + 15, `title ${hero.titleCentre} vs centre ${hero.pageCentre}`);
+  check(`[${theme}] …still on one line at phone width`, hero.titleLines === 1, String(hero.titleLines));
+  check(`[${theme}] …and not pushed off the right edge`, hero.fitsWidth === true, JSON.stringify(hero));
+  check(`[${theme}] no second mark beside it`,
+    !/url\(/.test(hero.badge || ''), hero.badge);
+}
+await page.evaluate(() => {
+  document.body.classList.remove('design-modern', 'design-f1');
+  state.currentView = 'home'; render();
+});
+
 console.log('\nerrors:', errs.length ? errs : 'none');
 console.log(fail.length ? 'FAILED: ' + fail.join(' | ') : 'ALL CHECKS PASSED');
 await browser.close();
