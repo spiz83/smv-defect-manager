@@ -498,13 +498,21 @@ for (const [th, v] of Object.entries(subHeader)) {
   if (v.back != null) check(`[${th}] …and so does its back link`, v.back >= 4.5, `${v.back}:1`);
 }
 
-// --- the app's own name is NOT renamed: that is app-wide, not a theme ---
-const globals = await page.evaluate(() => ({
-  title: document.title,
-  manifest: (document.querySelector('link[rel=manifest]') || {}).href || null,
-}));
-check('the tab title is left alone, because a theme must not rename the app',
-  !/EZ Defect/.test(globals.title), JSON.stringify(globals.title));
+// --- the app's own name ---
+// This used to assert the OPPOSITE: that a theme must not rename the app.
+// That held while the mark was Harbour's alone. Spiro has since made the mark
+// app-wide and asked for the rename to follow it, so the name is no longer a
+// theme's business either way — it is the same on all fifteen. tests/naming.mjs
+// is where the rename itself is checked.
+const globals = await page.evaluate(async () => {
+  const out = {};
+  for (const id of ['harbour', 'framework', 'powershell']) { applyF1Theme(id); out[id] = document.title; }
+  applyF1Theme('harbour');
+  return out;
+});
+check('the app is called the same thing whichever theme is on',
+  new Set(Object.values(globals)).size === 1 && globals.harbour === 'EZ Defect Manager',
+  JSON.stringify(globals));
 
 await page.setViewportSize({ width: 390, height: 844 });
 await page.evaluate(() => applyF1Theme('harbour'));

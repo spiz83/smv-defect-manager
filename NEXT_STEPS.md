@@ -1562,26 +1562,29 @@ pg_cron daily snapshot (14-day retention) was drafted — confirm it exists via
 `select jobname, schedule, active from cron.job;` and take one manually before
 any destructive change.
 
-## Open for Spiro — the app-wide half of the EZ Defect Manager rename (2026-11-17)
+## The EZ Defect Manager rename — DONE (2026-11-17, `2026-11-17n`)
 
-The wordmark ships inside the Harbour theme. The rest of the brief's list is
-app-wide, so it is a product rename, not a theme option, and it is left for
-Spiro to call. All of it is small; none of it is done:
+Spiro said do it, so the whole list is applied: tab title, manifest `name`,
+icons (512 / 192 / 180 / 48 and `icon.svg`), the PDF report footer, the
+sign-in and change-password cards, and the service worker's own banner.
 
-1. **Tab title** — currently "Defect Manager".
-2. **`manifest.json` `name` / `short_name`** — changes the label under the
-   icon on a phone home screen. Supervisors who already installed the app
-   keep the old label until they reinstall, so this one is visible and
-   irreversible-ish in the field.
-3. **App icons**, 512×512 and 180×180, EZ badge on `#1A2F62`.
-4. **PDF report header** — this is the one that reaches builders and
-   contractors, not just supervisors. It is the closest thing here to the
-   brief's own "customer-facing" exception.
-5. **Login screen and any other "Defect Manager" product-name sites.**
+Two judgement calls worth knowing about, both easy to reverse:
 
-Doing 1–3 without 4 is coherent (the app is EZ Defect, the reports are
-unbranded). Doing 4 means outside parties start seeing a new product name,
-which is worth being deliberate about.
+- **The under-icon label is "EZ Defect", not the full name.** That is
+  `short_name` in the manifest and `apple-mobile-web-app-title` for iOS.
+  Both are the caption under the home-screen icon, which iOS truncates at
+  around twelve characters — "EZ Defect Manager" renders there as
+  "EZ Defect…". It says the short form on purpose rather than being cut off
+  mid-word. The full name is used everywhere a full name fits.
+- **The theme and splash colours moved to the icon's navy** (`#1A2F62`,
+  from indigo `#4F46E5`). Otherwise installing the app flashes an indigo
+  splash around a navy icon.
+
+One thing to expect in the field: **supervisors who already installed the
+app keep the old icon and the old label until they remove it and re-add it
+to their home screen.** The browser tab, the PDF and the sign-in card update
+on their own with the next load; the home-screen shortcut is a copy the OS
+made at install time. Worth a line in whatever note goes out with this.
 
 ## Still open, and owned by Spiro
 

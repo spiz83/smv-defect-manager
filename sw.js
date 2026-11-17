@@ -1,4 +1,4 @@
-/* Defect Manager service worker — lets the app OPEN with no connection.
+/* EZ Defect Manager service worker — lets the app OPEN with no connection.
  *
  * Strategy:
  *  - App shell (index.html, cloud-sync.js, the Supabase library, icons) is
@@ -13,13 +13,13 @@
  *
  * Bump CACHE (and the cloud-sync ?v= below) whenever the shell changes.
  */
-const CACHE = 'deffixer-shell-2026-11-17m';
+const CACHE = 'deffixer-shell-2026-11-17n';
 
 // Same-origin shell. All of these must exist or install precache will fail.
 const CORE = [
   './',
   './index.html',
-  './cloud-sync.js?v=2026-11-17m',
+  './cloud-sync.js?v=2026-11-17n',
   './manifest.webmanifest',
   './icon.svg',
   './favicon-48.png',

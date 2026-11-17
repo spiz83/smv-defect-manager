@@ -367,7 +367,7 @@
           <div id="cs-mark">CH</div>
           <div>
             <div class="lt">Creation Homes</div>
-            <div class="lb">DEFECT MANAGER</div>
+            <div class="lb">EZ DEFECT MANAGER</div>
           </div>
         </div>
         <div id="cs-pglbl">sign in</div>
@@ -544,7 +544,7 @@
           <div id="cs-mark">CH</div>
           <div>
             <div class="lt">Creation Homes</div>
-            <div class="lb">DEFECT MANAGER</div>
+            <div class="lb">EZ DEFECT MANAGER</div>
           </div>
         </div>
         <div id="cs-pglbl">${recover ? 'reset password' : 'change password'}</div>

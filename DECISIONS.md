@@ -3435,3 +3435,48 @@ falls short fails the suite.
 (WCAG exempts text that is part of a logo from contrast limits, which would
 cover this outright. That is deliberately not leaned on; the floor above is
 stricter.)
+
+## The app is called EZ Defect Manager (2026-11-17, `2026-11-17n`)
+
+Spiro: "Do it" — the app-wide half of the rename, which had been sitting in
+NEXT_STEPS waiting on his call since the mark was built. The objection that
+held it back ("a theme must not rename the app for people who never chose
+it") stopped applying the moment he put the mark on all fifteen schemes.
+
+Renamed: the tab title, the manifest `name`, the icons, the PDF report
+footer, both sign-in cards, and the service worker's banner. The PDF was the
+one worth being deliberate about, because it is the only one that leaves the
+company — it read "SMV Defect Manager · Defect Report" and now reads "EZ
+Defect Manager".
+
+**The icons were redrawn rather than relabelled.** The old ones were a
+generic clipboard on a TRANSPARENT background, which is its own small bug:
+an apple-touch-icon with transparency gets a black square behind it on an
+iOS home screen. The new ones are the mark — a sky badge on the brand navy,
+fully opaque. They are rendered from the real Outfit face (the woff2 is
+embedded at build time) rather than drawn by hand, so the icon and the
+header are the same letterforms.
+
+They are sized by the badge's DIAGONAL, not its width, against the 80%
+circle an Android launcher may crop a maskable icon to. Fitting by width
+would have left the corners to be shaved off on a round-icon launcher.
+
+**The under-icon label is deliberately not the full name.** `short_name` and
+`apple-mobile-web-app-title` are the caption under the home-screen icon, and
+iOS truncates that at around twelve characters: "EZ Defect Manager" renders
+as "EZ Defect…". It says "EZ Defect" on purpose rather than being cut off
+mid-word. The suite asserts the length rather than the string, so the reason
+is encoded and not just the result.
+
+**Theme and splash colours moved to the icon's navy**, from indigo, so an
+install does not flash indigo around a navy icon.
+
+Every one of these is checked where it actually appears: the manifest is
+fetched, the icons are decoded and their pixels counted, and the PDF is
+rendered by the real jsPDF and read back with pdfjs. A product name is
+easy to rename by halves — the tab saying one thing and the report another
+is exactly the failure this suite exists to catch.
+
+**Not fixed, and not ours to fix:** a phone that already has the app
+installed keeps the old icon and label until it is removed and re-added.
+The home-screen shortcut is a copy the OS took at install time.
