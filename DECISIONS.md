@@ -3629,3 +3629,37 @@ item held up everything behind it. Each item is now wrapped.
 cause. The swallowed error means nobody can yet say whether it was THE
 cause — which is the point of recording it. The next screenshot of that
 pill will name the real failure instead of a symptom.
+
+## Stop guessing: the stuck-photo diagnostic (2026-11-17, `2026-11-17s`)
+
+Spiro: "Yeh but skylark jobs arnt completed." Which killed the third
+theory, and the third theory was mine.
+
+Three rounds went: a storage RLS rejection, then a stale job map, then a
+1000-row cap. Each was reasonable, two were wrong, and all three were
+reasoned from a screenshot of a sentence describing a SYMPTOM. That is not
+debugging, it is guessing with extra steps, and the cost lands on the
+person holding the phone.
+
+A photo waits on its defect; the defect waits on its job and its
+contractor being mapped; the write itself can be refused. Any of those
+links can be the broken one and they are **indistinguishable from
+outside** — every one of them produces "still waiting to upload".
+
+So the pill now opens a panel that reports the links rather than the
+symptom: build, online state, queue depths, how many jobs/contractors/
+defects are mapped, both last errors, and then per queued photo its job,
+whether that job is mapped, whether the defect reached the cloud, whether
+it is in the outbox, and whether its contractor is mapped. One tap, one
+Copy details button, because a toast cannot be copied and copying it is
+the whole point. A Try again beside it, for the person who will not wait
+out a retry timer.
+
+The copy falls back to the old `execCommand` road: iOS refuses the async
+clipboard outside certain gestures, and a copy button that silently does
+nothing is worse than no button.
+
+**What this does not do is fix the bug.** Nobody yet knows what the bug
+is, which is precisely the problem this addresses. The next screenshot
+names the broken link instead of the symptom, and the fix after it will be
+aimed rather than guessed.

@@ -2767,13 +2767,7 @@
       el = document.createElement('div');
       el.id = 'cs-photo-pending';
       el.style.cssText = 'position:fixed;left:8px;z-index:9998;background:#1f2937;color:#fff;font:600 12px/1.3 -apple-system,system-ui,sans-serif;padding:7px 11px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3);max-width:70vw;cursor:pointer';
-      el.onclick = () => {
-        // Say what is actually happening, then try again. The retry loop is
-        // already running on its own; this is for the person who wants to see
-        // it move now rather than wait out the timer.
-        showToastSafe(photoWaitingReason());
-        uploadPendingPhotos().catch(() => {});
-      };
+      el.onclick = () => { openPhotoHelp().catch(() => {}); };
       document.body.appendChild(el);
     }
     el.style.display = 'block';
@@ -2859,6 +2853,107 @@
       : '';
     return `${ph} still on this phone${where} — ${e.what}. ${e.fix}`
          + (e.stuck ? `\n\nTechnical detail: ${lastPhotoError}` : '');
+  }
+
+  // WHY IS IT STUCK — the whole chain, in one copyable block.
+  //
+  // Three rounds of this were spent guessing from screenshots: a storage
+  // rejection, then a stale job map, then a row cap. Each theory was
+  // reasonable and two of them were wrong, because the only evidence was a
+  // sentence describing a symptom. A photo waits on its defect; the defect
+  // waits on its job and contractor being mapped; any of those links can be
+  // the broken one and they all look identical from outside.
+  //
+  // So report the links, not the symptom. The person holding the phone taps
+  // once and pastes the result.
+  async function photoDiagnostic() {
+    let items = [];
+    try { items = await pendingAll(); } catch (e) { items = []; }
+    const ver = (document.querySelector('script[src*="cloud-sync.js?v="]') || {}).src || '';
+    const L = [];
+    L.push('build ' + (ver.split('v=')[1] || 'unknown'));
+    L.push('online: ' + (typeof navigator !== 'undefined' ? navigator.onLine : '?'));
+    L.push('photos queued: ' + items.length);
+    L.push('changes queued: ' + defectOutbox.length);
+    L.push('jobs mapped: ' + Object.keys(idMap.addresses).length
+         + ' · contractors mapped: ' + Object.keys(idMap.contractors).length
+         + ' · defects mapped: ' + Object.keys(idMap.defects).length);
+    L.push('last photo error: ' + (lastPhotoError || '—'));
+    L.push('last push error: ' + (lastPushError || '—'));
+    L.push('');
+    const seen = new Set();
+    for (const it of items) {
+      if (seen.size >= 12) { L.push('… and ' + (items.length - seen.size) + ' more'); break; }
+      if (seen.has(it.legacyId)) continue;
+      seen.add(it.legacyId);
+      const d = (db.data.defects || []).find(x => Number(x.id) === Number(it.legacyId));
+      const a = d && (db.data.addresses || []).find(x => Number(x.id) === Number(d.addressId));
+      if (!d) { L.push('defect ' + it.legacyId + ': NOT IN LOCAL DB'); continue; }
+      L.push('defect ' + it.legacyId + ' — ' + (a ? (a.street || ('Lot ' + a.lot)) : 'JOB NOT IN LOCAL DB'));
+      L.push('   addressId=' + d.addressId
+           + ' temp=' + (a ? !!a.isTemp : '?')
+           + ' jobMapped=' + (idMap.addresses[d.addressId] ? 'yes' : 'NO')
+           + ' defectInCloud=' + (idMap.defects[it.legacyId] ? 'yes' : 'NO')
+           + ' queued=' + (defectOutbox.includes(Number(it.legacyId)) ? 'yes' : 'no')
+           + ' contractor=' + (d.contractorId == null ? 'none'
+               : (idMap.contractors[d.contractorId] ? 'mapped' : 'NOT MAPPED')));
+    }
+    return L.join('\n');
+  }
+
+  // The pill opens this rather than firing a toast: a toast cannot be copied,
+  // and copying it is the point.
+  async function openPhotoHelp() {
+    document.getElementById('cs-phelp')?.remove();
+    const text = await photoDiagnostic();
+    const ov = document.createElement('div');
+    ov.id = 'cs-phelp';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);display:flex;'
+      + 'align-items:center;justify-content:center;padding:18px;';
+    const esc = (t) => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    ov.innerHTML =
+      '<div style="background:#fff;color:#111;border-radius:14px;max-width:460px;width:100%;'
+      + 'max-height:86vh;overflow:auto;padding:18px;font:500 14px/1.45 -apple-system,system-ui,sans-serif">'
+      + '<div style="font-weight:700;font-size:16px;margin-bottom:8px">Photos waiting</div>'
+      + '<div style="margin-bottom:14px">' + esc(photoWaitingReason()).replace(/\n/g, '<br>') + '</div>'
+      + '<div style="font-weight:700;font-size:13px;margin-bottom:6px">Details</div>'
+      + '<pre id="cs-phelp-pre" style="background:#f3f4f6;border-radius:8px;padding:10px;'
+      + 'font:500 11px/1.4 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;'
+      + 'margin:0 0 14px">' + esc(text) + '</pre>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      + '<button id="cs-phelp-copy" style="flex:1;min-width:130px;background:#1A2F62;color:#fff;border:none;'
+      + 'border-radius:9px;padding:11px;font-weight:700;font-size:14px;cursor:pointer">Copy details</button>'
+      + '<button id="cs-phelp-retry" style="flex:1;min-width:110px;background:#fff;color:#1A2F62;'
+      + 'border:1px solid #1A2F62;border-radius:9px;padding:11px;font-weight:700;font-size:14px;'
+      + 'cursor:pointer">Try again</button>'
+      + '<button id="cs-phelp-close" style="flex:0 0 auto;background:transparent;color:#555;border:none;'
+      + 'padding:11px 14px;font-weight:600;font-size:14px;cursor:pointer">Close</button>'
+      + '</div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    document.getElementById('cs-phelp-close').onclick = () => ov.remove();
+    document.getElementById('cs-phelp-retry').onclick = () => {
+      ov.remove();
+      showToastSafe('Trying again…');
+      flushDefectOutbox().then(() => uploadPendingPhotos()).catch(() => {});
+    };
+    document.getElementById('cs-phelp-copy').onclick = async () => {
+      const t = document.getElementById('cs-phelp-pre').textContent;
+      let done = false;
+      try { await navigator.clipboard.writeText(t); done = true; } catch (e) {}
+      if (!done) {
+        // iOS refuses the async clipboard outside some gestures; the old road
+        // still works.
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = t; ta.style.cssText = 'position:fixed;opacity:0';
+          document.body.appendChild(ta); ta.select();
+          done = document.execCommand('copy'); ta.remove();
+        } catch (e) {}
+      }
+      showToastSafe(done ? '📋 Details copied — paste them to whoever is looking at this'
+                         : 'Could not copy — screenshot this box instead');
+    };
   }
 
   // Upload every persisted pending photo whose defect now has a cloud uuid.
@@ -4539,6 +4634,8 @@
       setStuckJobs: (a) => { stuckPhotoJobs = Array.isArray(a) ? a : []; },
       // The defect queue the photos wait behind, so a test can put the pill in
       // the state Spiro was looking at: on wifi, with changes stuck in front.
+      photoDiagnostic: () => photoDiagnostic(),
+      openPhotoHelp: () => openPhotoHelp(),
       setPushState: (n, err) => {
         defectOutbox = Array.from({ length: Number(n) || 0 }, (_, i) => i + 1);
         lastPushError = String(err || '');

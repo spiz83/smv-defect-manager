@@ -306,6 +306,58 @@ check('when those changes are stuck too, it says so and why',
 check('with no error at all it still reads as uploading',
   /uploading now/.test(msgs.clean), msgs.clean.slice(0, 50));
 
+// ================= 5. the diagnostic ======================================
+// Three rounds were spent guessing from screenshots of a symptom. This is the
+// thing that ends that: every link in the chain, in one copyable block.
+console.log('\n--- what the "why is it stuck" panel reports ---');
+const diag = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  // Queue a real photo through the real entry point, so the per-item lines
+  // come from the actual outbox rather than a stub of it.
+  try {
+    await window.CloudPhotos.savePhoto(10, new File([new Blob(['x'])], 'p.jpg', { type: 'image/jpeg' }));
+  } catch (e) { /* the upload will fail; the queue entry is the point */ }
+  h.setPushState(36, 'the upload was refused');
+  h.setPhotoError('the defect it belongs to has not synced yet');
+  const text = await h.photoDiagnostic();
+  await h.openPhotoHelp();
+  const ov = document.getElementById('cs-phelp');
+  const pre = document.getElementById('cs-phelp-pre');
+  const out = {
+    text,
+    shown: !!ov,
+    preMatches: pre ? pre.textContent === text : false,
+    hasCopy: !!document.getElementById('cs-phelp-copy'),
+    hasRetry: !!document.getElementById('cs-phelp-retry'),
+    explains: ov ? /still on this phone/.test(ov.textContent) : false,
+  };
+  document.getElementById('cs-phelp-close').click();
+  out.closed = !document.getElementById('cs-phelp');
+  h.setPushState(0, '');
+  return out;
+});
+console.log(diag.text);
+check('the panel opens with the plain explanation at the top', diag.shown && diag.explains, '');
+check('…and a Copy details button, because a toast cannot be copied', diag.hasCopy, '');
+check('…and a Try again, for the person who will not wait out the timer', diag.hasRetry, '');
+check('…and closes', diag.closed, '');
+check('what it copies is exactly what it shows', diag.preMatches, '');
+// The links themselves. Each of these was a theory at some point, and the
+// point of the block is that it answers all of them at once.
+for (const needle of ['build ', 'online:', 'photos queued:', 'changes queued:',
+                      'jobs mapped:', 'last photo error:', 'last push error:']) {
+  check(`it reports "${needle.trim()}"`, diag.text.includes(needle), '');
+}
+check('every queued photo names its job and every link in its chain',
+  /defect \d+ — /.test(diag.text)
+  && /addressId=/.test(diag.text) && /temp=/.test(diag.text)
+  && /jobMapped=/.test(diag.text) && /defectInCloud=/.test(diag.text)
+  && /contractor=/.test(diag.text),
+  '');
+check('…and it says which of them is the broken link',
+  /jobMapped=NO|defectInCloud=NO|contractor=NOT MAPPED|NOT IN LOCAL DB/.test(diag.text),
+  'at least one link reported as broken in this fixture');
+
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
 await browser.close();
