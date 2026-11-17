@@ -21,7 +21,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <!-- F1 Telemetry design fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,900&family=JetBrains+Mono:wght@400;700&family=Bebas+Neue&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,400;0,600;0,700;0,900;1,900&family=JetBrains+Mono:wght@400;500;700&family=Bebas+Neue&family=DM+Sans:wght@400;600;700&family=Poppins:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600&family=Outfit:wght@400;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-primary: #ffffff;
@@ -1656,6 +1656,261 @@
            near-white text on white: unreadable, on a fresh install, for
            everyone. Each F1 palette carries a matching --t1, so the fix is to
            use it rather than to pick a colour here. */
+        /* ==========================================================
+           HARBOUR — a supplied colour system, not just a palette
+           (Spiro 2026-11-17). Rides on top of design-f1, which every
+           build is in, and is picked from the same Settings dropdown
+           as the other palettes. Everything below is scoped to
+           body.theme-harbour, so the twelve existing palettes are
+           untouched.
+
+           Tokens first, component rules after. Nothing in the rules
+           carries a hex — they all read from the tokens here, so a
+           later change to the system is a change to this block.
+           ========================================================== */
+        body.design-f1.theme-harbour {
+            /* core frame */
+            --navy-950:#060D14; --navy-900:#0A131C; --navy-850:#0F1923;
+            --navy-800:#131E29; --navy-700:#1E2E3C;
+            --text:#F0EDE4; --text-body:#AEC0CF; --text-muted:#7F93A6;
+            --primary:#90BFE9; --primary-hover:#7DA7CC; --on-primary:#060D14;
+            --primary-deep:#2F6EA3;
+            /* feedback */
+            --success:#3DBE8B; --warning:#F5A524; --error:#E5484D; --info:#90BFE9;
+            /* severity — DECLARED BUT UNUSED. This app has no severity field;
+               defects carry a status only. Here so the system is complete and
+               a severity feature would have its colours waiting. */
+            --sev-critical:#E5484D; --sev-critical-soft:#FDECEC;
+            --sev-major:#F5A524;    --sev-major-soft:#FEF3E2;
+            --sev-minor:#E8D06A;    --sev-minor-soft:#FBF6DC;
+            --sev-cosmetic:#90BFE9; --sev-cosmetic-soft:#E6F0FA;
+            /* status — the app has three of these six (open / pending /
+               completed). The other three are declared for the same reason. */
+            --status-open:#E5484D; --status-assigned:#F5A524; --status-progress:#90BFE9;
+            --status-reinspect:#B49CF0; --status-resolved:#3DBE8B; --status-hold:#7F93A6;
+            /* light surfaces, for print and anything on white */
+            --surface:#EEF0EC; --surface-card:#FFFFFF;
+            --text-strong:#17222E; --text-secondary:#4F5D6B;
+            --border-light:#D5DAD3; --link:#2F6EA3;
+
+            font-family: 'Plus Jakarta Sans','DM Sans',system-ui,sans-serif !important;
+        }
+        body.design-f1.theme-harbour h1, body.design-f1.theme-harbour h2,
+        body.design-f1.theme-harbour h3, body.design-f1.theme-harbour .header-title,
+        body.design-f1.theme-harbour .lot-title, body.design-f1.theme-harbour .pg-title {
+            font-family: 'Poppins','Plus Jakarta Sans',system-ui,sans-serif !important;
+            font-weight: 600 !important; font-style: normal; text-transform: none;
+        }
+        /* Section labels: mono, uppercase, 12px, .12em, primary. */
+        body.design-f1.theme-harbour .section-title {
+            font-family: 'JetBrains Mono',monospace !important;
+            font-size: 12px !important; font-weight: 500 !important;
+            letter-spacing: .12em !important; color: var(--primary) !important;
+        }
+        /* Job numbers and defect ids read as data, not prose. */
+        body.design-f1.theme-harbour .lot-job,
+        body.design-f1.theme-harbour .defect-line-ref {
+            font-family: 'JetBrains Mono',monospace !important; font-weight: 500 !important;
+        }
+
+        /* Header: a solid navy gradient rather than the accent wash. */
+        body.design-f1.theme-harbour .app-header.home-hero,
+        body.design-f1.theme-harbour .app-header:not(.home-hero) {
+            background: linear-gradient(180deg, var(--navy-950), var(--navy-900)) !important;
+            border-bottom: 1px solid var(--border, #233344);
+        }
+        /* The status bar belongs to the frame, like the header. */
+        body.design-f1.theme-harbour #cs-statusbar {
+            background: var(--navy-950) !important;
+            color: var(--text) !important;
+            border-bottom: 1px solid var(--brd);
+        }
+        body.design-f1.theme-harbour #cs-statusbar button {
+            color: var(--text) !important; border-color: var(--brd) !important;
+        }
+
+        /* Primary action: pill, filled, with the specified glow. */
+        body.design-f1.theme-harbour .imp-btn:not(.secondary),
+        body.design-f1.theme-harbour .btn-primary {
+            background: var(--primary) !important; color: var(--on-primary) !important;
+            border: none !important; border-radius: 9999px !important;
+            box-shadow: 0 0 24px rgba(144,191,233,.25) !important; font-weight: 600 !important;
+        }
+        body.design-f1.theme-harbour .imp-btn:not(.secondary):hover,
+        body.design-f1.theme-harbour .btn-primary:hover { background: var(--primary-hover) !important; }
+        /* Secondary: outline only, filling on hover. */
+        body.design-f1.theme-harbour .imp-btn.secondary {
+            background: transparent !important; color: var(--text) !important;
+            border: 1px solid var(--brd) !important; border-radius: 9999px !important;
+            box-shadow: none !important;
+        }
+        body.design-f1.theme-harbour .imp-btn.secondary:hover { background: var(--navy-700) !important; }
+
+        /* Search field: raised fill, and a real focus ring. */
+        body.design-f1.theme-harbour input[type="text"],
+        body.design-f1.theme-harbour input[type="search"],
+        body.design-f1.theme-harbour input[type="date"],
+        body.design-f1.theme-harbour textarea,
+        body.design-f1.theme-harbour select {
+            background: var(--navy-700) !important; color: var(--text) !important;
+            border: 1px solid var(--brd) !important;
+        }
+        body.design-f1.theme-harbour ::placeholder { color: var(--text-muted) !important; opacity: 1; }
+        body.design-f1.theme-harbour input:focus,
+        body.design-f1.theme-harbour textarea:focus,
+        body.design-f1.theme-harbour select:focus {
+            outline: 2px solid var(--primary) !important; outline-offset: 0;
+            border-color: var(--primary) !important;
+        }
+        /* Every interactive element shows where the keyboard is. */
+        body.design-f1.theme-harbour a:focus-visible,
+        body.design-f1.theme-harbour button:focus-visible,
+        body.design-f1.theme-harbour [onclick]:focus-visible {
+            outline: 2px solid var(--primary) !important; outline-offset: 2px;
+        }
+
+        /* Segmented control (Address / Contractor / Trade). */
+        body.design-f1.theme-harbour .seg-btn {
+            background: var(--navy-800) !important; color: var(--text-body) !important;
+            border: 1px solid var(--brd) !important;
+        }
+        body.design-f1.theme-harbour .seg-btn.active {
+            background: var(--primary) !important; color: var(--on-primary) !important;
+            border-color: var(--primary) !important; font-weight: 600 !important;
+        }
+
+        /* Cards, rows and panels sit on the card navy with a token divider. */
+        body.design-f1.theme-harbour .defect-item,
+        body.design-f1.theme-harbour .contractor-section,
+        body.design-f1.theme-harbour .manage-container,
+        body.design-f1.theme-harbour #myjobs-list {
+            background: var(--navy-800) !important; border-color: var(--brd) !important;
+        }
+
+        /* Toast: a 3px left border in the feedback colour. */
+        body.design-f1.theme-harbour .toast {
+            background: var(--navy-800) !important; color: var(--text) !important;
+            border-left: 3px solid var(--info) !important;
+        }
+        body.design-f1.theme-harbour .toast.error { border-left-color: var(--error) !important; }
+
+        /* Sync banner belongs to the frame; its states use feedback colours. */
+        body.design-f1.theme-harbour #cs-banner { background: var(--navy-950) !important; color: var(--text) !important; }
+        body.design-f1.theme-harbour #cs-banner.syncing { background: var(--navy-950) !important; }
+        body.design-f1.theme-harbour #cs-banner.offline { background: var(--warning) !important; color: var(--on-primary) !important; }
+        body.design-f1.theme-harbour #cs-banner.ok { background: var(--success) !important; color: var(--on-primary) !important; }
+        body.design-f1.theme-harbour #cs-statusbar .dot { background: var(--success); }
+        body.design-f1.theme-harbour #cs-statusbar .dot.syncing { background: var(--warning); }
+        body.design-f1.theme-harbour #cs-statusbar .dot.offline { background: var(--warning); }
+        /* The waiting-photos pill is a system state, not a card. */
+        body.design-f1.theme-harbour #cs-photo-pending {
+            background: var(--navy-800) !important; color: var(--text) !important;
+            border-left: 3px solid var(--warning);
+        }
+
+        /* Job list. The spec asks for the left bar to be coloured by the job's
+           highest open SEVERITY — this app has no severity field, so the bar
+           keeps the meaning it already has (there are outstanding defects) and
+           takes the critical colour, which is what the old red was saying. The
+           severity tokens above are ready if that field is ever added. */
+        body.design-f1.theme-harbour .job-row {
+            background: var(--navy-800) !important;
+            border-bottom: 1px solid var(--brd) !important;
+        }
+        body.design-f1.theme-harbour .job-row > div[onclick] > div:first-child { color: var(--text) !important; font-weight: 600 !important; }
+        body.design-f1.theme-harbour .job-row > div[onclick] > div:last-child  { color: var(--text-muted) !important; }
+        body.design-f1.theme-harbour .job-badge {
+            background: var(--sev-critical) !important; color: var(--on-primary) !important;
+            font-weight: 600 !important;
+        }
+        /* Icon buttons: raised, outlined, primary glyphs, finger-sized. */
+        body.design-f1.theme-harbour .job-ico {
+            background: var(--navy-700) !important;
+            border: 1px solid var(--brd) !important;
+            border-radius: 10px !important;
+            color: var(--primary) !important;
+            min-width: 44px !important; min-height: 44px !important;
+            line-height: 42px !important;
+        }
+
+        /* STATUS. The spec asks for an outlined pill carrying its text label.
+           This app does not have one: status is a 7px coloured tab down the
+           left edge of a defect row, with no text — and turning that into a
+           labelled pill is a layout change, which this task explicitly is not.
+           So the tab takes the system's status colours and nothing moves. The
+           three the app has map to the three the system names for them; the
+           other three tokens are declared above and unused.
+
+           NOTE this leaves the "never use colour alone for meaning" rule
+           unmet for status, as it already was. Fixing it means adding a
+           labelled element — worth doing, as its own change. */
+        body.design-f1.theme-harbour .status-tab.status-open      { background: var(--status-open) !important; }
+        body.design-f1.theme-harbour .status-tab.status-pending   { background: var(--status-assigned) !important; }
+        body.design-f1.theme-harbour .status-tab.status-completed { background: var(--status-resolved) !important; }
+
+        /* --text-muted IS the muted tone. The row then applies opacity:.65 on
+           top, which double-mutes it to 3.03:1 — under the 4.5 this system
+           asks for. The token carries the hierarchy on its own. */
+        body.design-f1.theme-harbour .job-row > div[onclick] > div:last-child { opacity: 1 !important; }
+
+        /* ==========================================================
+           EZ DEFECT WORDMARK (Spiro 2026-11-17). Part of the Harbour
+           option, not a rename: every other theme keeps the
+           "Defect Manager" wordmark, and so does the app's name,
+           tab title, manifest and PDF header — those are app-wide and
+           would rename the product for people who never chose this
+           theme. Listed for Spiro instead, as the brief asks.
+
+           Both wordmarks are in the markup and CSS shows one, so
+           renderHomeView stays theme-agnostic. display:none also takes
+           the hidden one out of the accessibility tree, so a screen
+           reader hears one product name, not two.
+           ========================================================== */
+        /* The two wordmarks share one relatively-positioned box, and that box
+           is sized by the LINE OF TYPE — never by the badge. That is what
+           keeps the bar's height exactly as it is: the bar tracks the title's
+           line-height, which is fluid (21px / 25px / 31px across the three
+           widths), so the badge is taken out of flow and centred on the line
+           it replaces rather than allowed to set the height itself. Anchoring
+           to this box and not to .header-title also matters on a notched
+           phone, where the title carries the safe-area inset as padding and
+           centring on the padding box would drop the wordmark down the page
+           by half the notch. */
+        .wm { position: relative; display: inline-block; }
+        .wm-ez { display: none; }
+        /* visibility, not display: the line box stays and sets the height,
+           while the text leaves the accessibility tree so a screen reader
+           hears one product name. */
+        body.theme-harbour .wm-text { visibility: hidden; }
+        body.theme-harbour .wm-ez {
+            /* --wm is the font-size of "EZ"; everything else is derived from
+               it exactly as the supplied component does. */
+            --wm: 24px;
+            position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+            display: inline-flex; align-items: center; line-height: 1;
+            gap: calc(var(--wm) * .38);
+            font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
+            white-space: nowrap;
+            /* The hero title is uppercased, italic, 900-weight Titillium. Each
+               of those inherits, so the wordmark states its own: the brief
+               asks for an upright "Defect" with a capital D, not "DEFECT". */
+            text-transform: none; font-style: normal;
+        }
+        body.theme-harbour .wm-badge {
+            background: #90BFE9; color: #1A2F62;
+            font-weight: 800; font-size: var(--wm); letter-spacing: -.015em;
+            padding: calc(var(--wm) * .22) calc(var(--wm) * .3);
+            border-radius: calc(var(--wm) * .22);
+        }
+        body.theme-harbour .wm-word {
+            color: #FFFFFF; font-weight: 400;
+            font-size: calc(var(--wm) * 1.17); letter-spacing: .01em;
+        }
+        /* Tablet and up. */
+        @media (min-width: 700px) { body.theme-harbour .wm-ez { --wm: 30px; } }
+
+        body.design-f1.theme-harbour { background: var(--navy-900) !important; }
+
         body.design-f1 #cs-statusbar {
             background: var(--sur) !important;
             border-bottom: 1px solid var(--brd);
@@ -2964,7 +3219,7 @@
                 <div class="app-header home-hero">
                     <span class="hero-logo"><img src="creation-homes-logo.png" alt="Creation Homes"
                          onerror="this.closest('.hero-logo').remove()"></span>
-                    <div class="header-title">Defect Manager</div>
+                    <div class="header-title"><span class="wm"><span class="wm-text">Defect Manager</span><span class="wm-ez" role="img" aria-label="EZ Defect"><span class="wm-badge" aria-hidden="true">EZ</span><span class="wm-word" aria-hidden="true">Defect</span></span></span></div>
                 </div>
                 <div class="home-container">
                     <div class="section-title">Search Defects</div>
@@ -4574,7 +4829,7 @@
                     const oc = (item.type === 'address') ? (searchOutstanding[item.id] || 0) : 0;
                     const flagged = searchMarkersOn && oc > 0;
                     const badge = flagged
-                        ? `<span title="${oc} outstanding defect${oc > 1 ? 's' : ''}" style="flex:0 0 auto;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 6px;border-radius:11px;background:var(--red,#DC143C);color:#fff;font-size:12px;font-weight:400;">${oc}</span>`
+                        ? `<span class="job-badge" title="${oc} outstanding defect${oc > 1 ? 's' : ''}" style="flex:0 0 auto;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 6px;border-radius:11px;background:var(--red,#DC143C);color:#fff;font-size:12px;font-weight:400;">${oc}</span>`
                         : '';
                     const rowExtra = flagged ? 'border-left:4px solid var(--red,#DC143C);padding-left:8px;' : '';
                     return `
@@ -9846,18 +10101,18 @@
                 // there are defects logged here that are still outstanding.
                 const rowStyle = baseRow + (flagged ? 'border-left:4px solid var(--red,#DC143C);padding-left:8px;' : '');
                 const badge = flagged
-                    ? `<span title="${oc} outstanding defect${oc > 1 ? 's' : ''}" style="flex:0 0 auto;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 6px;border-radius:11px;background:var(--red,#DC143C);color:#fff;font-size:12px;font-weight:400;">${oc}</span>`
+                    ? `<span class="job-badge" title="${oc} outstanding defect${oc > 1 ? 's' : ''}" style="flex:0 0 auto;min-width:22px;height:22px;line-height:22px;text-align:center;padding:0 6px;border-radius:11px;background:var(--red,#DC143C);color:#fff;font-size:12px;font-weight:400;">${oc}</span>`
                     : '';
                 return `
-                <div data-job-search="${key}" style="${rowStyle}">
+                <div class="job-row" data-job-search="${key}" style="${rowStyle}">
                     <div style="${addrStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">
                         <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${isTempJob(a) ? '<span style="display:inline-block;background:var(--text-secondary,#777);color:#fff;font-size:10px;font-weight:800;letter-spacing:.06em;border-radius:4px;padding:1px 5px;margin-right:6px;vertical-align:2px;">TEMP</span>' : ''}${a.street}</div>
                         <div style="font-size:12px;opacity:.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</div>
                     </div>
                     ${badge}
                     <div style="flex:0 0 auto;display:flex;gap:6px;">
-                        <div style="${icoStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">👁️</div>
-                        <div style="${icoStyle}color:var(--acc,#2563eb);font-weight:800;" onclick="startDefectsForJob(${a.id})" title="Add defects">✚</div>
+                        <div class="job-ico" style="${icoStyle}" onclick="viewDefectsForJob(${a.id})" title="View defects">👁️</div>
+                        <div class="job-ico" style="${icoStyle}color:var(--acc,#2563eb);font-weight:800;" onclick="startDefectsForJob(${a.id})" title="Add defects">✚</div>
                         ${isTempJob(a) ? `<div style="${icoStyle}color:var(--red,#DC143C);" onclick="event.stopPropagation(); deleteTempJob(${a.id})" title="Delete this temp job and everything on it">🗑️</div>` : ''}
                     </div>
                 </div>`;
@@ -10218,7 +10473,9 @@
             const tabStyle = 'flex:1 1 0;text-align:center;padding:10px 6px;border-radius:9px;border:1px solid var(--brd,rgba(128,128,128,.3));cursor:pointer;font-weight:700;font-size:14px;';
             const tabs = types.map(([t, label]) => {
                 const on = currentSearchType() === t;
-                return `<div onclick="setSearchType('${t}')" style="${tabStyle}${on ? 'background:var(--acc,#2563eb);color:#fff;border-color:var(--acc,#2563eb);' : 'background:transparent;color:inherit;'}">${label}</div>`;
+                // The class is a styling hook for themes — the inline styles
+                // below still decide the look for every existing one.
+                return `<div class="seg-btn${on ? ' active' : ''}" onclick="setSearchType('${t}')" style="${tabStyle}${on ? 'background:var(--acc,#2563eb);color:#fff;border-color:var(--acc,#2563eb);' : 'background:transparent;color:inherit;'}">${label}</div>`;
             }).join('');
             const ph = currentSearchType() === 'address' ? 'Start typing an address…'
                 : currentSearchType() === 'contractor' ? 'Start typing a contractor…' : 'Start typing a trade…';
@@ -10262,12 +10519,26 @@
             { id:'rb', name:'Horizon', sub:'Blue · Soft', vars:{'--acc':'#6692BD','--acc2':'#87B0D9','--bg':'#06080C','--sur':'#101622','--ele':'#1A2235','--inp':'#0A0F18','--brd':'#1F2A40','--brd2':'#131A26','--t1':'#EEF2F8','--t2':'#94A4B8','--t3':'#506072','--red':'#EF1A2D','--accFg':'#fff'} },
             { id:'gunmetal', name:'Gunmetal', sub:'Neutral · Default', vars:{'--acc':'#5A6675','--acc2':'#7B8794','--bg':'#0A0B0D','--sur':'#15171B','--ele':'#1E2127','--inp':'#0F1115','--brd':'#2A2D33','--brd2':'#181B1F','--t1':'#F0F2F5','--t2':'#9BA3AE','--t3':'#5C6470','--accFg':'#fff'} },
             { id:'framework', name:'Blueprint', sub:'Light · Professional (logistics)', vars:{'--acc':'#1E4DA8','--acc2':'#3D6FCC','--bg':'#EFEBE2','--sur':'#FFFFFF','--ele':'#F5F1E8','--inp':'#FFFFFF','--brd':'#A8A8A8','--brd2':'#D6D6D6','--t1':'#1A1A1A','--t2':'#4A4A4A','--t3':'#7A7A7A','--green':'#2D8030','--amber':'#D87E2E','--red':'#B81E2E','--accFg':'#FFFFFF'} },
+            /* Harbour (Spiro 2026-11-17). Supplied as a full colour system
+               rather than a palette: deep navy frame, cream headings, a sky
+               primary, and its own component treatment (pill buttons, outlined
+               status pills, mono section labels). The extra tokens it needs —
+               severity, status, feedback, the light report surfaces — are
+               declared in the CSS block that carries body.theme-harbour, since
+               F1_THEMES entries only hold the shared variables every palette
+               has. */
+            { id:'harbour', name:'Harbour', sub:'Navy · Modern', vars:{'--acc':'#90BFE9','--acc2':'#7DA7CC','--bg':'#0A131C','--sur':'#131E29','--ele':'#1E2E3C','--inp':'#1E2E3C','--brd':'#233344','--brd2':'#0F1923','--t1':'#F0EDE4','--t2':'#AEC0CF','--t3':'#7F93A6','--green':'#3DBE8B','--amber':'#F5A524','--red':'#E5484D','--accFg':'#060D14'} },
             { id:'powershell', name:'Terminal', sub:'Retro · Console', vars:{'--acc':'#FFFF55','--acc2':'#FFFFAA','--bg':'#000000','--sur':'#000000','--ele':'#1A1A1A','--inp':'#000000','--brd':'#C0C0C0','--brd2':'#404040','--t1':'#FFFFFF','--t2':'#C0C0C0','--t3':'#808080','--green':'#55FF55','--amber':'#FFFF55','--red':'#FF5555','--accFg':'#000000'} }
         ];
         function currentF1Theme() { return lsGet('f1Theme') || 'framework'; }
         function applyF1Theme(id) {
             const t = F1_THEMES.find(x => x.id === id) || F1_THEMES[0];
             const b = document.body.style;
+            // A class per palette. Every palette until now was pure colour, so
+            // the shared variables were the whole story; Harbour also changes
+            // button shapes, badge treatments and type, which need a selector
+            // to hang off. Harmless for the others — nothing targets theirs.
+            F1_THEMES.forEach(x => document.body.classList.toggle('theme-' + x.id, x.id === t.id));
             Object.entries(t.vars).forEach(([k, v]) => b.setProperty(k, v));
             // Page background follows the theme too (no separate light/dark layer).
             if (t.vars['--bg']) b.setProperty('--page-bg', t.vars['--bg']);
@@ -15548,7 +15819,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17f';
+        const APP_VERSION = '2026-11-17g';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -15635,7 +15906,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17f"></script>
+    <script src="cloud-sync.js?v=2026-11-17g"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
