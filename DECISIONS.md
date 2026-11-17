@@ -3172,3 +3172,82 @@ builds): a check that queries the DOM proves the element EXISTS. Only geometry
   automatically — the second entry was never written. Any job where the same
   wording was raised for two rooms may be short a defect, and may carry the
   SECOND room's location on the first room's row.
+
+## Harbour theme + EZ Defect wordmark (2026-11-17, `2026-11-17g`)
+
+Spiro supplied a complete colour system and asked for "a more modern look…
+keep existing as result with ability to change in settings like the rest",
+then, unprompted, twice: "existing is default… this only another option in
+settings". So Harbour is a fourteenth palette in the same dropdown, not a
+restyle. Selecting it adds a `theme-harbour` class that every scoped rule
+hangs off; switching away removes it and the other thirteen are untouched.
+
+Two parts of the spec could not be met as written, and are left visible in
+the CSS rather than quietly dropped:
+
+- **The severity tokens have nothing to colour.** This app has no severity
+  field — zero references. `--sev-*` is declared for the system's sake and
+  unused. The job row's left bar keeps its existing "has outstanding
+  defects" meaning, in the critical colour.
+- **Status is a 7px tab, not a labelled pill.** The spec wants an outlined
+  pill with a text label; making one is a layout change, which this task
+  excluded. The tab is recoloured from the system instead, so the spec's
+  "never rely on colour alone" rule is still unmet for status. Worth doing
+  as its own change — it would help every theme, not just this one.
+
+**The wordmark rides with the theme, for the same reason.** The brief also
+listed the tab title, manifest `name`/`short_name`, app icons and the PDF
+report header. Those are app-wide: changing them renames the product for
+every supervisor, including the ones who never pick this theme, which is
+the opposite of "only another option in settings". They are listed for
+Spiro to decide rather than applied. The brief's own escape hatch —
+"unless that would change customer-facing legal text, in which case list it
+for me instead" — points the same way.
+
+**Why the wordmark is positioned out of flow.** The header bar's height is
+not a constant; it tracks the title's `line-height`, which is fluid: 21px at
+320, 25px at 390, 31px at 1280. The badge is taller than the line it
+replaces at every one of those. Left in flow it pushed the bar to 58px,
+which Spiro ruled out when the logo went in ("don't alter the height of the
+little header section"). So the badge is absolutely positioned and centred
+on the line of type, and the hidden "Defect Manager" text — `visibility:
+hidden`, not `display: none` — still sets the line box. The bar is then
+identical in both themes by construction, at every width, rather than by a
+padding number that happens to cancel out at one of them.
+
+It is anchored to a wrapper around the type, not to `.header-title`,
+because on a notched phone the title carries the safe-area inset as
+padding; centring on the padding box would drop the wordmark half a notch
+down the page.
+
+**What the tests caught** (and would not have been found by eye in a
+harness without the real font): the bar growing 2px, an overflow past the
+right edge at 320px, and the hero's `font-style: italic` leaking into the
+wordmark through inheritance — the badge rendered slanted. `font-family`,
+`font-weight`, `color` and `text-transform` all had to be restated on the
+wordmark for the same reason; the hero sets them with `!important`, which
+does not stop a child's own declaration winning, but inheritance delivers
+them regardless.
+
+Type-width checks are measured in the fallback face, because the harness
+stubs the font request. That makes them conservative rather than wrong:
+headless Chromium's `system-ui` is wider than Outfit, so a wordmark that
+clears the logo in the harness clears it in the shipping face.
+
+## The Attach tap was overwriting the clipboard (2026-11-17, `2026-11-17h`)
+
+"The paste feature after I have copied a bunch of email addresses selected
+doesn't work." The copy was fine. Tapping "Attach <file>.pdf" then copied
+the SUBJECT over the top of it in the same tap, so by the time Mail opened
+the clipboard held "Defects - Lot 1635" and pasting into To produced
+recipient chips named after the subject line.
+
+The subject copy is a genuine convenience for someone who just taps Attach,
+so it stays — it is now skipped once the user has copied anything
+themselves, via any of the three paths (the selection button, a row's 📋, or
+the subject chip). The chip remains for copying by hand in whatever order
+suits.
+
+Worth remembering as a shape, not just a bug: a convenience that writes to
+a shared, single-slot resource has to ask whether the user has already put
+something there. The clipboard only holds one thing.

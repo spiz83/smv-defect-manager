@@ -1561,3 +1561,37 @@ Free plan has no automatic backups. A `backup.snapshot_defects()` function +
 pg_cron daily snapshot (14-day retention) was drafted — confirm it exists via
 `select jobname, schedule, active from cron.job;` and take one manually before
 any destructive change.
+
+## Open for Spiro — the app-wide half of the EZ Defect rename (2026-11-17)
+
+The wordmark ships inside the Harbour theme. The rest of the brief's list is
+app-wide, so it is a product rename, not a theme option, and it is left for
+Spiro to call. All of it is small; none of it is done:
+
+1. **Tab title** — currently "Defect Manager".
+2. **`manifest.json` `name` / `short_name`** — changes the label under the
+   icon on a phone home screen. Supervisors who already installed the app
+   keep the old label until they reinstall, so this one is visible and
+   irreversible-ish in the field.
+3. **App icons**, 512×512 and 180×180, EZ badge on `#1A2F62`.
+4. **PDF report header** — this is the one that reaches builders and
+   contractors, not just supervisors. It is the closest thing here to the
+   brief's own "customer-facing" exception.
+5. **Login screen and any other "Defect Manager" product-name sites.**
+
+Doing 1–3 without 4 is coherent (the app is EZ Defect, the reports are
+unbranded). Doing 4 means outside parties start seeing a new product name,
+which is worth being deliberate about.
+
+## Still open, and owned by Spiro
+
+- **Rotate the published manager password.** `cloud-sync.js:61-63`
+  (`ALIAS_USER` / `ALIAS_PASS` / `ALIAS_EMAIL`), also in
+  `scripts/setup-manager.mjs:20` and `scripts/test-addr-match.mjs:8`. It is
+  in git history and on the live site, so deleting the literals fixes
+  nothing — the credential itself has to change in Supabase first.
+- **Marketing placeholder email** `hello@example.com.au` is still in the
+  tree.
+- **Status needs more than colour.** See DECISIONS — the 7px status tab
+  carries meaning in colour alone, in every theme. A short text label or a
+  shape difference would fix it for all fourteen at once.
