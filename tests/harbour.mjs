@@ -337,10 +337,14 @@ const wm = async (theme, width) => {
   }, theme);
 };
 
-// --- the other palettes are untouched ---
+// --- the mark is no longer Harbour's alone ---
+// It began here, scoped to this theme, because the brief said "existing is
+// default… this only another option in settings". Spiro then asked for it on
+// every scheme (2026-11-17), so what this suite checks is only that Harbour
+// still gets it; tests/wordmark.mjs is where all fifteen are measured.
 const dflt = await wm('framework', 390);
-check('the default theme still reads "Defect Manager"',
-  dflt.textShown && !dflt.ezShown, `text=${dflt.textShown} ez=${dflt.ezShown} "${dflt.readerText}"`);
+check('the default theme carries the mark too, now that it is app-wide',
+  dflt.ezShown && !dflt.textShown, `text=${dflt.textShown} ez=${dflt.ezShown}`);
 
 const harb = await wm('harbour', 390);
 check('Harbour shows the EZ Defect wordmark instead',

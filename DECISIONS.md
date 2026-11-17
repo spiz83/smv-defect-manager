@@ -3382,3 +3382,56 @@ to a job, the upload will still be refused, correctly, and the message now
 says so and tells them who to ask. The seven photos on Spiro's phone should
 clear on their own once he opens the app on this build; if they do not, it
 is the second case and the account needs looking at.
+
+## The mark goes on all fifteen schemes (2026-11-17, `2026-11-17m`)
+
+Spiro: "Apply ez defect manger logo to all other schemes." This reverses
+the earlier scoping — the mark was built inside Harbour precisely because
+"existing is default… this only another option in settings". It is now the
+product's mark everywhere, which is his call to make.
+
+It is not a change of scope only. The mark was drawn for one bar and now
+has to work on fifteen, and those bars are gradients built from each
+theme's accent: Terminal's is yellow, Papaya's orange, Blush's pink,
+Titanium's grey, Harbour Light's sky. Hard-coded white "Defect Manager" is
+unreadable on several.
+
+**Contrast here is measured from pixels, not tokens.** The bar is a
+gradient, so no token describes what is behind the type. `tests/wordmark.mjs`
+screenshots each header, samples the background either side of the mark,
+and takes the worst of those samples. Reading `--acc` would have reported a
+colour that is nowhere near where the type sits.
+
+**Each palette names its own ink**, in its F1_THEMES record rather than in
+a list of selectors, because that is where a palette's decisions belong.
+Terminal takes black (3.98:1, against white's 2.25), Harbour Light navy
+(8.30:1, against white's 1.76). The suite asserts a non-white ink is the
+BETTER choice, not merely a different one.
+
+**The badge needed a different lever than I first reached for.** Inverting
+it — navy badge, sky "EZ" — is right on a genuinely pale bar like Harbour
+Light's. On a MID-tone bar it made things worse, because sky and navy sit
+either side of mid-grey and both land close to it: Papaya went 2.48 → 1.37,
+Cerulean 2.84 → 1.25. Those five get a 1.5px keyline instead, drawn in the
+palette's own ink — which that palette has already established is legible
+on that bar, so it contrasts by construction rather than by another
+hand-picked colour. It is a box-shadow spread, not a border, so it draws
+outside the box and cannot change the mark's measured width and break the
+fit maths.
+
+**Three palettes cannot reach 4.5 with any flat ink**, and the suite names
+them rather than hiding it: Blush (4.36), Titanium (3.87), Terminal (3.98).
+Each of those bars sweeps across mid-tones under the 225px the mark
+occupies — on Titanium the backdrop runs rgb(127) to rgb(79), so white is
+3.87 at one end and navy 1.91 at the other. Nothing flat clears AA across
+that span. The rule applied to them is the one that actually protects the
+user: no less legible than the plain white title they replaced, and still
+over 3:1. All three were already exactly this bad before the mark existed,
+and Terminal is now considerably better.
+
+The list is asserted, so it cannot grow by accident — a new palette that
+falls short fails the suite.
+
+(WCAG exempts text that is part of a logo from contrast limits, which would
+cover this outright. That is deliberately not leaned on; the floor above is
+stricter.)

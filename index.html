@@ -1939,12 +1939,11 @@
            centring on the padding box would drop the wordmark down the page
            by half the notch. */
         .wm { position: relative; display: inline-block; }
-        .wm-ez { display: none; }
         /* visibility, not display: the line box stays and sets the height,
            while the text leaves the accessibility tree so a screen reader
            hears one product name. */
-        body.family-harbour .wm-text { visibility: hidden; }
-        body.family-harbour .wm-ez {
+        .wm-text { visibility: hidden; }
+        .wm-ez {
             /* --wm is the font-size of "EZ"; everything else is derived from
                it exactly as the supplied component does.
 
@@ -1976,20 +1975,26 @@
                asks for an upright "Defect" with a capital D, not "DEFECT". */
             text-transform: none; font-style: normal;
         }
-        body.family-harbour .wm-badge {
-            background: #90BFE9; color: #1A2F62;
+        .wm-badge {
+            background: var(--wm-badge-bg, #90BFE9); color: var(--wm-badge-ink, #1A2F62);
+            /* spread, not a border: it draws outside the box, so the keyline
+               cannot change the mark's measured width and break the fit. */
+            box-shadow: var(--wm-ring, none);
             font-weight: 800; font-size: var(--wm); letter-spacing: -.015em;
             padding: calc(var(--wm) * .22) calc(var(--wm) * .3);
             border-radius: calc(var(--wm) * .22);
         }
-        body.family-harbour .wm-word {
-            color: #FFFFFF; font-weight: 400;
+        .wm-word {
+            /* NOT hard-coded white. The mark is on every theme now, and the
+               fifteen hero bars are not all dark — Terminal's is yellow,
+               Papaya's orange, Blush's pink, Harbour Light's sky. Each palette
+               names the ink that works on its own bar; see F1_THEMES. */
+            color: var(--wm-ink, #FFFFFF); font-weight: 400;
             font-size: calc(var(--wm) * 1.17); letter-spacing: .01em;
         }
-        /* On the sky frame the mark inverts: the same two colours, swapped, so
-           it reads as the same mark. White "Defect" would be 1.9:1 here. */
-        body.theme-harbour-light .wm-badge { background: #1A2F62; color: #90BFE9; }
-        body.theme-harbour-light .wm-word  { color: #10273D; }
+        /* The badge inverts on a pale bar — the same two colours, swapped, so
+           it reads as the same mark. Set per palette via markInvert, because
+           a sky badge on Terminal's yellow is 1.16:1: not low, invisible. */
 
         body.design-f1.theme-harbour { background: var(--navy-900) !important; }
 
@@ -10592,11 +10597,11 @@
             { id:'mercedes', name:'Teal Carbon', sub:'Dark · Modern', vars:{'--acc':'#00A19A','--acc2':'#00C9C0','--bg':'#06090A','--sur':'#10171A','--ele':'#1A2529','--inp':'#0A1316','--brd':'#243137','--brd2':'#162026','--t1':'#F0F5F6','--t2':'#9BB0B4','--t3':'#5C7177','--accFg':'#fff'} },
             { id:'ferrari', name:'Ember', sub:'Red · Bold', vars:{'--acc':'#DC0000','--acc2':'#FF1A1A','--bg':'#0A0606','--sur':'#1A1010','--ele':'#241616','--inp':'#150909','--brd':'#3A1F1F','--brd2':'#1F1212','--t1':'#FFF5F0','--t2':'#C9A89C','--t3':'#7A5A52','--amber':'#FFEB3B','--accFg':'#fff'} },
             { id:'redbull', name:'Cobalt', sub:'Deep · Navy', vars:{'--acc':'#1A2A5C','--acc2':'#2A3F7A','--bg':'#04060E','--sur':'#0B1224','--ele':'#141C36','--inp':'#070A18','--brd':'#1F2845','--brd2':'#0F1428','--t1':'#EFF2FA','--t2':'#9DA8C2','--t3':'#5868A0','--red':'#D31E36','--amber':'#FFCD00','--accFg':'#fff'} },
-            { id:'mclaren', name:'Papaya', sub:'Orange · Vibrant', vars:{'--acc':'#FF8000','--acc2':'#FFA040','--bg':'#0A0805','--sur':'#1A140C','--ele':'#251D11','--inp':'#120E08','--brd':'#3A2C18','--brd2':'#1F180D','--t1':'#FFF5E8','--t2':'#C9B59A','--t3':'#7A6A52','--accFg':'#000'} },
+            { id:'mclaren', markRing:true, name:'Papaya', sub:'Orange · Vibrant', vars:{'--acc':'#FF8000','--acc2':'#FFA040','--bg':'#0A0805','--sur':'#1A140C','--ele':'#251D11','--inp':'#120E08','--brd':'#3A2C18','--brd2':'#1F180D','--t1':'#FFF5E8','--t2':'#C9B59A','--t3':'#7A6A52','--accFg':'#000'} },
             { id:'aston', name:'Heritage', sub:'Green · Racing', vars:{'--acc':'#006F62','--acc2':'#1A9B85','--bg':'#06090A','--sur':'#0F1715','--ele':'#1A2422','--inp':'#0A1311','--brd':'#1F2D2A','--brd2':'#121C1A','--t1':'#EEF4F2','--t2':'#94B0AA','--t3':'#506862','--accFg':'#fff'} },
-            { id:'alpine', name:'Blush', sub:'Pink · Accent', vars:{'--acc':'#FF87BC','--acc2':'#FFB3D1','--bg':'#0C0608','--sur':'#1F1015','--ele':'#2C171F','--inp':'#160A0E','--brd':'#3F1F2C','--brd2':'#26121A','--t1':'#FFF0F6','--t2':'#C99DB0','--t3':'#7A5266','--accFg':'#000'} },
-            { id:'williams', name:'Cerulean', sub:'Blue · Electric', vars:{'--acc':'#00A0E1','--acc2':'#37C2FF','--bg':'#04060D','--sur':'#0C121F','--ele':'#171F33','--inp':'#080C18','--brd':'#1E2942','--brd2':'#111626','--t1':'#EEF4FF','--t2':'#94A4C2','--t3':'#5867A0','--amber':'#FFD800','--accFg':'#fff'} },
-            { id:'haas', name:'Titanium', sub:'Grey · Classic', vars:{'--acc':'#B6BABD','--acc2':'#E0E3E6','--bg':'#08090A','--sur':'#15181B','--ele':'#1F2429','--inp':'#0E1114','--brd':'#2A2F36','--brd2':'#181C20','--t1':'#F5F6F8','--t2':'#9CA3AD','--t3':'#5C6470','--red':'#E10600','--accFg':'#000'} },
+            { id:'alpine', markRing:true, name:'Blush', sub:'Pink · Accent', vars:{'--acc':'#FF87BC','--acc2':'#FFB3D1','--bg':'#0C0608','--sur':'#1F1015','--ele':'#2C171F','--inp':'#160A0E','--brd':'#3F1F2C','--brd2':'#26121A','--t1':'#FFF0F6','--t2':'#C99DB0','--t3':'#7A5266','--accFg':'#000'} },
+            { id:'williams', markRing:true, name:'Cerulean', sub:'Blue · Electric', vars:{'--acc':'#00A0E1','--acc2':'#37C2FF','--bg':'#04060D','--sur':'#0C121F','--ele':'#171F33','--inp':'#080C18','--brd':'#1E2942','--brd2':'#111626','--t1':'#EEF4FF','--t2':'#94A4C2','--t3':'#5867A0','--amber':'#FFD800','--accFg':'#fff'} },
+            { id:'haas', markRing:true, name:'Titanium', sub:'Grey · Classic', vars:{'--acc':'#B6BABD','--acc2':'#E0E3E6','--bg':'#08090A','--sur':'#15181B','--ele':'#1F2429','--inp':'#0E1114','--brd':'#2A2F36','--brd2':'#181C20','--t1':'#F5F6F8','--t2':'#9CA3AD','--t3':'#5C6470','--red':'#E10600','--accFg':'#000'} },
             { id:'sauber', name:'Emerald', sub:'Green · Minimal', vars:{'--acc':'#00802A','--acc2':'#1AA346','--bg':'#04080A','--sur':'#0D1612','--ele':'#152319','--inp':'#08120D','--brd':'#1E2F25','--brd2':'#111B15','--t1':'#EEF5F0','--t2':'#94B0A0','--t3':'#506862','--accFg':'#fff'} },
             { id:'rb', name:'Horizon', sub:'Blue · Soft', vars:{'--acc':'#6692BD','--acc2':'#87B0D9','--bg':'#06080C','--sur':'#101622','--ele':'#1A2235','--inp':'#0A0F18','--brd':'#1F2A40','--brd2':'#131A26','--t1':'#EEF2F8','--t2':'#94A4B8','--t3':'#506072','--red':'#EF1A2D','--accFg':'#fff'} },
             { id:'gunmetal', name:'Gunmetal', sub:'Neutral · Default', vars:{'--acc':'#5A6675','--acc2':'#7B8794','--bg':'#0A0B0D','--sur':'#15171B','--ele':'#1E2127','--inp':'#0F1115','--brd':'#2A2D33','--brd2':'#181B1F','--t1':'#F0F2F5','--t2':'#9BA3AE','--t3':'#5C6470','--accFg':'#fff'} },
@@ -10621,8 +10626,8 @@
                --primary-text here, a deeper blue from the same family. */
             { id:'harbour-light', name:'Harbour Light', sub:'Sky · Daylight', family:'harbour',
               /* the sky bleeding down out of the header, not a grey haze */
-              glow:'rgba(144,191,233,.38)', vars:{'--acc':'#1F5B8C','--acc2':'#2F6EA3','--bg':'#F2F7FC','--sur':'#FFFFFF','--ele':'#E7F0F9','--inp':'#FFFFFF','--brd':'#C9DEF1','--brd2':'#A8C9E6','--t1':'#0F2133','--t2':'#33495C','--t3':'#4A5E70','--green':'#10724E','--amber':'#8A5510','--red':'#C42B30','--accFg':'#FFFFFF'} },
-            { id:'powershell', name:'Terminal', sub:'Retro · Console', vars:{'--acc':'#FFFF55','--acc2':'#FFFFAA','--bg':'#000000','--sur':'#000000','--ele':'#1A1A1A','--inp':'#000000','--brd':'#C0C0C0','--brd2':'#404040','--t1':'#FFFFFF','--t2':'#C0C0C0','--t3':'#808080','--green':'#55FF55','--amber':'#FFFF55','--red':'#FF5555','--accFg':'#000000'} }
+              glow:'rgba(144,191,233,.38)', markInvert:true, markInk:'#10273D', vars:{'--acc':'#1F5B8C','--acc2':'#2F6EA3','--bg':'#F2F7FC','--sur':'#FFFFFF','--ele':'#E7F0F9','--inp':'#FFFFFF','--brd':'#C9DEF1','--brd2':'#A8C9E6','--t1':'#0F2133','--t2':'#33495C','--t3':'#4A5E70','--green':'#10724E','--amber':'#8A5510','--red':'#C42B30','--accFg':'#FFFFFF'} },
+            { id:'powershell', markInvert:true, markRing:true, markInk:'#000000', name:'Terminal', sub:'Retro · Console', vars:{'--acc':'#FFFF55','--acc2':'#FFFFAA','--bg':'#000000','--sur':'#000000','--ele':'#1A1A1A','--inp':'#000000','--brd':'#C0C0C0','--brd2':'#404040','--t1':'#FFFFFF','--t2':'#C0C0C0','--t3':'#808080','--green':'#55FF55','--amber':'#FFFF55','--red':'#FF5555','--accFg':'#000000'} }
         ];
         function currentF1Theme() { return lsGet('f1Theme') || 'framework'; }
         function applyF1Theme(id) {
@@ -10652,6 +10657,23 @@
             const h = acc.replace('#', '');
             const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), bl = parseInt(h.slice(4, 6), 16);
             b.setProperty('--glow', t.glow || `rgba(${r},${g},${bl},.18)`);
+            // The EZ Defect Manager mark, per palette. The hero bar is a
+            // gradient built from each theme's accent, so there is no one ink
+            // that works on all fifteen: white is right on the dark bars and
+            // unreadable on yellow. A palette that needs something else says
+            // so in its own record, which is where a palette's decisions
+            // belong — tests/wordmark.mjs measures every one of them from
+            // real pixels and fails if a new palette gets this wrong.
+            b.setProperty('--wm-ink', t.markInk || '#FFFFFF');
+            b.setProperty('--wm-badge-bg',  t.markInvert ? '#1A2F62' : '#90BFE9');
+            b.setProperty('--wm-badge-ink', t.markInvert ? '#90BFE9' : '#1A2F62');
+            // A keyline, for the bars where neither sky nor navy separates from
+            // the background: Papaya's orange and Titanium's grey sit between
+            // the two, so inverting the badge made them WORSE, not better. The
+            // ring is drawn in the palette's own ink, which it has already
+            // established is legible on that bar — so it contrasts by
+            // construction rather than by another hand-picked colour.
+            b.setProperty('--wm-ring', t.markRing ? '0 0 0 1.5px var(--wm-ink)' : 'none');
             localStorage.setItem('f1Theme', t.id);
         }
         function setF1Theme(id) {
@@ -15941,7 +15963,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17k';
+        const APP_VERSION = '2026-11-17m';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16028,7 +16050,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17k"></script>
+    <script src="cloud-sync.js?v=2026-11-17m"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
