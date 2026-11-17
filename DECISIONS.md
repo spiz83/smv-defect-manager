@@ -3307,3 +3307,34 @@ The contrast suite now runs over both palettes, and checks the section
 label against the page **composited with that wash** rather than against
 the flat token — the wash costs it 6.64:1 → 5.38:1, which still clears AA
 but is the kind of thing a token-only review reports as fine.
+
+## The wordmark reads "EZ Defect Manager" (2026-11-17, `2026-11-17j`)
+
+Spiro asked for the full product name rather than the shortened one. That
+is not just a string change: "Defect Manager" is 2.4x the word the spec was
+drawn around, and the mark has to live in what the Creation Homes panel
+leaves of the bar. At the spec's fixed 24px it overlapped the logo by 96px
+at 320, 57 at 360 and 27 at 390.
+
+So the size is fluid now. The mark is ~11.3px wide per 1px of type size, so
+it takes `(min(viewport, 440) − 165) / 11.3`, which is the clamp in the
+CSS — 165 being the logo panel, the title's padding and 10px of daylight.
+
+**The spec's 24-on-phone / 30-on-desktop no longer applies, and could not.**
+The app container is capped at 440px wide even on a desktop monitor, which
+leaves 285px beside the logo; the mark at 30 is 339px. So 24 is the ceiling
+rather than the phone size, reached at ~437px and above, and narrower
+phones scale down from it — 20px at 390, 14px at 320. At 320 that happens
+to land on the same 15px the default theme's title already uses, so it
+reads as the same weight of thing rather than as a shrunken logo.
+
+The width sweep in `tests/harbour.mjs` is what keeps this honest: nine
+widths from 320 to 1280, each asserting real daylight between the logo and
+the mark, plus that the bar is still the same height as every other
+theme's. Change the logo and it fails, which is the point — the formula
+encodes the logo's width and nothing else would notice.
+
+Those widths are measured in the fallback face, since the harness stubs the
+font request. Outfit is 3.4% narrower (262px vs 271px at size 24, both
+measured), so every clearance the suite reports is a floor rather than an
+estimate.

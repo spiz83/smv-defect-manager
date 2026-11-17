@@ -1562,7 +1562,7 @@ pg_cron daily snapshot (14-day retention) was drafted — confirm it exists via
 `select jobname, schedule, active from cron.job;` and take one manually before
 any destructive change.
 
-## Open for Spiro — the app-wide half of the EZ Defect rename (2026-11-17)
+## Open for Spiro — the app-wide half of the EZ Defect Manager rename (2026-11-17)
 
 The wordmark ships inside the Harbour theme. The rest of the brief's list is
 app-wide, so it is a product rename, not a theme option, and it is left for

@@ -1946,8 +1946,26 @@
         body.family-harbour .wm-text { visibility: hidden; }
         body.family-harbour .wm-ez {
             /* --wm is the font-size of "EZ"; everything else is derived from
-               it exactly as the supplied component does. */
-            --wm: 24px;
+               it exactly as the supplied component does.
+
+               IT IS FLUID, and the formula is doing real work. The mark is
+               ~11.3px wide for every 1px of --wm, and it has to live in what
+               the Creation Homes panel leaves of the bar: the app is capped
+               at 440px wide, so that is min(viewport, 440) − 135 for the
+               panel − 20 for the title's padding. Ten more pixels keep it
+               from crowding the logo, which leaves
+                   --wm = (min(vw, 440) − 165) / 11.3
+               and that is the middle term below; the 440 cap is what the
+               24px ceiling stands in for.
+
+               The original spec said 24 on a phone and 30 on a desktop, which
+               "EZ Defect" fitted easily. "EZ Defect Manager" is 2.4x the word
+               and does not: at 30 it is 339px wide against 285px of space,
+               even at the full 440. So 24 is now the ceiling rather than the
+               phone size, and narrow phones scale down from it. The width
+               sweep in tests/harbour.mjs is what holds this honest — change
+               the logo and it fails. */
+            --wm: clamp(14px, calc(8.85vw - 14.6px), 24px);
             position: absolute; right: 0; top: 50%; transform: translateY(-50%);
             display: inline-flex; align-items: center; line-height: 1;
             gap: calc(var(--wm) * .38);
@@ -1968,8 +1986,6 @@
             color: #FFFFFF; font-weight: 400;
             font-size: calc(var(--wm) * 1.17); letter-spacing: .01em;
         }
-        /* Tablet and up. */
-        @media (min-width: 700px) { body.family-harbour .wm-ez { --wm: 30px; } }
         /* On the sky frame the mark inverts: the same two colours, swapped, so
            it reads as the same mark. White "Defect" would be 1.9:1 here. */
         body.theme-harbour-light .wm-badge { background: #1A2F62; color: #90BFE9; }
@@ -3285,7 +3301,7 @@
                 <div class="app-header home-hero">
                     <span class="hero-logo"><img src="creation-homes-logo.png" alt="Creation Homes"
                          onerror="this.closest('.hero-logo').remove()"></span>
-                    <div class="header-title"><span class="wm"><span class="wm-text">Defect Manager</span><span class="wm-ez" role="img" aria-label="EZ Defect"><span class="wm-badge" aria-hidden="true">EZ</span><span class="wm-word" aria-hidden="true">Defect</span></span></span></div>
+                    <div class="header-title"><span class="wm"><span class="wm-text">Defect Manager</span><span class="wm-ez" role="img" aria-label="EZ Defect Manager"><span class="wm-badge" aria-hidden="true">EZ</span><span class="wm-word" aria-hidden="true">Defect Manager</span></span></span></div>
                 </div>
                 <div class="home-container">
                     <div class="section-title">Search Defects</div>
@@ -15925,7 +15941,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17i';
+        const APP_VERSION = '2026-11-17j';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16012,7 +16028,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17i"></script>
+    <script src="cloud-sync.js?v=2026-11-17j"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

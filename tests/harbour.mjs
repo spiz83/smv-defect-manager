@@ -347,10 +347,11 @@ check('Harbour shows the EZ Defect wordmark instead',
   harb.ezShown && !harb.textShown, `text=${harb.textShown} ez=${harb.ezShown}`);
 // Read from the accessibility tree, not from innerText: the question is what
 // a screen reader says, and the hidden text must not be part of it.
-const named = await page.getByRole('img', { name: 'EZ Defect', exact: true }).count();
+const named = await page.getByRole('img', { name: 'EZ Defect Manager', exact: true }).count();
 const snap = await page.locator('.header-title').ariaSnapshot();
 check('…and a screen reader is handed exactly one product name',
-  named === 1 && !/Defect Manager/i.test(snap), `${named} match(es); tree: ${JSON.stringify(snap)}`);
+  named === 1 && (snap.match(/Defect Manager/gi) || []).length === 1,
+  `${named} match(es); tree: ${JSON.stringify(snap)}`);
 
 // --- THE BAR KEEPS ITS HEIGHT. Spiro: "don't alter the height of the little
 //     header section". The badge is taller than the line of type it replaces,
@@ -364,31 +365,54 @@ check('the badge is the sky blue #90BFE9', harb.badgeBg === 'rgb(144, 191, 233)'
 check('"EZ" is the deep navy #1A2F62', harb.badgeFg === 'rgb(26, 47, 98)', harb.badgeFg);
 check('…in Outfit at weight 800',
   /Outfit/.test(harb.font || '') && harb.badgeWeight === '800', `${harb.font} / ${harb.badgeWeight}`);
-check('"Defect" is white at weight 400',
+check('"Defect Manager" is white at weight 400',
   harb.wordFg === 'rgb(255, 255, 255)' && harb.wordWeight === '400',
   `${harb.wordFg} / ${harb.wordWeight}`);
-check('the badge has the 8px-at-size-24 radius', harb.badgeRadius === '5.28px', harb.badgeRadius);
-check('"Defect" keeps its capital D instead of the bar\'s uppercasing',
-  harb.wordText === 'Defect', JSON.stringify(harb.wordText) + ' / ' + harb.wordTransform);
+// Every proportion is derived from --wm, so they are checked as ratios: the
+// mark is fluid now and a fixed pixel figure would be true at one width only.
+const wmPx = parseFloat(harb.badgeSize);
+check('the badge radius stays .22 of the type size',
+  Math.abs(parseFloat(harb.badgeRadius) / wmPx - 0.22) < 0.01,
+  `${harb.badgeRadius} at ${harb.badgeSize}`);
+check('…and "Defect Manager" stays 1.17x the badge',
+  Math.abs(parseFloat(harb.wordSize) / wmPx - 1.17) < 0.01,
+  `${harb.wordSize} at ${harb.badgeSize}`);
+check('the mark reads "EZ Defect Manager", in sentence case not the bar\'s caps',
+  harb.wordText === 'Defect Manager' && harb.wordTransform === 'none',
+  JSON.stringify(harb.wordText) + ' / ' + harb.wordTransform);
 
-// --- sizes: 24 on a phone, 30 from tablet up ---
-check('on a phone the wordmark renders at size 24', harb.badgeSize === '24px', harb.badgeSize);
+// --- the size is fluid, and the sweep is what holds it honest ---
+// "EZ Defect Manager" is 2.4x the word the spec was drawn around, and the app
+// is capped at 440px wide, so the mark scales to the space the Creation Homes
+// panel leaves rather than sitting at a fixed 24/30.
+//
+// NOTE these widths are measured in the FALLBACK face, which is 3.4% wider
+// than Outfit (271px vs 262px at --wm:24, both measured). So every clearance
+// below is a floor: what ships has a little more room, never less.
 const wide = await wm('harbour', 1280);
-check('on a desktop it steps up to size 30', wide.badgeSize === '30px', wide.badgeSize);
+check('the mark tops out at 24, the most that fits the 440px container',
+  wide.badgeSize === '24px', wide.badgeSize);
+check('…and scales down on a phone rather than overlapping the logo',
+  parseFloat(harb.badgeSize) < 24 && parseFloat(harb.badgeSize) > 14,
+  `${harb.badgeSize} at 390px`);
 
-// --- it never wraps or overlaps the logo, at the three widths asked for ---
-for (const width of [320, 390, 1280]) {
+const MIN_GAP = 6;   // px of daylight between the logo panel and the mark
+for (const width of [320, 360, 375, 390, 414, 430, 440, 768, 1280]) {
   const r = await wm('harbour', width);
-  const clearsLogo = r.logo && r.ez && r.ez.x >= r.logo.r;
+  const plain = await wm('framework', width);
+  const gap = r.logo && r.ez ? r.ez.x - r.logo.r : null;
   const oneLine = r.ez && r.ez.h <= Math.round(parseFloat(r.badgeSize) * 1.6);
   const insideBar = r.ez && r.hdrBox && r.ez.r <= r.hdrBox.r && r.ez.y >= r.hdrBox.y - 1 && r.ez.b <= r.hdrBox.b + 1;
-  console.log(`@${width}px  logo ${JSON.stringify(r.logo)}  wordmark ${JSON.stringify(r.ez)}  bar ${r.headerH}px`);
-  check(`@${width}px the wordmark clears the logo`, clearsLogo,
-    r.logo && r.ez ? `logo ends ${r.logo.r}, wordmark starts ${r.ez.x}` : 'missing element');
+  console.log(`@${width}px  --wm ${r.badgeSize}  mark ${r.ez && r.ez.w}px  gap ${gap}px  bar ${r.headerH}px`);
+  check(`@${width}px the mark clears the logo`, gap != null && gap >= MIN_GAP,
+    gap == null ? 'missing element' : `${gap}px of daylight`);
   check(`@${width}px it stays on one line`, oneLine, r.ez && `${r.ez.h}px tall`);
   check(`@${width}px it stays inside the bar`, insideBar,
-    r.ez && r.hdrBox ? `wordmark ${r.ez.y}-${r.ez.b} / ${r.ez.r}, bar ${r.hdrBox.y}-${r.hdrBox.b} / ${r.hdrBox.r}` : 'missing');
+    r.ez && r.hdrBox ? `mark ${r.ez.y}-${r.ez.b} / ${r.ez.r}, bar ${r.hdrBox.y}-${r.hdrBox.b} / ${r.hdrBox.r}` : 'missing');
+  check(`@${width}px the bar is the same height as every other theme's`,
+    r.headerH === plain.headerH, `${r.headerH}px vs ${plain.headerH}px`);
 }
+await wm('harbour', 390);
 
 // --- the light sibling carries the same mark, inverted ---
 // White "Defect" on the sky frame is 1.9:1. The mark keeps both brand colours
@@ -399,7 +423,7 @@ check('[harbour-light] the wordmark is there too', lightWm.ezShown && !lightWm.t
 check('…with the navy and sky swapped on the light frame',
   lightWm.badgeBg === 'rgb(26, 47, 98)' && lightWm.badgeFg === 'rgb(144, 191, 233)',
   `badge ${lightWm.badgeBg} / EZ ${lightWm.badgeFg}`);
-check('…and "Defect" in navy rather than white',
+check('…and the words in navy rather than white',
   lightWm.wordFg === 'rgb(16, 39, 61)', lightWm.wordFg);
 check('…at the same size and in the same face as the dark one',
   lightWm.badgeSize === harb.badgeSize && lightWm.font === harb.font,
