@@ -10397,24 +10397,44 @@
                 // costs nothing and saves a trip to another screen.
                 const book = Array.isArray(cp.book) ? cp.book : [];
                 const manySubs = new Set(book.map(b => b.name)).size > 1;
+                // TICK WHAT YOU ARE SENDING TO (Spiro 2026-11-17): "do a check
+                // box where you can select which email address to copy."
+                // Only the FIRST is ticked to begin with — the directory's
+                // general address, which is the one the app would have used on
+                // its own. Ticking everything by default would quietly put a
+                // call-up inbox, or an address saved on the contractor that
+                // happens to be a colleague's, into the To field of an email
+                // going out to a trade.
+                const picked = new Set(book.length ? [0] : []);
                 const rowCss = 'display:flex;align-items:center;gap:9px;padding:9px 11px;'
                     + 'border-top:1px solid var(--border-color,#e6e6e6);cursor:pointer;';
+                // Outlook's To field splits on SEMICOLONS. Spiro 2026-11-17:
+                // "when it copies make sure it can be pasted directly into
+                // Outlook." A comma list pastes as one malformed recipient
+                // there. Apple Mail accepts semicolons too, so this is the one
+                // separator that works in both rather than a trade-off.
+                const joinForMail = (list) => list.join('; ');
+                const bookRows = () => book.map((b, i) => {
+                    const on = picked.has(i);
+                    return `
+                        <div class="sh-addr" data-i="${i}" data-e="${_escHtml(b.email)}" style="${rowCss}">
+                            <span class="sh-box" style="flex:0 0 auto;width:21px;height:21px;border-radius:5px;border:1.5px solid ${on ? 'var(--blue,#2563eb)' : 'var(--border-color,#bbb)'};background:${on ? 'var(--blue,#2563eb)' : 'transparent'};color:#fff;font-size:13px;line-height:19px;text-align:center;">${on ? '✓' : ''}</span>
+                            <span style="flex:1;min-width:0;">
+                                <span style="display:block;font-size:13.5px;color:var(--text-primary,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_escHtml(b.email)}</span>
+                                <span style="display:block;font-size:11px;color:var(--text-secondary,#888);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_escHtml(manySubs ? b.name + ' · ' + b.src : b.src)}</span>
+                            </span>
+                            <span class="sh-one" title="Copy just this address" style="flex:0 0 auto;font-size:15px;opacity:.75;padding:2px 2px 2px 8px;">📋</span>
+                        </div>`;
+                }).join('');
                 const bookHtml = book.length ? `
-                    <div style="margin-bottom:12px;border:1px solid var(--border-color,#ddd);border-radius:10px;overflow:hidden;">
+                    <div id="sh-book" style="margin-bottom:12px;border:1px solid var(--border-color,#ddd);border-radius:10px;overflow:hidden;">
                         <div style="display:flex;align-items:center;gap:8px;padding:7px 11px;background:var(--bg-secondary,#f3f3f3);">
                             <span style="flex:1;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--text-secondary,#777);">
                                 Send to · ${book.length} address${book.length === 1 ? '' : 'es'}
                             </span>
-                            ${book.length > 1 ? `<button class="sh-copyall" style="border:1px solid var(--border-color,#ccc);background:transparent;color:inherit;border-radius:7px;padding:4px 9px;font-size:12px;font-weight:700;cursor:pointer;">Copy all</button>` : ''}
+                            <button class="sh-copysel" style="border:1px solid var(--blue,#2563eb);background:transparent;color:var(--blue,#2563eb);border-radius:7px;padding:4px 10px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">Copy 1</button>
                         </div>
-                        ${book.map(b => `
-                            <div class="sh-addr" data-e="${_escHtml(b.email)}" style="${rowCss}">
-                                <span style="flex:1;min-width:0;">
-                                    <span style="display:block;font-size:13.5px;color:var(--text-primary,#111);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_escHtml(b.email)}</span>
-                                    <span style="display:block;font-size:11px;color:var(--text-secondary,#888);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_escHtml(manySubs ? b.name + ' · ' + b.src : b.src)}</span>
-                                </span>
-                                <span style="flex:0 0 auto;font-size:15px;opacity:.75;">📋</span>
-                            </div>`).join('')}
+                        <div id="sh-rows">${bookRows()}</div>
                     </div>` : `
                     <div style="margin-bottom:12px;padding:9px 11px;border:1px dashed var(--border-color,#ccc);border-radius:10px;font-size:12.5px;color:var(--text-secondary,#888);line-height:1.45;">
                         No address on file for this supplier — type it into Mail, and add it on the supplier so it is here next time.
@@ -10433,15 +10453,40 @@
                         writeToClipboard(cp[k], '📋 Subject copied');
                     };
                 });
-                // One address, or all of them comma-joined — which is what Mail's
-                // To field accepts in a single paste.
-                document.querySelectorAll('#imp-ov .sh-addr').forEach(r => {
-                    r.onclick = () => writeToClipboard(r.getAttribute('data-e') || '', '📋 Address copied');
-                });
-                const copyAll = document.querySelector('#imp-ov .sh-copyall');
-                if (copyAll) copyAll.onclick = () => writeToClipboard(
-                    book.map(b => b.email).join(', '),
-                    `📋 ${book.length} addresses copied`);
+                // Tap the row to tick it; tap the 📋 to copy that one address on
+                // its own without disturbing the selection.
+                const paintBook = () => {
+                    const rows = document.getElementById('sh-rows');
+                    if (rows) rows.innerHTML = bookRows();
+                    const btn = document.querySelector('#imp-ov .sh-copysel');
+                    if (btn) {
+                        btn.textContent = picked.size ? `Copy ${picked.size}` : 'Copy';
+                        btn.style.opacity = picked.size ? '1' : '.45';
+                    }
+                    wireBook();
+                };
+                const wireBook = () => {
+                    document.querySelectorAll('#imp-ov .sh-addr').forEach(r => {
+                        const i = Number(r.getAttribute('data-i'));
+                        r.onclick = (ev) => {
+                            if (ev.target && ev.target.closest('.sh-one')) {
+                                ev.stopPropagation();
+                                writeToClipboard(r.getAttribute('data-e') || '', '📋 Address copied');
+                                return;
+                            }
+                            if (picked.has(i)) picked.delete(i); else picked.add(i);
+                            paintBook();
+                        };
+                    });
+                };
+                wireBook();
+                const copySel = document.querySelector('#imp-ov .sh-copysel');
+                if (copySel) copySel.onclick = () => {
+                    if (!picked.size) { showToast('Tick an address first', true); return; }
+                    const list = book.filter((_, i) => picked.has(i)).map(b => b.email);
+                    writeToClipboard(joinForMail(list),
+                        `📋 ${list.length} address${list.length === 1 ? '' : 'es'} copied — paste into To`);
+                };
                 let done = false;
                 const finish = (v) => { if (done) return; done = true; impClose(); resolve(v); };
                 const x = document.getElementById('imp-close');
@@ -15482,7 +15527,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17d';
+        const APP_VERSION = '2026-11-17e';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -15569,7 +15614,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17d"></script>
+    <script src="cloud-sync.js?v=2026-11-17e"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -116,17 +116,28 @@ const sheet = await page.evaluate(async () => {
   const rows = [...document.querySelectorAll('#imp-ov .sh-addr')];
   const head = (document.querySelector('#imp-ov #imp-body') || {}).textContent || '';
   const out = {
+    defaultTicks: [...document.querySelectorAll('#imp-ov .sh-box')].map(b => b.textContent.trim() === '\u2713'),
+    defaultBtn: (document.querySelector('#imp-ov .sh-copysel') || {}).textContent,
     rows: rows.length,
     emails: rows.map(r => r.getAttribute('data-e')),
     shownText: rows.map(r => r.textContent.replace(/\s+/g, ' ').trim()),
-    hasCopyAll: !!document.querySelector('#imp-ov .sh-copyall'),
+    hasCopySel: !!document.querySelector('#imp-ov .sh-copysel'),
     countedInHeader: /\d+ addresses/.test(head),
     stillHasAttach: !!document.getElementById('sh-go'),
     stillHasSubject: !!document.querySelector('#imp-ov .sh-copy'),
   };
-  rows[0].click();                                    // copy one
-  document.querySelector('#imp-ov .sh-copyall').click();   // copy all
-  await new Promise(r => setTimeout(r, 30));          // writeText resolves async
+  // Tick a second address, then copy the selection.
+  rows[1].click();
+  document.querySelector('#imp-ov .sh-copysel').click();
+  await new Promise(r => setTimeout(r, 30));
+  out.afterTick = {
+    ticks: [...document.querySelectorAll('#imp-ov .sh-box')].map(b => b.textContent.trim() === '\u2713'),
+    btn: (document.querySelector('#imp-ov .sh-copysel') || {}).textContent,
+  };
+  // The 📋 on a row copies that one address and must NOT change the selection.
+  [...document.querySelectorAll('#imp-ov .sh-addr')][2].querySelector('.sh-one').click();
+  await new Promise(r => setTimeout(r, 30));
+  out.afterOne = [...document.querySelectorAll('#imp-ov .sh-box')].map(b => b.textContent.trim() === '\u2713');
   out.copied = copied.slice();
   impClose();
   return out;
@@ -141,10 +152,28 @@ check('…and, across several suppliers, whose it is',
   sheet.shownText.some(t => /Shera/i.test(t)) && sheet.shownText.some(t => /Matthew/i.test(t)),
   JSON.stringify(sheet.shownText));
 check('the header counts them', sheet.countedInHeader === true, String(sheet.countedInHeader));
-check('tapping an address copies just that one',
-  sheet.copied[0] === book[0].email, JSON.stringify(sheet.copied[0]));
-check('Copy all gives a comma list Mail will take in one paste',
-  sheet.copied[1] === book.map(b => b.email).join(', '), JSON.stringify(sheet.copied[1]));
+// ---- the tick boxes -------------------------------------------------------
+check('only the first address is ticked to start',
+  JSON.stringify(sheet.defaultTicks) === JSON.stringify(book.map((_, i) => i === 0)),
+  JSON.stringify(sheet.defaultTicks));
+check('…which is the one the app would have sent to on its own',
+  book[0].email === 'defects@shera.com.au', book[0].email);
+check('…and the button counts the ticks', /Copy 1/.test(sheet.defaultBtn || ''), sheet.defaultBtn);
+check('tapping a row ticks it',
+  sheet.afterTick.ticks[0] === true && sheet.afterTick.ticks[1] === true,
+  JSON.stringify(sheet.afterTick.ticks));
+check('…and the count follows', /Copy 2/.test(sheet.afterTick.btn || ''), sheet.afterTick.btn);
+// THE POINT OF THE WHOLE THING: what lands on the clipboard has to paste into
+// Outlook's To field as separate recipients, which means SEMICOLONS.
+check('the copy is semicolon-separated, which is what Outlook splits on',
+  sheet.copied[0] === `${book[0].email}; ${book[1].email}`, JSON.stringify(sheet.copied[0]));
+check('…and only the ticked ones are in it',
+  !sheet.copied[0].includes(book[2].email), JSON.stringify(sheet.copied[0]));
+check('the row 📋 copies that one address by itself',
+  sheet.copied[1] === book[2].email, JSON.stringify(sheet.copied[1]));
+check('…without changing what is ticked',
+  JSON.stringify(sheet.afterOne) === JSON.stringify(sheet.afterTick.ticks),
+  JSON.stringify(sheet.afterOne));
 check('the Attach button is still there — this is an addition, not a replacement',
   sheet.stillHasAttach === true, String(sheet.stillHasAttach));
 check('…and so is the Subject chip', sheet.stillHasSubject === true, String(sheet.stillHasSubject));
