@@ -233,6 +233,16 @@ for (const theme of ['default', 'modern', 'f1']) {
       // The old app-icon badge must not come back alongside it.
       badge: getComputedStyle(h, '::before').content,
       fitsWidth: !!(I && T) && T.right <= H.right + 1,
+      // THE LOGO MUST NOT MAKE THE BAR TALLER. Spiro 2026-11-17: "don't alter
+      // the height of the little header section, it needs to fit in there so
+      // the screen is the main focus." A hero's height is its padding plus its
+      // tallest child, so a logo even a few px above the title's line box
+      // steals those px from the list below it — on every screen, forever.
+      // Measured by hiding the logo and re-reading, not assumed.
+      withLogo: Math.round(H.height),
+      noLogo: (() => { const d = img.style.display; img.style.display = 'none';
+                       const n = h.getBoundingClientRect().height;
+                       img.style.display = d; return Math.round(n); })(),
     };
   }, theme);
   console.log(`\n--- home masthead · ${theme} ---`);
@@ -249,6 +259,8 @@ for (const theme of ['default', 'modern', 'f1']) {
   check(`[${theme}] …and not pushed off the right edge`, hero.fitsWidth === true, JSON.stringify(hero));
   check(`[${theme}] no second mark beside it`,
     !/url\(/.test(hero.badge || ''), hero.badge);
+  check(`[${theme}] …and the logo costs the header NO extra height`,
+    hero.withLogo === hero.noLogo, `${hero.noLogo}px without → ${hero.withLogo}px with`);
 }
 await page.evaluate(() => {
   document.body.classList.remove('design-modern', 'design-f1');

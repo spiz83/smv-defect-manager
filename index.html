@@ -144,12 +144,19 @@
            that hero a different colour. */
         .app-header.home-hero .hero-logo {
             flex: 0 0 auto;
-            height: 30px;
+            /* THE HEADER MUST NOT GET TALLER (Spiro 2026-11-17): "don't alter
+               the height of the little header section, it needs to fit in
+               there so the screen is the main focus."
+               The hero's height is its padding plus its TALLEST child. The
+               title's line box is 25px, so anything up to 25px rides along for
+               free and 30px pushed the bar 5px taller. Sized to the line box,
+               not to what the logo would like to be. */
+            height: 25px;
             width: auto;
             background: #fff;
-            border-radius: 7px;
-            padding: 4px 7px;
-            box-shadow: 0 2px 8px rgba(0,0,0,.18);
+            border-radius: 5px;
+            padding: 2px 5px;
+            box-shadow: 0 1px 5px rgba(0,0,0,.18);
         }
         /* At 390px the logo plus 900-weight italic caps is a tight fit, and a
            masthead that wraps to two lines looks like a mistake. Let the words
@@ -15373,7 +15380,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17a';
+        const APP_VERSION = '2026-11-17b';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -15460,7 +15467,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17a"></script>
+    <script src="cloud-sync.js?v=2026-11-17b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
