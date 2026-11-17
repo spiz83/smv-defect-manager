@@ -2051,6 +2051,39 @@
     const d = (db.data.defects || []).find(x => String(x.id) === String(legacyDefectId));
     return d ? (idMap.addresses[d.addressId] || null) : null;
   }
+  // The same hardening resolveDefectUuid got, and for the same reason — this
+  // one was missed, and it is the more damaging of the two.
+  //
+  // A photo's storage path starts with its JOB's uuid, and the bucket policy
+  // checks that folder against the jobs you may write to. The lookup above is
+  // purely local: it needs the defect to still be in db.data AND the job to be
+  // in idMap.addresses. Either can be missing — a pull skipped while dirty, a
+  // defect pulled fresh under a new local id, a map not yet rebuilt after a
+  // reinstall. When it came back null the path quietly fell back to the defect
+  // uuid, which is not a job folder, so storage rejected every attempt with
+  // "new row violates row-level security policy".
+  //
+  // Nothing about that is retryable: the map does not heal by trying the
+  // upload again, so the photos sat there through every sweep, forever, while
+  // the pill said it was retrying. Ask the server, which always knows.
+  async function resolveJobUuidForDefect(legacyDefectId, defectUuid) {
+    const local = jobUuidForDefect(legacyDefectId);
+    if (local) return local;
+    if (!defectUuid) return null;
+    try {
+      const { data } = await withTimeout(
+        sb.from('dm_defects').select('job_id').eq('id', defectUuid).maybeSingle(),
+        20000, 'job lookup');
+      if (data && data.job_id) {
+        // Cache it the way resolveDefectUuid does, so the next photo on this
+        // job skips the round trip.
+        const d = (db.data.defects || []).find(x => String(x.id) === String(legacyDefectId));
+        if (d && d.addressId != null) idMap.addresses[d.addressId] = data.job_id;
+        return data.job_id;
+      }
+    } catch (e) { /* offline / not found — fall through */ }
+    return null;
+  }
 
   // Resolve a defect's cloud uuid: prefer the local id map, but fall back to a
   // direct DB lookup by legacy_id. The map can be stale (a pull was skipped
@@ -2157,7 +2190,7 @@
     // First path folder is the job uuid when we can resolve it (keeps photos
     // grouped per job), otherwise the defect uuid — we no longer BLOCK on a
     // missing job mapping (the bucket RLS no longer requires it).
-    const jobUuid = jobUuidForDefect(legacyId);
+    const jobUuid = await resolveJobUuidForDefect(legacyId, uuid);
     const folder1 = jobUuid || uuid;
     if (!quiet) photoProgStart();
     // Compress, but NEVER lose the photo over a compression hiccup — fall back
@@ -2214,7 +2247,10 @@
   async function deleteAllPhotosForDefect(legacyId) {
     const uuid = idMap.defects[legacyId];
     if (uuid) {
-      const folder1 = jobUuidForDefect(legacyId) || uuid;
+      // Same lookup as the upload, for the same reason: a stale map here does
+      // not fail loudly, it just cleans the wrong folder and leaves the real
+      // files behind.
+      const folder1 = (await resolveJobUuidForDefect(legacyId, uuid)) || uuid;
       const prefix = `${folder1}/${uuid}`;
       const { data: list } = await sb.storage.from(PHOTO_BUCKET).list(prefix);
       if (list && list.length) {
@@ -2752,16 +2788,62 @@
           ? `📸 ${n} photo${n > 1 ? 's' : ''} waiting · tap to see why`
           : `📸 ${n} photo${n > 1 ? 's' : ''} uploading…`);
   }
-  // One sentence a supervisor can act on, or repeat to someone who can.
+  // Which jobs the stuck photos belong to, so the message can name them
+  // instead of leaving the user to guess which of 56 jobs it means. Filled by
+  // the sweep, which is already walking the outbox.
+  let stuckPhotoJobs = [];
+  function jobLabelForDefect(legacyDefectId) {
+    const d = (db.data.defects || []).find(x => String(x.id) === String(legacyDefectId));
+    if (!d) return null;
+    const a = (db.data.addresses || []).find(x => String(x.id) === String(d.addressId));
+    if (!a) return null;
+    return a.street || a.streetName || (a.lot ? ('Lot ' + a.lot) : null);
+  }
+
+  // Turn whatever the server said into something a supervisor standing in a
+  // house can act on. The raw text is kept at the end for whoever they forward
+  // it to, but it is no longer the whole message: "new row violates row-level
+  // security policy" told Spiro nothing he could do (2026-11-17).
+  function explainPhotoError(raw) {
+    const m = String(raw || '');
+    if (/row-level security|not authorized|permission denied|\b403\b/i.test(m))
+      return { what: 'the server would not take them for this job',
+               fix: 'Usually your account has lost access to that job. Pull down to refresh first. If it still says this, the photos are safe — send this screen to whoever set up your login.',
+               stuck: true };
+    if (/jwt|token|expired|\b401\b/i.test(m))
+      return { what: 'your login has expired',
+               fix: 'Sign out and sign back in. The photos stay on the phone while you do.',
+               stuck: true };
+    if (/too large|\b413\b|exceeded|quota|storage limit/i.test(m))
+      return { what: 'the server refused the file size',
+               fix: 'Tell whoever manages the app — this one needs fixing at their end.',
+               stuck: true };
+    if (/has not synced yet/i.test(m))
+      return { what: 'the defect they belong to has not reached the cloud yet',
+               fix: 'They go up on their own once it does, usually within a minute of signal.',
+               stuck: false };
+    if (/timeout|network|fetch|failed to fetch/i.test(m))
+      return { what: 'the connection dropped partway',
+               fix: 'It keeps trying on its own — nothing to do.', stuck: false };
+    return { what: m, fix: 'It keeps trying on its own.', stuck: false };
+  }
+
+  // One or two sentences a supervisor can act on, or repeat to someone who can.
   function photoWaitingReason() {
     const n = photosWaiting;
+    const ph = `${n} photo${n > 1 ? 's' : ''}`;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      return `${n} photo${n > 1 ? 's' : ''} saved on this phone. They upload by themselves as soon as you have signal — nothing is lost if you close the app.`;
+      return `${ph} saved on this phone. They upload by themselves as soon as you have signal — nothing is lost if you close the app.`;
     }
     if (!lastPhotoError) {
-      return `${n} photo${n > 1 ? 's' : ''} uploading now. They are already saved on this phone, so nothing is lost either way.`;
+      return `${ph} uploading now. They are already saved on this phone, so nothing is lost either way.`;
     }
-    return `${n} photo${n > 1 ? 's' : ''} still on this phone. Last attempt: ${lastPhotoError}. It keeps retrying by itself; the photos are safe on the phone meanwhile.`;
+    const e = explainPhotoError(lastPhotoError);
+    const where = stuckPhotoJobs.length
+      ? ` (${stuckPhotoJobs.slice(0, 3).join(', ')}${stuckPhotoJobs.length > 3 ? ` and ${stuckPhotoJobs.length - 3} more` : ''})`
+      : '';
+    return `${ph} still on this phone${where} — ${e.what}. ${e.fix}`
+         + (e.stuck ? `\n\nTechnical detail: ${lastPhotoError}` : '');
   }
 
   // Upload every persisted pending photo whose defect now has a cloud uuid.
@@ -2780,6 +2862,7 @@
       let items = [];
       try { items = await pendingAll(); } catch (e) { return; }
       await refreshPendingCounts();
+      const failedJobs = new Set();
       for (const it of items) {
         try {
           // Pass the outbox key so the storage path is deterministic (retry-safe).
@@ -2792,9 +2875,10 @@
             ? await uploadTempPhoto(it.legacyId, it.blob, it.key)
             : await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays);
           if (ok) { delete photoFailCounts[it.key]; lastPhotoError = ''; await pendingDelete(it.key); await refreshPendingCounts(); }
-          else photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1;
-        } catch (e) { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; /* leave it queued; next sweep retries */ }
+          else { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; failedJobs.add(jobLabelForDefect(it.legacyId) || ''); }
+        } catch (e) { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; failedJobs.add(jobLabelForDefect(it.legacyId) || ''); }
       }
+      stuckPhotoJobs = [...failedJobs].filter(Boolean);
     } finally {
       sweepingPhotos = false;
       try { await refreshPendingCounts(); } catch (e) {}
@@ -4302,6 +4386,11 @@
       updatePendingBanner: (n) => updatePendingBanner(n),
       photoWaitingReason: () => photoWaitingReason(),
       setPhotoError: (m) => { lastPhotoError = String(m || ''); },
+      // Both halves of the job lookup, so a test can show the difference
+      // between them rather than take the fallback on trust.
+      jobFolderLocalOnly: (legacyId) => jobUuidForDefect(legacyId),
+      jobFolderFor: (legacyId, uuid) => resolveJobUuidForDefect(legacyId, uuid),
+      setStuckJobs: (a) => { stuckPhotoJobs = Array.isArray(a) ? a : []; },
     },
   };
 

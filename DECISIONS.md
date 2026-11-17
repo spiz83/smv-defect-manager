@@ -3338,3 +3338,47 @@ Those widths are measured in the fallback face, since the harness stubs the
 font request. Outfit is 3.4% narrower (262px vs 271px at size 24, both
 measured), so every clearance the suite reports is a floor rather than an
 estimate.
+
+## Photos that could never upload, and a pill that said to wait (2026-11-17, `2026-11-17k`)
+
+Spiro, on the message "7 photos still on this phone. Last attempt: new row
+violates row-level security policy. It keeps retrying by itself": "what am
+I supposed to do with info what photo how do I fix".
+
+Two failures. The message was the smaller one.
+
+**The bug.** A photo's storage path starts with its JOB's uuid, and the
+bucket policy checks that first folder against the jobs the user may write
+to. `jobUuidForDefect` built it from local state only: it needed the defect
+to still be in `db.data.defects` AND its job to be in `idMap.addresses`.
+Either can be missing — a pull skipped while dirty, a defect pulled fresh
+under a new local id, a map not yet rebuilt after a reinstall. When it
+returned null the path fell back to the DEFECT uuid, which is not a job
+folder, and storage rejected it.
+
+`resolveDefectUuid` had already been hardened against this exact class of
+staleness, with a comment saying so. This lookup, two functions above it,
+had been missed.
+
+The damage was worse than a failed upload: **nothing about it was
+retryable.** The id map does not heal by attempting the upload again, so
+those photos sat in the outbox through every sweep, forever, while the pill
+promised they were being retried. It now asks the server, which always
+knows, and caches the answer so a job with forty photos costs one round
+trip. The delete path had the same lookup and the same staleness — there it
+failed silently, cleaning the wrong folder and orphaning the real files.
+
+**The message.** "It keeps retrying by itself" was true and useless;
+retrying cannot repair a stale map. The raw Postgres text named nothing the
+user owned, no job out of the 56 on his screen, and no action. Now each
+error shape is translated to what happened and what to do, the stuck jobs
+are named, and the server's own words are kept at the end for whoever the
+screenshot gets forwarded to. Only genuinely transient failures still say
+"nothing to do".
+
+**Caveat worth keeping.** This fixes the mechanical cause — a path built
+from stale local state. If a supervisor's account has genuinely lost access
+to a job, the upload will still be refused, correctly, and the message now
+says so and tells them who to ask. The seven photos on Spiro's phone should
+clear on their own once he opens the app on this build; if they do not, it
+is the second case and the account needs looking at.
