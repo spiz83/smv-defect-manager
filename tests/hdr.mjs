@@ -227,12 +227,14 @@ for (const theme of ['default', 'modern', 'f1']) {
       hasLogo: !!img,
       src: mark ? (mark.getAttribute('src') || '') : '',
       chip: cs ? cs.backgroundColor : '',
-      logoLeftOfTitle: !!(I && T) && I.right <= T.left + 1,
+      // Swapped 2026-11-17 (Spiro): the mark leads, the logo closes the bar.
+      logoRightOfTitle: !!(I && T) && I.left >= T.right - 1,
       titleCentre: T ? Math.round(T.x + T.width / 2) : 0,
       pageCentre: Math.round(H.width / 2),
       // "No blue background around the logo" — the panel has to reach the top,
       // bottom and left edges of the bar, not float inside its padding.
       panelLeft: I ? Math.round(I.x - H.x) : -1,
+      panelRight: I ? Math.round(H.right - I.right) : -1,
       panelTop: I ? Math.round(I.y - H.y) : -1,
       panelCoversHeight: !!I && I.height >= H.height - 1.5,
       titleLines: title ? title.getClientRects().length : 0,
@@ -258,11 +260,11 @@ for (const theme of ['default', 'modern', 'f1']) {
     /creation-homes-logo\.png/.test(hero.src), hero.src);
   check(`[${theme}] …on a white chip, so dark artwork survives a coloured hero`,
     /255,\s*255,\s*255/.test(hero.chip || ''), hero.chip);
-  check(`[${theme}] …to the LEFT of the title`, hero.logoLeftOfTitle === true, JSON.stringify(hero));
-  check(`[${theme}] the title is pushed hard right`,
-    hero.titleCentre > hero.pageCentre + 50, `title ${hero.titleCentre} vs centre ${hero.pageCentre}`);
-  check(`[${theme}] the white panel reaches the left edge — no blue beside it`,
-    hero.panelLeft === 0, `${hero.panelLeft}px from the edge`);
+  check(`[${theme}] …to the RIGHT of the title`, hero.logoRightOfTitle === true, JSON.stringify(hero));
+  check(`[${theme}] the title is pushed hard left`,
+    hero.titleCentre < hero.pageCentre - 50, `title ${hero.titleCentre} vs centre ${hero.pageCentre}`);
+  check(`[${theme}] the white panel reaches the right edge — no colour beside it`,
+    hero.panelRight === 0, `${hero.panelRight}px from the edge`);
   check(`[${theme}] …and the top`, hero.panelTop === 0, `${hero.panelTop}px from the top`);
   check(`[${theme}] …and runs the full height, so no blue above or below it`,
     hero.panelCoversHeight === true, JSON.stringify(hero));

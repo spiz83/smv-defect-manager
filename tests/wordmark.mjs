@@ -154,7 +154,11 @@ for (const t of themes) {
 //
 // (WCAG exempts text that is part of a logo from contrast limits. That is
 // true here and is deliberately not leaned on: the floor below is stricter.)
-const GRADIENT_LIMITED = ['alpine', 'haas', 'powershell'];
+// Re-derived after the masthead swap (Spiro 2026-11-17). The mark moved to
+// the leading edge, the hero gradient was mirrored to follow it, and which
+// palettes the bar defeats moved with it: Terminal came good (3.98 -> 5.04)
+// and Papaya fell just short (4.82 -> 4.22). Still three, not the same three.
+const GRADIENT_LIMITED = ['mclaren', 'alpine', 'haas'];
 const limited = [];
 for (const [id, r] of Object.entries(results)) {
   if (r.note) { check(`[${id}] the mark renders`, false, r.note); continue; }

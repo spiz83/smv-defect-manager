@@ -404,9 +404,11 @@ const MIN_GAP = 6;   // px of daylight between the logo panel and the mark
 for (const width of [320, 360, 375, 390, 414, 430, 440, 768, 1280]) {
   const r = await wm('harbour', width);
   const plain = await wm('framework', width);
-  const gap = r.logo && r.ez ? r.ez.x - r.logo.r : null;
+  // The mark leads and the logo closes the bar, so the daylight is measured
+  // the other way round now (Spiro swapped them, 2026-11-17).
+  const gap = r.logo && r.ez ? r.logo.x - r.ez.r : null;
   const oneLine = r.ez && r.ez.h <= Math.round(parseFloat(r.badgeSize) * 1.6);
-  const insideBar = r.ez && r.hdrBox && r.ez.r <= r.hdrBox.r && r.ez.y >= r.hdrBox.y - 1 && r.ez.b <= r.hdrBox.b + 1;
+  const insideBar = r.ez && r.hdrBox && r.ez.x >= r.hdrBox.x - 1 && r.ez.y >= r.hdrBox.y - 1 && r.ez.b <= r.hdrBox.b + 1;
   console.log(`@${width}px  --wm ${r.badgeSize}  mark ${r.ez && r.ez.w}px  gap ${gap}px  bar ${r.headerH}px`);
   check(`@${width}px the mark clears the logo`, gap != null && gap >= MIN_GAP,
     gap == null ? 'missing element' : `${gap}px of daylight`);

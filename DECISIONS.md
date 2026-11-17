@@ -3532,3 +3532,63 @@ on a loop. It presents as "working on it" for ever. `resolveDefectUuid` was
 hardened against it, then `jobUuidForDefect` was found with the same hole,
 and now `commitDefect`. Any `if (!someMap[x]) return;` inside a retry loop
 is this bug waiting to happen.
+
+## The sync audit, and the masthead swap (2026-11-17, `2026-11-17q`)
+
+### The audit
+
+I offered to go looking for more instances of the shape rather than wait
+for each to surface; Spiro said go. The shape: **a lookup that reads only
+local state, fails silently, and sits inside a loop that retries for ever.**
+It presents as "working on it" indefinitely, because retrying is exactly
+what cannot help.
+
+Found and fixed:
+
+- **`commitDefect`'s contractor guard.** Identical to the job bug one map
+  over. Deferring an assigned defect whose contractor is unmapped is
+  *correct* — writing would resolve the contractor to NULL and wipe the
+  assignment, the bug that nulled every contractor on 2026-06-21 — but the
+  defer was permanent, so an assigned defect could sit in the outbox for
+  ever with its photos behind it. It now asks the server first, with no
+  `is_active` filter, for the same reason jobs carry no status filter: a
+  contractor hidden from the picker is a display decision, and a defect
+  already assigned to them still has to upload.
+  Its recovery had the same `if (!Object.keys(idMap.contractors).length)`
+  trigger as the jobs one — a map holding forty rows but missing the one
+  you need never fired it.
+- **`CloudReports.add` / `fileForAddress`** took `idMap.addresses[...] ||
+  null` and carried on. A report filed under a null job is invisible to
+  everyone looking at that job. Both resolve properly now.
+
+Checked and deliberately left: the `idMap.defects[...]` reads in the
+read-only paths (`photosFor`, gallery) return empty rather than wrong, and
+`resolveDefectUuid` already has its fallback.
+
+### The masthead swap
+
+Spiro: "might be best to swap over so EZ defect manager is to the left and
+company logo to the right… Change for all." Done by reordering the DOM
+rather than with CSS `order`, so what a screen reader reads matches what
+is on screen, and the product's own mark leads.
+
+**It cost five palettes their contrast, and only the pixel test noticed.**
+The hero gradient ran `135deg` — accent at top-left, darkened accent at
+bottom-right — so a mark on the RIGHT got the dark end for free. Moving it
+left put it on the bright end: Teal Carbon fell 5.87 → 2.12, Titanium
+3.87 → 2.57, Horizon 6.00 → 2.16.
+
+The fix is to mirror the gradient to `225deg` rather than re-tint fifteen
+palettes to cope. Same two stops, same colours, reversed: the accent now
+pools at the top-right behind the Creation Homes panel, and the dark end
+falls under the mark where it was before. It reads better too — the brand
+colour gathering behind the logo rather than trailing away from it.
+
+Which palettes the bar defeats moved with it, and the asserted list moved
+with that: Terminal came good (3.98 → 5.04) and Papaya fell just short
+(4.82 → 4.22). Still three, not the same three — `mclaren, alpine, haas`.
+The keylines were re-derived the same way: Teal Carbon and Horizon needed
+one at the new position, Terminal no longer does but keeps it harmlessly.
+
+None of this would have been visible to a token-based contrast check. The
+tokens did not change; where the type sits on the gradient did.

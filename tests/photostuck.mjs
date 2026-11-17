@@ -38,6 +38,7 @@ const server = http.createServer((q, r) => {
 await new Promise(r => server.listen(PORT, r));
 
 const JOB_UUID = 'aaaaaaaa-0000-4000-8000-000000000001';
+const CON_UUID = 'cccccccc-0000-4000-8000-000000000003';
 const DEF_UUID = 'bbbbbbbb-0000-4000-8000-000000000002';
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
@@ -54,7 +55,7 @@ await ctx.route('**', route => {
 const errs = [];
 page.on('pageerror', e => errs.push(String(e).slice(0, 240)));
 
-await page.addInitScript(([JOB_UUID, DEF_UUID]) => {
+await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
   // One job, one defect on it. The id map is left EMPTY, which is the stale
   // state the bug needs — and the state any fresh boot is in before a pull.
   localStorage.setItem('defectTrackerDB', JSON.stringify({
@@ -76,7 +77,7 @@ await page.addInitScript(([JOB_UUID, DEF_UUID]) => {
     p.single = () => Promise.resolve({ data: (rows && rows[0]) || null, error: null });
     return p;
   };
-  window.__jobsFetches = 0;
+  window.__jobsFetches = 0; window.__conFetches = 0;
   const table = (name) => ({
     // The server always knows which job a defect belongs to. That is the whole
     // point of the fallback.
@@ -84,6 +85,13 @@ await page.addInitScript(([JOB_UUID, DEF_UUID]) => {
       if (name === 'dm_defects' && String(cols).includes('job_id')) {
         window.__dmJobLookups++;
         return chain([{ job_id: JOB_UUID }]);
+      }
+      if (name === 'dm_contractors' && String(cols).includes('legacy_id')) {
+        window.__conFetches++;
+        // Inactive on purpose: a contractor hidden from the picker is a
+        // display decision, and a defect already assigned to them still has
+        // to upload.
+        return chain([{ id: CON_UUID, legacy_id: 77, is_active: false }]);
       }
       if (name === 'jobs') {
         window.__jobsFetches++;
@@ -117,7 +125,7 @@ await page.addInitScript(([JOB_UUID, DEF_UUID]) => {
       functions: { invoke: async () => ({ data: null, error: null }) },
     }),
   };
-}, [JOB_UUID, DEF_UUID]);
+}, [JOB_UUID, DEF_UUID, CON_UUID]);
 await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
 await page.waitForFunction(() => typeof window.render === 'function');
 await page.waitForFunction(() => !!(window.CloudSync && window.CloudSync.indicator), { timeout: 15000 });
@@ -188,6 +196,26 @@ check('…which is the point: hiding a finished job is a display decision, not a
 check('a second miss does not mean a second round trip',
   jobMap.fetchesAfterSecond === 1 && jobMap.secondCall === null,
   `${jobMap.fetchesAfterSecond} fetch(es) total, second lookup ${JSON.stringify(jobMap.secondCall)}`);
+
+// The contractor map is the same hole one map over. An ASSIGNED defect whose
+// contractor is unmapped is deferred rather than written — correct, since
+// writing would resolve the contractor to NULL and wipe the assignment — but
+// the defer was permanent, so the defect sat in the outbox for ever with its
+// photos behind it.
+const conMap = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  h.forgetJobMap();
+  const before = window.__conFetches;
+  return { localOnly: h.contractorForLocalOnly(77),
+           resolved: await h.contractorFor(77),
+           fetches: window.__conFetches - before };
+});
+console.log('conMap:', JSON.stringify(conMap));
+check('an unmapped contractor is resolved from the server too, not deferred for ever',
+  conMap.localOnly === null && conMap.resolved === CON_UUID,
+  `${JSON.stringify(conMap.localOnly)} -> ${JSON.stringify(conMap.resolved)}`);
+check('…including an inactive one, since the defect is already assigned to them',
+  conMap.fetches === 1, `${conMap.fetches} fetch(es)`);
 
 // ================= 2. what the pill says ==================================
 console.log('\n--- what the message tells a supervisor ---');

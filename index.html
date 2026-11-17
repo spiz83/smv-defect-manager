@@ -181,14 +181,18 @@
             height: 34px;
             width: auto;
         }
-        /* The title carries the hero's padding now. Right-aligned and hard over,
-           as asked. At 390px a 900-weight italic caps wordmark beside a logo is
-           a tight fit, and a masthead that wraps to two lines looks like a
-           mistake — let the words shrink instead, and never wrap. */
+        /* The title carries the hero's padding. The mark leads and the Creation
+           Homes panel closes the bar (Spiro 2026-11-17: "swap over so EZ defect
+           manager is to the left and company logo to the right"), so the title
+           is LEFT-aligned and the logo is last in the DOM rather than reordered
+           in CSS — what a screen reader reads then matches what you see.
+           At 390px a masthead beside a logo is a tight fit, and one that wraps
+           to two lines looks like a mistake — let the words shrink instead,
+           and never wrap. */
         .app-header.home-hero .header-title {
             min-width: 0;
             white-space: nowrap;
-            text-align: right;
+            text-align: left;
             padding: 15px 20px;
             font-size: clamp(15px, 4.6vw, 22px);
         }
@@ -1541,7 +1545,17 @@
             backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
         }
         body.design-f1 .app-header.home-hero {
-            background: linear-gradient(135deg, var(--acc) 0%, color-mix(in srgb, var(--acc) 38%, #000) 100%) !important;
+            /* 225deg, not 135. Same two stops, mirrored: the accent now pools
+               at the top-RIGHT behind the Creation Homes panel and the dark end
+               falls at the bottom-left, under the mark.
+               The gradient was drawn when the mark sat on the right, so it got
+               the dark end for free. Swapping the masthead put the mark on the
+               bright end and cost five palettes their contrast at once —
+               Teal Carbon 5.87 -> 2.12, Titanium 3.87 -> 2.57. Mirroring the
+               gradient moves the dark end back under the type instead of
+               re-tinting fifteen palettes to cope. tests/wordmark.mjs measures
+               this from real pixels, which is the only reason it was caught. */
+            background: linear-gradient(225deg, var(--acc) 0%, color-mix(in srgb, var(--acc) 38%, #000) 100%) !important;
             border-radius: 0 !important;
         }
         body.design-f1 .header-title, body.design-f1 .app-header.home-hero .header-title {
@@ -1965,7 +1979,7 @@
                sweep in tests/harbour.mjs is what holds this honest — change
                the logo and it fails. */
             --wm: clamp(14px, calc(8.85vw - 14.6px), 24px);
-            position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+            position: absolute; left: 0; top: 50%; transform: translateY(-50%);
             display: inline-flex; align-items: center; line-height: 1;
             gap: calc(var(--wm) * .38);
             font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
@@ -3304,9 +3318,9 @@
         function renderHomeView() {
             return `
                 <div class="app-header home-hero">
+                    <div class="header-title"><span class="wm"><span class="wm-text">Defect Manager</span><span class="wm-ez" role="img" aria-label="EZ Defect Manager"><span class="wm-badge" aria-hidden="true">EZ</span><span class="wm-word" aria-hidden="true">Defect Manager</span></span></span></div>
                     <span class="hero-logo"><img src="creation-homes-logo.png" alt="Creation Homes"
                          onerror="this.closest('.hero-logo').remove()"></span>
-                    <div class="header-title"><span class="wm"><span class="wm-text">Defect Manager</span><span class="wm-ez" role="img" aria-label="EZ Defect Manager"><span class="wm-badge" aria-hidden="true">EZ</span><span class="wm-word" aria-hidden="true">Defect Manager</span></span></span></div>
                 </div>
                 <div class="home-container">
                     <div class="section-title">Search Defects</div>
@@ -10594,7 +10608,7 @@
 
         /* ---- F1 Telemetry themes (ported from CH Tracker) ---- */
         const F1_THEMES = [
-            { id:'mercedes', name:'Teal Carbon', sub:'Dark · Modern', vars:{'--acc':'#00A19A','--acc2':'#00C9C0','--bg':'#06090A','--sur':'#10171A','--ele':'#1A2529','--inp':'#0A1316','--brd':'#243137','--brd2':'#162026','--t1':'#F0F5F6','--t2':'#9BB0B4','--t3':'#5C7177','--accFg':'#fff'} },
+            { id:'mercedes', markRing:true, name:'Teal Carbon', sub:'Dark · Modern', vars:{'--acc':'#00A19A','--acc2':'#00C9C0','--bg':'#06090A','--sur':'#10171A','--ele':'#1A2529','--inp':'#0A1316','--brd':'#243137','--brd2':'#162026','--t1':'#F0F5F6','--t2':'#9BB0B4','--t3':'#5C7177','--accFg':'#fff'} },
             { id:'ferrari', name:'Ember', sub:'Red · Bold', vars:{'--acc':'#DC0000','--acc2':'#FF1A1A','--bg':'#0A0606','--sur':'#1A1010','--ele':'#241616','--inp':'#150909','--brd':'#3A1F1F','--brd2':'#1F1212','--t1':'#FFF5F0','--t2':'#C9A89C','--t3':'#7A5A52','--amber':'#FFEB3B','--accFg':'#fff'} },
             { id:'redbull', name:'Cobalt', sub:'Deep · Navy', vars:{'--acc':'#1A2A5C','--acc2':'#2A3F7A','--bg':'#04060E','--sur':'#0B1224','--ele':'#141C36','--inp':'#070A18','--brd':'#1F2845','--brd2':'#0F1428','--t1':'#EFF2FA','--t2':'#9DA8C2','--t3':'#5868A0','--red':'#D31E36','--amber':'#FFCD00','--accFg':'#fff'} },
             { id:'mclaren', markRing:true, name:'Papaya', sub:'Orange · Vibrant', vars:{'--acc':'#FF8000','--acc2':'#FFA040','--bg':'#0A0805','--sur':'#1A140C','--ele':'#251D11','--inp':'#120E08','--brd':'#3A2C18','--brd2':'#1F180D','--t1':'#FFF5E8','--t2':'#C9B59A','--t3':'#7A6A52','--accFg':'#000'} },
@@ -10603,7 +10617,7 @@
             { id:'williams', markRing:true, name:'Cerulean', sub:'Blue · Electric', vars:{'--acc':'#00A0E1','--acc2':'#37C2FF','--bg':'#04060D','--sur':'#0C121F','--ele':'#171F33','--inp':'#080C18','--brd':'#1E2942','--brd2':'#111626','--t1':'#EEF4FF','--t2':'#94A4C2','--t3':'#5867A0','--amber':'#FFD800','--accFg':'#fff'} },
             { id:'haas', markRing:true, name:'Titanium', sub:'Grey · Classic', vars:{'--acc':'#B6BABD','--acc2':'#E0E3E6','--bg':'#08090A','--sur':'#15181B','--ele':'#1F2429','--inp':'#0E1114','--brd':'#2A2F36','--brd2':'#181C20','--t1':'#F5F6F8','--t2':'#9CA3AD','--t3':'#5C6470','--red':'#E10600','--accFg':'#000'} },
             { id:'sauber', name:'Emerald', sub:'Green · Minimal', vars:{'--acc':'#00802A','--acc2':'#1AA346','--bg':'#04080A','--sur':'#0D1612','--ele':'#152319','--inp':'#08120D','--brd':'#1E2F25','--brd2':'#111B15','--t1':'#EEF5F0','--t2':'#94B0A0','--t3':'#506862','--accFg':'#fff'} },
-            { id:'rb', name:'Horizon', sub:'Blue · Soft', vars:{'--acc':'#6692BD','--acc2':'#87B0D9','--bg':'#06080C','--sur':'#101622','--ele':'#1A2235','--inp':'#0A0F18','--brd':'#1F2A40','--brd2':'#131A26','--t1':'#EEF2F8','--t2':'#94A4B8','--t3':'#506072','--red':'#EF1A2D','--accFg':'#fff'} },
+            { id:'rb', markRing:true, name:'Horizon', sub:'Blue · Soft', vars:{'--acc':'#6692BD','--acc2':'#87B0D9','--bg':'#06080C','--sur':'#101622','--ele':'#1A2235','--inp':'#0A0F18','--brd':'#1F2A40','--brd2':'#131A26','--t1':'#EEF2F8','--t2':'#94A4B8','--t3':'#506072','--red':'#EF1A2D','--accFg':'#fff'} },
             { id:'gunmetal', name:'Gunmetal', sub:'Neutral · Default', vars:{'--acc':'#5A6675','--acc2':'#7B8794','--bg':'#0A0B0D','--sur':'#15171B','--ele':'#1E2127','--inp':'#0F1115','--brd':'#2A2D33','--brd2':'#181B1F','--t1':'#F0F2F5','--t2':'#9BA3AE','--t3':'#5C6470','--accFg':'#fff'} },
             { id:'framework', name:'Blueprint', sub:'Light · Professional (logistics)', vars:{'--acc':'#1E4DA8','--acc2':'#3D6FCC','--bg':'#EFEBE2','--sur':'#FFFFFF','--ele':'#F5F1E8','--inp':'#FFFFFF','--brd':'#A8A8A8','--brd2':'#D6D6D6','--t1':'#1A1A1A','--t2':'#4A4A4A','--t3':'#7A7A7A','--green':'#2D8030','--amber':'#D87E2E','--red':'#B81E2E','--accFg':'#FFFFFF'} },
             /* Harbour (Spiro 2026-11-17). Supplied as a full colour system
@@ -15963,7 +15977,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17p';
+        const APP_VERSION = '2026-11-17q';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16050,7 +16064,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17p"></script>
+    <script src="cloud-sync.js?v=2026-11-17q"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

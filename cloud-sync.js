@@ -3280,7 +3280,9 @@
   const REPORT_BUCKET = 'dm-reports';
   window.CloudReports = {
     add: async ({ name, addressLegacyId, defectCount, reportType, file }) => {
-      const job_id = (addressLegacyId != null) ? (idMap.addresses[addressLegacyId] || null) : null;
+      // Resolve rather than settle for null: a report filed under no job is
+      // invisible to everyone looking at that job.
+      const job_id = (addressLegacyId != null) ? await resolveJobUuidForAddress(addressLegacyId) : null;
       // Stash the source PDF so it can be auto-attached to the supplier email.
       let storage_path = null;
       if (file && (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || ''))) {
@@ -3301,7 +3303,7 @@
     // Most recent stored report PDF for an address, as a File for the share
     // sheet (so emailSupplier can attach it). null if none / not logged in.
     fileForAddress: async (addressLegacyId) => {
-      const job_id = (addressLegacyId != null) ? (idMap.addresses[addressLegacyId] || null) : null;
+      const job_id = (addressLegacyId != null) ? await resolveJobUuidForAddress(addressLegacyId) : null;
       if (!job_id) return null;
       const { data, error } = await sb.from('dm_reports')
         .select('name, storage_path')
@@ -4050,15 +4052,28 @@
   // Why a push is not happening, in the server's own words — so the banner
   // can stop claiming it is uploading when nothing is going up.
   let lastPushError = '';
-  // Jobs are mapped local-id -> uuid by hashId(uuid). Going the other way needs
-  // the job list, so this fetches it — but at most once a minute, because a
-  // failing flush calls it once per queued defect and thirty-six of those
-  // should not be thirty-six round trips.
-  let jobMapFetchedAt = 0;
+  // THE SHAPE, stated once because three separate bugs have now been it: a
+  // lookup that reads only local state, fails silently, and sits inside a loop
+  // that retries for ever. It presents as "working on it" indefinitely,
+  // because retrying is exactly what cannot help — an id map does not heal by
+  // attempting the write again.
+  //
+  // Both maps below had the same two faults. Their recovery only ran when the
+  // map was COMPLETELY empty, so a map holding fifty rows but missing the one
+  // you need never triggered it; and commitDefect itself had no fallback at
+  // all, it just returned.
+  //
+  // Rate-limited because a failing flush asks once per queued defect, and
+  // thirty-six of those should not be thirty-six round trips.
+  const mapFetchedAt = { addresses: 0, contractors: 0 };
+  function mapFetchAllowed(which) {
+    if (Date.now() - mapFetchedAt[which] < 60000) return false;
+    mapFetchedAt[which] = Date.now();
+    return true;
+  }
   async function resolveJobUuidForAddress(addressLegacyId) {
     if (idMap.addresses[addressLegacyId]) return idMap.addresses[addressLegacyId];
-    if (Date.now() - jobMapFetchedAt < 60000) return null;
-    jobMapFetchedAt = Date.now();
+    if (!mapFetchAllowed('addresses')) return null;
     try {
       // EVERY job, with no status filter, and that is the point. Hiding a
       // completed job from the list is a DISPLAY decision; refusing to upload
@@ -4074,6 +4089,28 @@
         if (!idMap.addresses[lid]) idMap.addresses[lid] = j.id;
       });
       return idMap.addresses[addressLegacyId] || null;
+    } catch (e) { return null; }
+  }
+  // The same hole, one map over. An assigned defect whose contractor is not in
+  // the map is DEFERRED rather than written, which is correct — writing would
+  // resolve the contractor to NULL and wipe the assignment (the bug that
+  // nulled every contractor on 2026-06-21). But the defer was permanent for
+  // the same reason the job one was, so an assigned defect could sit in the
+  // outbox for ever with its photos queued behind it.
+  async function resolveContractorUuid(contractorLegacyId) {
+    if (idMap.contractors[contractorLegacyId]) return idMap.contractors[contractorLegacyId];
+    if (!mapFetchAllowed('contractors')) return null;
+    try {
+      // No is_active filter, for the same reason jobs carry no status filter:
+      // a contractor being hidden from the picker is a display decision, and a
+      // defect already assigned to them still has to upload.
+      const { data: cons } = await withTimeout(
+        sb.from('dm_contractors').select('id, legacy_id'), 25000, 'contractor map');
+      (cons || []).forEach((c) => {
+        const lid = c.legacy_id != null ? c.legacy_id : hashId(c.id);
+        if (!idMap.contractors[lid]) idMap.contractors[lid] = c.id;
+      });
+      return idMap.contractors[contractorLegacyId] || null;
     } catch (e) { return null; }
   }
 
@@ -4110,7 +4147,18 @@
     // contractor to NULL and WIPE the assignment. Defer instead — the outbox
     // replays after the pull has populated idMap.contractors. (This is the bug
     // that nulled every contractor on 2026-06-21.)
-    if (d.contractorId != null && !idMap.contractors[d.contractorId]) { outboxAdd(legacyId); return; }
+    //
+    // Deferring is right; deferring FOR EVER is not. Ask the server first, the
+    // same way the job above does — otherwise an assigned defect never leaves
+    // the phone and takes its photos with it.
+    if (d.contractorId != null && !idMap.contractors[d.contractorId]) {
+      const conUuid = await resolveContractorUuid(d.contractorId);
+      if (!conUuid) {
+        lastPushError = 'the contractor it is assigned to could not be found in the cloud';
+        outboxAdd(legacyId);
+        return;
+      }
+    }
     try {
       // The cloud row we already pulled for this local defect, if any. CRITICAL:
       // defects created in CH Tracker have legacy_id = NULL in the DB, so an
@@ -4457,8 +4505,11 @@
       // photos in the queue.
       jobForAddress: (addressLegacyId) => resolveJobUuidForAddress(addressLegacyId),
       jobForAddressLocalOnly: (addressLegacyId) => idMap.addresses[addressLegacyId] || null,
+      contractorFor: (legacyId) => resolveContractorUuid(legacyId),
+      contractorForLocalOnly: (legacyId) => idMap.contractors[legacyId] || null,
       hashId: (uuid) => hashId(uuid),
-      forgetJobMap: () => { idMap.addresses = {}; jobMapFetchedAt = 0; },
+      forgetJobMap: () => { idMap.addresses = {}; idMap.contractors = {};
+                            mapFetchedAt.addresses = 0; mapFetchedAt.contractors = 0; },
       setStuckJobs: (a) => { stuckPhotoJobs = Array.isArray(a) ? a : []; },
       // The defect queue the photos wait behind, so a test can put the pill in
       // the state Spiro was looking at: on wifi, with changes stuck in front.
