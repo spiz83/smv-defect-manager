@@ -1668,15 +1668,21 @@
            carries a hex — they all read from the tokens here, so a
            later change to the system is a change to this block.
            ========================================================== */
-        body.design-f1.theme-harbour {
-            /* core frame */
-            --navy-950:#060D14; --navy-900:#0A131C; --navy-850:#0F1923;
-            --navy-800:#131E29; --navy-700:#1E2E3C;
+        /* ---------- Harbour (navy) ---------- */
+        body.design-f1.family-harbour {
+            /* frame */
+            --hdr-a:#060D14; --hdr-b:#0A131C; --frame:#060D14; --on-frame:#F0EDE4;
+            /* surfaces, darkest to most raised */
+            --surf-1:#0A131C; --surf-alt:#0F1923; --surf-2:#131E29; --surf-3:#1E2E3C;
             --text:#F0EDE4; --text-body:#AEC0CF; --text-muted:#7F93A6;
             --primary:#90BFE9; --primary-hover:#7DA7CC; --on-primary:#060D14;
-            --primary-deep:#2F6EA3;
+            /* the primary used AS TEXT. On navy that is the primary itself. */
+            --primary-text:#90BFE9; --primary-deep:#2F6EA3; --focus:#90BFE9;
+            --btn-glow:0 0 24px rgba(144,191,233,.25);
             /* feedback */
             --success:#3DBE8B; --warning:#F5A524; --error:#E5484D; --info:#90BFE9;
+            /* text on a feedback fill (banner, count badge) */
+            --on-feedback:#060D14;
             /* severity — DECLARED BUT UNUSED. This app has no severity field;
                defects carry a status only. Here so the system is complete and
                a severity feature would have its colours waiting. */
@@ -1692,119 +1698,175 @@
             --surface:#EEF0EC; --surface-card:#FFFFFF;
             --text-strong:#17222E; --text-secondary:#4F5D6B;
             --border-light:#D5DAD3; --link:#2F6EA3;
+        }
+        /* ---------- Harbour Light (sky) ----------
+           The sky blue carries the frame here instead of accenting it, so the
+           header, status bar and sync banner are all #90BFE9 and the page
+           beneath them is a pale wash of the same hue.
 
+           Three things could not simply be inverted, and are different tokens
+           rather than different rules:
+             - --primary-text. #90BFE9 is 1.9:1 on white: fine as a fill,
+               unreadable as type. Section labels, icon glyphs and links take
+               a deeper blue from the same family instead.
+             - --focus. Same reason — a sky focus ring on a pale page is 1.8:1,
+               under the 3:1 a non-text indicator needs.
+             - the feedback colours. Bright green and amber need DARK text to
+               pass on navy and are too light to carry white text on a pale
+               page, so they darken here and --on-feedback flips to white. */
+        body.design-f1.theme-harbour-light {
+            --hdr-a:#A4CBEE; --hdr-b:#90BFE9; --frame:#90BFE9; --on-frame:#10273D;
+            --surf-1:#F2F7FC; --surf-alt:#EAF2FA; --surf-2:#FFFFFF; --surf-3:#E7F0F9;
+            --text:#0F2133; --text-body:#33495C; --text-muted:#4A5E70;
+            --primary:#90BFE9; --primary-hover:#7DB2DE; --on-primary:#0F2133;
+            --primary-text:#1F5B8C; --primary-deep:#1F5B8C; --focus:#1F5B8C;
+            /* no glow on a light theme — a soft lift instead */
+            --btn-glow:0 1px 2px rgba(16,39,61,.16);
+            --success:#10724E; --warning:#8A5510; --error:#C42B30; --info:#1F5B8C;
+            --on-feedback:#FFFFFF;
+            --sev-critical:#C42B30; --sev-critical-soft:#FDECEC;
+            --sev-major:#8A5510;    --sev-major-soft:#FBF1E2;
+            --sev-minor:#7A6410;    --sev-minor-soft:#FAF6DC;
+            --sev-cosmetic:#1F5B8C; --sev-cosmetic-soft:#E6F0FA;
+            --status-open:#C42B30; --status-assigned:#8A5510; --status-progress:#1F5B8C;
+            --status-reinspect:#5B3FBF; --status-resolved:#10724E; --status-hold:#4A5E70;
+            --surface:#F2F7FC; --surface-card:#FFFFFF;
+            --text-strong:#0F2133; --text-secondary:#4A5E70;
+            --border-light:#C9DEF1; --link:#1F5B8C;
+        }
+        /* Both share the system's type. */
+        body.design-f1.family-harbour {
             font-family: 'Plus Jakarta Sans','DM Sans',system-ui,sans-serif !important;
         }
-        body.design-f1.theme-harbour h1, body.design-f1.theme-harbour h2,
-        body.design-f1.theme-harbour h3, body.design-f1.theme-harbour .header-title,
-        body.design-f1.theme-harbour .lot-title, body.design-f1.theme-harbour .pg-title {
+        body.design-f1.family-harbour h1, body.design-f1.family-harbour h2,
+        body.design-f1.family-harbour h3, body.design-f1.family-harbour .header-title,
+        body.design-f1.family-harbour .lot-title, body.design-f1.family-harbour .pg-title {
             font-family: 'Poppins','Plus Jakarta Sans',system-ui,sans-serif !important;
             font-weight: 600 !important; font-style: normal; text-transform: none;
         }
         /* Section labels: mono, uppercase, 12px, .12em, primary. */
-        body.design-f1.theme-harbour .section-title {
+        body.design-f1.family-harbour .section-title {
             font-family: 'JetBrains Mono',monospace !important;
             font-size: 12px !important; font-weight: 500 !important;
-            letter-spacing: .12em !important; color: var(--primary) !important;
+            letter-spacing: .12em !important; color: var(--primary-text) !important;
         }
         /* Job numbers and defect ids read as data, not prose. */
-        body.design-f1.theme-harbour .lot-job,
-        body.design-f1.theme-harbour .defect-line-ref {
+        body.design-f1.family-harbour .lot-job,
+        body.design-f1.family-harbour .defect-line-ref {
             font-family: 'JetBrains Mono',monospace !important; font-weight: 500 !important;
         }
 
         /* Header: a solid navy gradient rather than the accent wash. */
-        body.design-f1.theme-harbour .app-header.home-hero,
-        body.design-f1.theme-harbour .app-header:not(.home-hero) {
-            background: linear-gradient(180deg, var(--navy-950), var(--navy-900)) !important;
-            border-bottom: 1px solid var(--border, #233344);
-        }
-        /* The status bar belongs to the frame, like the header. */
-        body.design-f1.theme-harbour #cs-statusbar {
-            background: var(--navy-950) !important;
-            color: var(--text) !important;
+        body.design-f1.family-harbour .app-header.home-hero,
+        body.design-f1.family-harbour .app-header:not(.home-hero) {
+            background: linear-gradient(180deg, var(--hdr-a), var(--hdr-b)) !important;
             border-bottom: 1px solid var(--brd);
         }
-        body.design-f1.theme-harbour #cs-statusbar button {
-            color: var(--text) !important; border-color: var(--brd) !important;
+        /* The status bar belongs to the frame, like the header. */
+        body.design-f1.family-harbour #cs-statusbar {
+            background: var(--frame) !important;
+            color: var(--on-frame) !important;
+            border-bottom: 1px solid var(--brd);
+        }
+        body.design-f1.family-harbour #cs-statusbar button {
+            color: var(--on-frame) !important; border-color: var(--brd) !important;
+        }
+        body.design-f1.family-harbour #cs-statusbar .cs-who { opacity: .85; }
+        /* The hero title is forced white by the F1 base. On the navy frame
+           that is right; on the sky one it is 1.9:1. The frame names the text
+           that belongs on it. (The home hero shows the wordmark, which sets
+           its own colours — this is for every OTHER header in the app.) */
+        /* The :not(.home-hero) is not decoration — it is what wins. The base
+           rule it has to beat is `body.design-f1 .app-header:not(.home-hero)
+           .header-title`, which is the same weight as this selector without
+           it and comes LATER in the file, so a tie went to white-on-sky at
+           1.9:1. */
+        body.design-f1.theme-harbour-light .app-header:not(.home-hero) .header-title,
+        body.design-f1.theme-harbour-light .app-header:not(.home-hero) .pg-title,
+        body.design-f1.theme-harbour-light .app-header:not(.home-hero) .lot-title,
+        body.design-f1.theme-harbour-light .app-header:not(.home-hero) .lot-job,
+        body.design-f1.theme-harbour-light .app-header:not(.home-hero) .back-link,
+        body.design-f1.theme-harbour-light .app-header:not(.home-hero) button,
+        body.design-f1.theme-harbour-light .app-header:not(.home-hero) a {
+            color: var(--on-frame) !important;
         }
 
         /* Primary action: pill, filled, with the specified glow. */
-        body.design-f1.theme-harbour .imp-btn:not(.secondary),
-        body.design-f1.theme-harbour .btn-primary {
+        body.design-f1.family-harbour .imp-btn:not(.secondary),
+        body.design-f1.family-harbour .btn-primary {
             background: var(--primary) !important; color: var(--on-primary) !important;
             border: none !important; border-radius: 9999px !important;
-            box-shadow: 0 0 24px rgba(144,191,233,.25) !important; font-weight: 600 !important;
+            box-shadow: var(--btn-glow) !important; font-weight: 600 !important;
         }
-        body.design-f1.theme-harbour .imp-btn:not(.secondary):hover,
-        body.design-f1.theme-harbour .btn-primary:hover { background: var(--primary-hover) !important; }
+        body.design-f1.family-harbour .imp-btn:not(.secondary):hover,
+        body.design-f1.family-harbour .btn-primary:hover { background: var(--primary-hover) !important; }
         /* Secondary: outline only, filling on hover. */
-        body.design-f1.theme-harbour .imp-btn.secondary {
+        body.design-f1.family-harbour .imp-btn.secondary {
             background: transparent !important; color: var(--text) !important;
             border: 1px solid var(--brd) !important; border-radius: 9999px !important;
             box-shadow: none !important;
         }
-        body.design-f1.theme-harbour .imp-btn.secondary:hover { background: var(--navy-700) !important; }
+        body.design-f1.family-harbour .imp-btn.secondary:hover { background: var(--surf-3) !important; }
 
         /* Search field: raised fill, and a real focus ring. */
-        body.design-f1.theme-harbour input[type="text"],
-        body.design-f1.theme-harbour input[type="search"],
-        body.design-f1.theme-harbour input[type="date"],
-        body.design-f1.theme-harbour textarea,
-        body.design-f1.theme-harbour select {
-            background: var(--navy-700) !important; color: var(--text) !important;
+        body.design-f1.family-harbour input[type="text"],
+        body.design-f1.family-harbour input[type="search"],
+        body.design-f1.family-harbour input[type="date"],
+        body.design-f1.family-harbour textarea,
+        body.design-f1.family-harbour select {
+            background: var(--surf-3) !important; color: var(--text) !important;
             border: 1px solid var(--brd) !important;
         }
-        body.design-f1.theme-harbour ::placeholder { color: var(--text-muted) !important; opacity: 1; }
-        body.design-f1.theme-harbour input:focus,
-        body.design-f1.theme-harbour textarea:focus,
-        body.design-f1.theme-harbour select:focus {
-            outline: 2px solid var(--primary) !important; outline-offset: 0;
-            border-color: var(--primary) !important;
+        body.design-f1.family-harbour ::placeholder { color: var(--text-muted) !important; opacity: 1; }
+        body.design-f1.family-harbour input:focus,
+        body.design-f1.family-harbour textarea:focus,
+        body.design-f1.family-harbour select:focus {
+            outline: 2px solid var(--focus) !important; outline-offset: 0;
+            border-color: var(--focus) !important;
         }
         /* Every interactive element shows where the keyboard is. */
-        body.design-f1.theme-harbour a:focus-visible,
-        body.design-f1.theme-harbour button:focus-visible,
-        body.design-f1.theme-harbour [onclick]:focus-visible {
-            outline: 2px solid var(--primary) !important; outline-offset: 2px;
+        body.design-f1.family-harbour a:focus-visible,
+        body.design-f1.family-harbour button:focus-visible,
+        body.design-f1.family-harbour [onclick]:focus-visible {
+            outline: 2px solid var(--focus) !important; outline-offset: 2px;
         }
 
         /* Segmented control (Address / Contractor / Trade). */
-        body.design-f1.theme-harbour .seg-btn {
-            background: var(--navy-800) !important; color: var(--text-body) !important;
+        body.design-f1.family-harbour .seg-btn {
+            background: var(--surf-2) !important; color: var(--text-body) !important;
             border: 1px solid var(--brd) !important;
         }
-        body.design-f1.theme-harbour .seg-btn.active {
+        body.design-f1.family-harbour .seg-btn.active {
             background: var(--primary) !important; color: var(--on-primary) !important;
             border-color: var(--primary) !important; font-weight: 600 !important;
         }
 
         /* Cards, rows and panels sit on the card navy with a token divider. */
-        body.design-f1.theme-harbour .defect-item,
-        body.design-f1.theme-harbour .contractor-section,
-        body.design-f1.theme-harbour .manage-container,
-        body.design-f1.theme-harbour #myjobs-list {
-            background: var(--navy-800) !important; border-color: var(--brd) !important;
+        body.design-f1.family-harbour .defect-item,
+        body.design-f1.family-harbour .contractor-section,
+        body.design-f1.family-harbour .manage-container,
+        body.design-f1.family-harbour #myjobs-list {
+            background: var(--surf-2) !important; border-color: var(--brd) !important;
         }
 
         /* Toast: a 3px left border in the feedback colour. */
-        body.design-f1.theme-harbour .toast {
-            background: var(--navy-800) !important; color: var(--text) !important;
+        body.design-f1.family-harbour .toast {
+            background: var(--surf-2) !important; color: var(--text) !important;
             border-left: 3px solid var(--info) !important;
         }
-        body.design-f1.theme-harbour .toast.error { border-left-color: var(--error) !important; }
+        body.design-f1.family-harbour .toast.error { border-left-color: var(--error) !important; }
 
         /* Sync banner belongs to the frame; its states use feedback colours. */
-        body.design-f1.theme-harbour #cs-banner { background: var(--navy-950) !important; color: var(--text) !important; }
-        body.design-f1.theme-harbour #cs-banner.syncing { background: var(--navy-950) !important; }
-        body.design-f1.theme-harbour #cs-banner.offline { background: var(--warning) !important; color: var(--on-primary) !important; }
-        body.design-f1.theme-harbour #cs-banner.ok { background: var(--success) !important; color: var(--on-primary) !important; }
-        body.design-f1.theme-harbour #cs-statusbar .dot { background: var(--success); }
-        body.design-f1.theme-harbour #cs-statusbar .dot.syncing { background: var(--warning); }
-        body.design-f1.theme-harbour #cs-statusbar .dot.offline { background: var(--warning); }
+        body.design-f1.family-harbour #cs-banner { background: var(--frame) !important; color: var(--on-frame) !important; }
+        body.design-f1.family-harbour #cs-banner.syncing { background: var(--frame) !important; }
+        body.design-f1.family-harbour #cs-banner.offline { background: var(--warning) !important; color: var(--on-feedback) !important; }
+        body.design-f1.family-harbour #cs-banner.ok { background: var(--success) !important; color: var(--on-feedback) !important; }
+        body.design-f1.family-harbour #cs-statusbar .dot { background: var(--success); }
+        body.design-f1.family-harbour #cs-statusbar .dot.syncing { background: var(--warning); }
+        body.design-f1.family-harbour #cs-statusbar .dot.offline { background: var(--warning); }
         /* The waiting-photos pill is a system state, not a card. */
-        body.design-f1.theme-harbour #cs-photo-pending {
-            background: var(--navy-800) !important; color: var(--text) !important;
+        body.design-f1.family-harbour #cs-photo-pending {
+            background: var(--surf-2) !important; color: var(--text) !important;
             border-left: 3px solid var(--warning);
         }
 
@@ -1813,22 +1875,22 @@
            keeps the meaning it already has (there are outstanding defects) and
            takes the critical colour, which is what the old red was saying. The
            severity tokens above are ready if that field is ever added. */
-        body.design-f1.theme-harbour .job-row {
-            background: var(--navy-800) !important;
+        body.design-f1.family-harbour .job-row {
+            background: var(--surf-2) !important;
             border-bottom: 1px solid var(--brd) !important;
         }
-        body.design-f1.theme-harbour .job-row > div[onclick] > div:first-child { color: var(--text) !important; font-weight: 600 !important; }
-        body.design-f1.theme-harbour .job-row > div[onclick] > div:last-child  { color: var(--text-muted) !important; }
-        body.design-f1.theme-harbour .job-badge {
-            background: var(--sev-critical) !important; color: var(--on-primary) !important;
+        body.design-f1.family-harbour .job-row > div[onclick] > div:first-child { color: var(--text) !important; font-weight: 600 !important; }
+        body.design-f1.family-harbour .job-row > div[onclick] > div:last-child  { color: var(--text-muted) !important; }
+        body.design-f1.family-harbour .job-badge {
+            background: var(--sev-critical) !important; color: var(--on-feedback) !important;
             font-weight: 600 !important;
         }
         /* Icon buttons: raised, outlined, primary glyphs, finger-sized. */
-        body.design-f1.theme-harbour .job-ico {
-            background: var(--navy-700) !important;
+        body.design-f1.family-harbour .job-ico {
+            background: var(--surf-3) !important;
             border: 1px solid var(--brd) !important;
             border-radius: 10px !important;
-            color: var(--primary) !important;
+            color: var(--primary-text) !important;
             min-width: 44px !important; min-height: 44px !important;
             line-height: 42px !important;
         }
@@ -1844,14 +1906,14 @@
            NOTE this leaves the "never use colour alone for meaning" rule
            unmet for status, as it already was. Fixing it means adding a
            labelled element — worth doing, as its own change. */
-        body.design-f1.theme-harbour .status-tab.status-open      { background: var(--status-open) !important; }
-        body.design-f1.theme-harbour .status-tab.status-pending   { background: var(--status-assigned) !important; }
-        body.design-f1.theme-harbour .status-tab.status-completed { background: var(--status-resolved) !important; }
+        body.design-f1.family-harbour .status-tab.status-open      { background: var(--status-open) !important; }
+        body.design-f1.family-harbour .status-tab.status-pending   { background: var(--status-assigned) !important; }
+        body.design-f1.family-harbour .status-tab.status-completed { background: var(--status-resolved) !important; }
 
         /* --text-muted IS the muted tone. The row then applies opacity:.65 on
            top, which double-mutes it to 3.03:1 — under the 4.5 this system
            asks for. The token carries the hierarchy on its own. */
-        body.design-f1.theme-harbour .job-row > div[onclick] > div:last-child { opacity: 1 !important; }
+        body.design-f1.family-harbour .job-row > div[onclick] > div:last-child { opacity: 1 !important; }
 
         /* ==========================================================
            EZ DEFECT WORDMARK (Spiro 2026-11-17). Part of the Harbour
@@ -1881,8 +1943,8 @@
         /* visibility, not display: the line box stays and sets the height,
            while the text leaves the accessibility tree so a screen reader
            hears one product name. */
-        body.theme-harbour .wm-text { visibility: hidden; }
-        body.theme-harbour .wm-ez {
+        body.family-harbour .wm-text { visibility: hidden; }
+        body.family-harbour .wm-ez {
             /* --wm is the font-size of "EZ"; everything else is derived from
                it exactly as the supplied component does. */
             --wm: 24px;
@@ -1896,18 +1958,22 @@
                asks for an upright "Defect" with a capital D, not "DEFECT". */
             text-transform: none; font-style: normal;
         }
-        body.theme-harbour .wm-badge {
+        body.family-harbour .wm-badge {
             background: #90BFE9; color: #1A2F62;
             font-weight: 800; font-size: var(--wm); letter-spacing: -.015em;
             padding: calc(var(--wm) * .22) calc(var(--wm) * .3);
             border-radius: calc(var(--wm) * .22);
         }
-        body.theme-harbour .wm-word {
+        body.family-harbour .wm-word {
             color: #FFFFFF; font-weight: 400;
             font-size: calc(var(--wm) * 1.17); letter-spacing: .01em;
         }
         /* Tablet and up. */
-        @media (min-width: 700px) { body.theme-harbour .wm-ez { --wm: 30px; } }
+        @media (min-width: 700px) { body.family-harbour .wm-ez { --wm: 30px; } }
+        /* On the sky frame the mark inverts: the same two colours, swapped, so
+           it reads as the same mark. White "Defect" would be 1.9:1 here. */
+        body.theme-harbour-light .wm-badge { background: #1A2F62; color: #90BFE9; }
+        body.theme-harbour-light .wm-word  { color: #10273D; }
 
         body.design-f1.theme-harbour { background: var(--navy-900) !important; }
 
@@ -10527,7 +10593,19 @@
                declared in the CSS block that carries body.theme-harbour, since
                F1_THEMES entries only hold the shared variables every palette
                has. */
-            { id:'harbour', name:'Harbour', sub:'Navy · Modern', vars:{'--acc':'#90BFE9','--acc2':'#7DA7CC','--bg':'#0A131C','--sur':'#131E29','--ele':'#1E2E3C','--inp':'#1E2E3C','--brd':'#233344','--brd2':'#0F1923','--t1':'#F0EDE4','--t2':'#AEC0CF','--t3':'#7F93A6','--green':'#3DBE8B','--amber':'#F5A524','--red':'#E5484D','--accFg':'#060D14'} },
+            { id:'harbour', name:'Harbour', sub:'Navy · Modern', family:'harbour', vars:{'--acc':'#90BFE9','--acc2':'#7DA7CC','--bg':'#0A131C','--sur':'#131E29','--ele':'#1E2E3C','--inp':'#1E2E3C','--brd':'#233344','--brd2':'#0F1923','--t1':'#F0EDE4','--t2':'#AEC0CF','--t3':'#7F93A6','--green':'#3DBE8B','--amber':'#F5A524','--red':'#E5484D','--accFg':'#060D14'} },
+            /* Harbour Light (Spiro 2026-11-17). The same system with the sky
+               blue promoted from accent to lead: it carries the whole frame —
+               header, status bar, sync banner — instead of sitting on navy.
+               Same family, so it shares every component rule; only the tokens
+               differ. The one thing that cannot simply invert is the sky blue
+               itself. #90BFE9 is a fine BACKGROUND on a light theme (8.4:1
+               under navy text) and an unreadable FOREGROUND on one (1.9:1 on
+               white), so text that was the primary colour on navy uses
+               --primary-text here, a deeper blue from the same family. */
+            { id:'harbour-light', name:'Harbour Light', sub:'Sky · Daylight', family:'harbour',
+              /* the sky bleeding down out of the header, not a grey haze */
+              glow:'rgba(144,191,233,.38)', vars:{'--acc':'#1F5B8C','--acc2':'#2F6EA3','--bg':'#F2F7FC','--sur':'#FFFFFF','--ele':'#E7F0F9','--inp':'#FFFFFF','--brd':'#C9DEF1','--brd2':'#A8C9E6','--t1':'#0F2133','--t2':'#33495C','--t3':'#4A5E70','--green':'#10724E','--amber':'#8A5510','--red':'#C42B30','--accFg':'#FFFFFF'} },
             { id:'powershell', name:'Terminal', sub:'Retro · Console', vars:{'--acc':'#FFFF55','--acc2':'#FFFFAA','--bg':'#000000','--sur':'#000000','--ele':'#1A1A1A','--inp':'#000000','--brd':'#C0C0C0','--brd2':'#404040','--t1':'#FFFFFF','--t2':'#C0C0C0','--t3':'#808080','--green':'#55FF55','--amber':'#FFFF55','--red':'#FF5555','--accFg':'#000000'} }
         ];
         function currentF1Theme() { return lsGet('f1Theme') || 'framework'; }
@@ -10539,13 +10617,25 @@
             // button shapes, badge treatments and type, which need a selector
             // to hang off. Harmless for the others — nothing targets theirs.
             F1_THEMES.forEach(x => document.body.classList.toggle('theme-' + x.id, x.id === t.id));
+            // …and a class per FAMILY, for palettes that are variants of one
+            // system. Harbour and Harbour Light share every component rule and
+            // differ only in tokens, so the rules hang off the family and the
+            // two token blocks are the whole difference between them.
+            [...new Set(F1_THEMES.map(x => x.family).filter(Boolean))]
+                .forEach(f => document.body.classList.toggle('family-' + f, t.family === f));
             Object.entries(t.vars).forEach(([k, v]) => b.setProperty(k, v));
             // Page background follows the theme too (no separate light/dark layer).
             if (t.vars['--bg']) b.setProperty('--page-bg', t.vars['--bg']);
+            // The F1 base washes the top of the page with --glow. Derived
+            // from the accent, which is right for a dark palette: the accent
+            // there is a bright colour and the wash reads as a halo. On a
+            // LIGHT palette the accent has to be dark enough to use as text,
+            // so the same derivation paints a grey smudge down the page. A
+            // theme may name its own wash instead.
             const acc = t.vars['--acc'] || '#00A19A';
             const h = acc.replace('#', '');
             const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), bl = parseInt(h.slice(4, 6), 16);
-            b.setProperty('--glow', `rgba(${r},${g},${bl},.18)`);
+            b.setProperty('--glow', t.glow || `rgba(${r},${g},${bl},.18)`);
             localStorage.setItem('f1Theme', t.id);
         }
         function setF1Theme(id) {
@@ -15835,7 +15925,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17h';
+        const APP_VERSION = '2026-11-17i';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -15922,7 +16012,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17h"></script>
+    <script src="cloud-sync.js?v=2026-11-17i"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

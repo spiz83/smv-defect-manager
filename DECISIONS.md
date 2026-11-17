@@ -3251,3 +3251,59 @@ suits.
 Worth remembering as a shape, not just a bug: a convenience that writes to
 a shared, single-slot resource has to ask whether the user has already put
 something there. The clipboard only holds one thing.
+
+## Harbour Light, and the refactor that made it cheap (2026-11-17, `2026-11-17i`)
+
+Spiro: "a light coloured version of this scheme where the light blue is
+central for more variety". So the sky blue is promoted from accent to lead
+— it carries the whole frame (header, status bar, sync banner) and bleeds
+down the page behind the content, instead of sitting on navy.
+
+**The refactor.** Harbour's own comment claimed "nothing in the rules
+carries a hex — they all read from the tokens here". That was almost true,
+and the almost is what a sibling palette exposes. The rules named
+`--navy-950`, `--navy-900`, `--navy-800`, `--navy-700` — fine while there
+was one palette, actively misleading the moment one of them holds
+`#A4CBEE`. They are now role names: `--frame`, `--surf-1`, `--surf-2`,
+`--surf-3`, `--hdr-a`, `--hdr-b`. Component rules hang off a new
+`family-harbour` class rather than `theme-harbour`, so the two palettes
+share every rule and differ only in their token block. Adding a third
+variant is now a token block and nothing else.
+
+**Three things could not simply be inverted**, and are extra tokens rather
+than extra rules:
+
+- `--primary-text`. #90BFE9 is 8.4:1 as a fill under navy text and 1.9:1
+  as type on white. Anything that was the primary colour *as text* —
+  section labels, icon glyphs, links — takes a deeper blue of the same
+  family on the light palette.
+- `--focus`. Same arithmetic: a sky focus ring on a pale page is 1.8:1,
+  under the 3:1 a non-text indicator needs.
+- `--on-feedback`. Bright green and amber need DARK text to pass on navy,
+  and are too light to carry white text on a pale page. They darken on the
+  light palette and the text on them flips to white.
+
+**The wordmark inverts rather than recolours.** White "Defect" on the sky
+frame is 1.9:1. The mark keeps both brand colours and swaps them — navy
+badge, sky "EZ" — so it reads as the same mark.
+
+**Two leaks the tests caught**, both from the F1 base rather than from this
+system:
+
+- *The sub-page header.* `body.design-f1 .app-header:not(.home-hero)
+  .header-title { color: #fff !important }` is the same specificity as the
+  obvious override and comes LATER in the file, so the tie went to
+  white-on-sky at 1.94:1. The override needs its own `:not(.home-hero)` to
+  win. The home hero was fine throughout — it shows the wordmark, which
+  sets its own colours — so this was only ever visible one tap in.
+- *The page wash.* The base paints a radial `--glow` across the top of the
+  page, derived from the accent. On a dark palette the accent is bright and
+  that reads as a halo; on a light palette the accent must be dark enough
+  to use as text, so the same derivation painted a grey smudge down the
+  page. A theme may now name its own wash, and this one names the sky, so
+  the header appears to bleed into the page.
+
+The contrast suite now runs over both palettes, and checks the section
+label against the page **composited with that wash** rather than against
+the flat token — the wash costs it 6.64:1 → 5.38:1, which still clears AA
+but is the kind of thing a token-only review reports as fine.
