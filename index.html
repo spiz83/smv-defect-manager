@@ -299,57 +299,6 @@
             padding: 20px;
         }
 
-        /* THE HOME SCREEN IS A FIXED SHELL, NOT A SCROLLING PAGE (Spiro
-           2026-11-18: "for some reason I can move the screen up and down — fix
-           so the Search Defects line can be seen"). The whole home view was a
-           hair taller than the viewport, so the page itself scrolled a little
-           and carried the Search Defects heading + search box up under the
-           sticky masthead. Now #app fills exactly the space below the status
-           bar and does not scroll; the hero and the search head hold still and
-           the job list is the only thing that moves. Scoped to .home-shell
-           (added by render() on the home view only) so every other screen keeps
-           ordinary page scroll. 100dvh, not 100vh, so iOS counts the real
-           visible height. */
-        #app.home-shell {
-            height: calc(100dvh - var(--cs-bar-h, 0px));
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        #app.home-shell .home-hero { flex: 0 0 auto; }
-        #app.home-shell .home-container {
-            flex: 1 1 auto;
-            min-height: 0;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;              /* fallback scroller (e.g. multi-select on) */
-            overscroll-behavior: contain;
-            padding-bottom: 0;
-        }
-        /* The search head stays visible even if the container ever has to scroll. */
-        #app.home-shell .home-head {
-            flex: 0 0 auto;
-            position: sticky;
-            top: 0;
-            z-index: 5;
-            background: var(--bg-primary);
-        }
-        /* The job list fills the leftover height and scrolls on its own, instead
-           of the fixed 360px box that pushed the page past the viewport. */
-        #app.home-shell #myjobs-list {
-            flex: 1 1 auto;
-            min-height: 120px;
-            max-height: none;
-            margin-bottom: 0;
-        }
-        /* Refresh footer pinned at the bottom of the shell; its tall push-banner
-           clearance isn't needed when the page can't scroll under the banner. */
-        #app.home-shell #app-foot {
-            flex: 0 0 auto;
-            padding-top: 12px;
-            padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-        }
-
         /* View Defects / Add Defects shown side-by-side */
         .home-2col {
             display: flex;
@@ -3833,10 +3782,8 @@
                          onerror="this.closest('.hero-logo').remove()"></span>
                 </div>
                 <div class="home-container">
-                    <div class="home-head">
-                        <div class="section-title">Search Defects</div>
-                        ${renderUnifiedSearch()}
-                    </div>
+                    <div class="section-title">Search Defects</div>
+                    ${renderUnifiedSearch()}
 
                     ${renderMyJobsSection()}
 
@@ -10440,12 +10387,6 @@
             // just opened. (Spiro 2026-09-04)
             else if (!keepScroll) window.scrollTo(0, 0);
 
-            // Home is a FIXED shell: hero + search stay put, only the job list
-            // scrolls (Spiro 2026-11-18: "I can move the screen up and down… fix
-            // so the Search Defects line can be seen"). The class drives the
-            // flex layout in the sheet; every other view keeps normal page
-            // scroll, so it is added on home and taken off everywhere else.
-            app.classList.toggle('home-shell', state.currentView === 'home');
             if (state.currentView === 'home') {
                 // No need for multi-select rendering in new design
             }
