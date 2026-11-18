@@ -1237,6 +1237,20 @@
         html { overflow-x: hidden; }
         body { overflow-x: clip; }
 
+        /* THE PAGE DOES NOT BOUNCE (Spiro 2026-11-18: "when I press down on
+           the screen, the whole thing goes down… make sure it looks stable
+           and solid").
+           iOS rubber-banding drags the whole document — masthead included —
+           down and away from the top of the screen while the fixed status bar
+           stays put, which is the band of page background above the header in
+           his screenshot. It is also why the frozen headers stop looking
+           frozen during it: the scroll offset goes negative, position:sticky
+           is inactive below zero, and nothing is pinned to anything.
+           overscroll-behavior removes the bounce rather than hiding it.
+           It costs the browser's own pull-to-refresh gesture; the app's own
+           Refresh is in the footer and in the EZ menu. */
+        html, body { overscroll-behavior: none; }
+
         body.design-modern {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--page-bg);
@@ -1310,10 +1324,19 @@
            ============================================================ */
         /* Respect the Dynamic Island / notch and home indicator */
         #cs-statusbar { padding-top: calc(4px + env(safe-area-inset-top)); }
-        /* The same reserve, published as a variable so the frozen headers below
-           can stack underneath the fixed status bar instead of sliding beneath
-           it. Signed out there is no bar, so the fallback 0px applies. */
-        body.cs-authed { padding-top: var(--cs-bar-h); --cs-bar-h: calc(26px + env(safe-area-inset-top)); }
+        /* THE ONE NUMBER FOR THE STATUS BAR'S STRIP. Declared here, used three
+           ways: it holds the page down from under the bar (padding-top), it is
+           where the app header freezes (.app-header's sticky top), and
+           cloud-sync.js pins the bar's own height to it.
+           All three HAVE to be the same number. They were not: the bar
+           measured 25.8px, the reserve was 30px, and the measured value was
+           rounded to 26 — so at rest a 4px sliver of page background showed
+           between the bar and the masthead, and the masthead jumped up to
+           close it the moment the list moved (Spiro 2026-11-18: "it can't
+           jitter and move slightly"). Nothing measures it now; the bar is told
+           how tall to be, which is the only way the three can't drift.
+           Signed out there is no bar, and the fallback 0px applies. */
+        body.cs-authed { padding-top: var(--cs-bar-h); --cs-bar-h: calc(26px + env(safe-area-inset-top, 0px)); }
         /* (The hero's safe-area top now lives on .header-title above, so the
            white logo panel reaches the very top of the bar.) */
         body.design-modern .home-container,
@@ -2649,6 +2672,23 @@
         //  in place it is a full-screen element over the whole app, and one
         //  mistake in a later opacity rule would be an app nobody can tap.
         // ===================================================================
+        // HOLD THE STRIP OPEN FROM FRAME ONE (Spiro 2026-11-18: "it can't
+        // jitter and move slightly when the page loads… it kind of goes up
+        // all the way and then kind of comes down").
+        // That is exactly what it did. The first paint has no #cs-statusbar:
+        // cloud-sync only adds it, and the cs-authed class that reserves its
+        // strip, once identity comes back two round trips later. So the
+        // masthead painted hard against the top of the screen and then
+        // dropped by the height of the bar when the network answered — on a
+        // notched phone, 85px of the page moving under your thumb.
+        // A phone that was signed in last time is signed in this time, so the
+        // class goes on now and the layout is final before anything paints.
+        // cloud-sync clears the flag in showLogin(), so a phone that really is
+        // signed out does not hold a strip open for a bar it will not get.
+        try {
+            if (localStorage.getItem('cs_bar') === '1') document.body.classList.add('cs-authed');
+        } catch (e) { /* storage blocked — the bar's arrival shifts the page once, as it used to */ }
+
         window.AppSplash = (function () {
             const el = document.getElementById('splash');
             if (!el) return { step() {}, done() {}, gone: () => true };
@@ -3666,7 +3706,11 @@
             });
             document.addEventListener('keydown', _ezMenuKey);
             const first = ov.querySelector('.ezm-item');
-            if (first) first.focus();
+            // preventScroll: focusing an item inside the overlay otherwise
+            // asks the browser to scroll it into view, and the page jumps
+            // under the menu (Spiro 2026-11-18: "when I click on it it kind of
+            // goes up all the way and then kind of comes down").
+            if (first) first.focus({ preventScroll: true });
         }
 
         function renderHomeView() {
@@ -10129,15 +10173,22 @@
         // fallbacks only have to be close enough for the first paint; and
         // cloud-sync.js injects its own #cs-statusbar rules at runtime, which
         // land after this stylesheet, so guessing that bar's height is wrong.)
-        // The variables go on <body> because body.cs-authed also declares
-        // --cs-bar-h; an inline style there is what beats it.
+        // --cs-bar-h is NOT measured any more. It was, and that was the
+        // 4px sliver: offsetHeight rounded the bar's real 25.8px up to 26
+        // while the CSS reserved 30, so the masthead sat 4px below the bar at
+        // rest and snapped up to it on the first touch of the list. The bar is
+        // now pinned to --cs-bar-h by cloud-sync.js, so the reserve, the
+        // freeze point and the bar's own height are one declaration and
+        // cannot disagree — there is nothing left to measure.
+        // --app-header-h still is measured, because the theme and the notch
+        // both move it; getBoundingClientRect, not offsetHeight, so the
+        // defects header freezes against the real edge instead of a rounded
+        // one. The variable goes on <body> so it is in scope for both sticky
+        // rules, and it is set inside render(), before the frame paints.
         function syncStickyHeader() {
-            const s = document.body.style;
-            const bar = document.getElementById('cs-statusbar');
             const head = document.querySelector('.defects-container > .app-header');
-            if (bar) s.setProperty('--cs-bar-h', bar.offsetHeight + 'px');
-            else s.removeProperty('--cs-bar-h');
-            s.setProperty('--app-header-h', (head ? head.offsetHeight : 0) + 'px');
+            document.body.style.setProperty('--app-header-h',
+                (head ? head.getBoundingClientRect().height : 0) + 'px');
             fitLotTitle();
         }
         // Keep the address on ONE line without clipping it. It has the full width
@@ -10611,7 +10662,7 @@
             const tempBtn = '';
             return `
                 <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
-                <div id="myjobs-list" style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:360px;overflow-y:auto;margin-bottom:18px;">
+                <div id="myjobs-list" style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:360px;overflow-y:auto;overscroll-behavior:contain;margin-bottom:18px;">
                     ${body}
                 </div>
                 ${tempBtn}`;
@@ -16344,7 +16395,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-18k';
+        const APP_VERSION = '2026-11-18l';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16442,7 +16493,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-18k"></script>
+    <script src="cloud-sync.js?v=2026-11-18l"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

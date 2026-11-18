@@ -2,6 +2,60 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-18 — the masthead holds still — build `2026-11-18l`
+
+Spiro: *"When I press down on the screen, the whole thing goes down this needs
+to be fixed. The header needs to be fixed and it can't jitter and move slightly
+when the page loads… when I click on it it kind of goes up all the way and then
+kind of comes down… make sure it looks stable and solid."*
+
+One complaint, three separate movements. Each was measured from real pixels
+before it was touched, and `tests/nojitter.mjs` fails on every one of them if
+it comes back.
+
+- **The bounce.** The home screen is SHORTER than the phone — the jobs scroll
+  inside `#myjobs-list`, not down the page — so a flick there went straight to
+  the document, which had nothing to scroll and rubber-banded instead. iOS
+  drags the whole document when it does that, masthead included, while the
+  fixed status bar stays put: the band of page background above the header in
+  his screenshot. `overscroll-behavior: none` on html/body removes the bounce
+  rather than hiding it, and `contain` on the job list stops a flick off the
+  end of the list from reaching the page underneath at all.
+  - **Trade-off accepted:** this also disables the browser's own pull-to-
+    refresh. The app's Refresh is in the footer and the EZ menu, and "nothing
+    moves unless I scroll something" was the actual ask.
+  - It matters beyond the bounce: during an overscroll the scroll offset is
+    negative, `position: sticky` is inactive, and NOTHING is frozen. Every
+    frozen header in the app only looks frozen because this is now impossible.
+- **The boot drop.** `#cs-statusbar` is added by cloud-sync only once identity
+  comes back — two round trips in — and `body.cs-authed`, which reserves its
+  strip, arrived with it. So the masthead painted hard against the top of the
+  screen and then dropped by the height of the bar: 85px on a notched phone,
+  under your thumb, a second after opening the app. ("It kind of goes up all
+  the way and then kind of comes down.") cloud-sync now leaves a `cs_bar` flag
+  behind, and index.html reserves the strip from the first frame on a phone
+  that had a bar last time. `showLogin()` clears both, so a phone that really
+  is signed out does not hold a strip open for a bar it will not get.
+  - **Trade-off accepted:** the very first boot after an install still shifts
+    once, because nothing can know before it asks. Once, ever, is the floor.
+- **The 4px sliver.** THREE numbers were supposed to be one: the strip the page
+  reserves (30px, in cloud-sync), the height of the bar (25.8px, whatever the
+  text inside it came to) and where the header freezes (`--cs-bar-h`, measured
+  with `offsetHeight`, so 26). The masthead sat 4px below the bar at rest and
+  snapped up to meet it the moment the list moved. Now `--cs-bar-h` is declared
+  once, the bar is TOLD to be that tall, and nothing measures it — the only
+  arrangement in which the three cannot drift. `--app-header-h` is still
+  measured, because the theme and the notch both move it, but with
+  `getBoundingClientRect()` rather than a rounded `offsetHeight`.
+- **Tapping the mark** focuses the menu's first item with `preventScroll`.
+  Chromium does not scroll a focused element inside a fixed overlay into view,
+  so the suite cannot prove this one; it is a one-word guard against a WebKit
+  behaviour that would produce exactly the reported jump, and the check that
+  sits next to it holds the user-visible property instead.
+- **`tests/addrhdr.mjs` had never run.** It was written on 2026-11-18, counted
+  in the gate's header ("56 suites") and left out of the gate's list, which
+  reads 55 names. Both it and `nojitter.mjs` are registered now: 57.
+
 ## 2026-10-22 — a recents list, the report as text, and address bands — build `2026-10-22a`
 
 - **Recently visited jobs float to the top.** Spiro: *"order addresses based on

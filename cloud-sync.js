@@ -290,9 +290,18 @@
          runs UNDER the iPhone's own status bar. Without the safe-area inset the
          clock and battery sit on top of this row and Sign out is barely
          tappable — Spiro couldn't find how to log off. (2026-08-02) */
+      /* The height is DECLARED, not left to the text inside it. index.html
+         reserves exactly --cs-bar-h at the top of the page and freezes the app
+         header at exactly --cs-bar-h, so a bar of any other height leaves a
+         sliver of page showing above the masthead at rest that closes the
+         moment you scroll — which is what Spiro saw jittering (2026-11-18).
+         nowrap belongs with it: a two-line status would otherwise grow the bar
+         past the strip reserved for it and run under the header. */
       #cs-statusbar{position:fixed;top:0;left:0;right:0;z-index:9998;
         display:flex;align-items:center;gap:10px;justify-content:flex-end;
         padding:4px 12px;padding-top:calc(4px + env(safe-area-inset-top, 0px));
+        height:var(--cs-bar-h, calc(26px + env(safe-area-inset-top, 0px)));
+        box-sizing:border-box;white-space:nowrap;overflow:hidden;
         font:500 12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;
         background:rgba(15,23,42,.92);color:#e2e8f0;}
       #cs-statusbar .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;}
@@ -306,7 +315,12 @@
       /* Two buttons now share this row. On a narrow phone the email is the part
          that gives — truncate it rather than let it push Sign out off-screen. */
       #cs-statusbar .cs-who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
-      body.cs-authed{padding-top:calc(30px + env(safe-area-inset-top, 0px));}
+      /* The reserve is index.html's --cs-bar-h — the same declaration the bar
+         is sized from above. This rule used to guess 30px while the bar
+         measured 25.8, and the 4px difference is what moved under his thumb.
+         The fallback is for a page that loads this module without that
+         stylesheet; it is the variable's own value, not a second opinion. */
+      body.cs-authed{padding-top:var(--cs-bar-h, calc(26px + env(safe-area-inset-top, 0px)));}
 
       /* Offline / sync banner — slides up from the bottom, very visible on a phone */
       #cs-banner{position:fixed;left:0;right:0;bottom:0;z-index:9997;
@@ -361,6 +375,10 @@
   function showLogin() {
     try { window.AppSplash && window.AppSplash.done(); } catch (e) {}
     injectStyles();
+    // There is no status bar on the sign-in screen, so nothing reserves its
+    // strip — including the next boot, which reads this flag.
+    document.body.classList.remove('cs-authed');
+    try { localStorage.removeItem('cs_bar'); } catch (e) {}
     let mode = 'signin';
     const ov = document.createElement('div');
     ov.id = 'cs-overlay';
@@ -737,6 +755,10 @@
   function showStatusBar() {
     injectStyles();
     document.body.classList.add('cs-authed');
+    // index.html reads this on the next boot and reserves the bar's strip
+    // before the first frame, so the page no longer drops by the height of
+    // this bar when identity comes back (Spiro 2026-11-18).
+    try { localStorage.setItem('cs_bar', '1'); } catch (e) {}
     let bar = document.getElementById('cs-statusbar');
     if (!bar) {
       bar = document.createElement('div');
@@ -4951,6 +4973,9 @@
     // way to call it.
     signOut: async () => {
       clearCachedIdentity();
+      // The reload that follows has no bar and no session, so it must not
+      // reserve the bar's strip on the way back up.
+      try { localStorage.removeItem('cs_bar'); } catch (e) {}
       await sb.auth.signOut();
       location.reload();
     },
