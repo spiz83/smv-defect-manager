@@ -787,12 +787,12 @@
     const dot = document.getElementById('cs-dot');
     const st = document.getElementById('cs-status');
     let { text, kind } = lastStatus;
-    // Only qualify the good state. "Offline" with photos waiting is already
-    // saying the right thing, and stacking two warnings helps nobody.
-    if (photosWaiting > 0 && text === 'Synced') {
-      text = `Synced · ${photosWaiting} photo${photosWaiting > 1 ? 's' : ''} to upload`;
-      kind = 'syncing';
-    }
+    // The status line stays a clean "Synced" when online, even with photos
+    // still in the outbox (Spiro 2026-11-18: a lingering "· N photo to upload"
+    // reads as a stuck, buggy app). The photos keep retrying and a failure is
+    // logged to the backend — nothing is lost, it is just not shown here.
+    // "Offline" is left exactly as it is: in a dead zone, saying so is honest
+    // and reassuring, not a glitch.
     if (dot) dot.className = 'dot' + (kind ? ' ' + kind : '');
     if (st) st.textContent = text;
   }
@@ -2162,12 +2162,22 @@
     _ppHideTimer = setTimeout(() => { el.style.display = 'none'; }, 1700);
   }
   function photoProgError(msg) {
+    // No alarming "⚠️ Upload failed" toast (Spiro 2026-11-18): the photo stays
+    // queued and keeps retrying, and the reason is logged to the backend — the
+    // supervisor should not see a glitch. We retire the progress chip QUIETLY,
+    // and never flip it to the ✓ "saved" state, which would be a lie. If other
+    // uploads are still in flight the chip keeps counting them down as normal.
+    void msg;
     _ppActive = Math.max(0, _ppActive - 1); _ppBatch = 0;
-    const el = _ppEl(); el.className = 'error';
-    el.querySelector('.cs-pp-ic').textContent = '⚠️';
-    el.querySelector('.cs-pp-text').textContent = msg || 'Upload failed';
+    if (_ppActive > 0) {
+      const el = _ppEl();
+      el.querySelector('.cs-pp-text').textContent = 'Uploading ' + _ppActive + ' photo' + (_ppActive > 1 ? 's' : '') + '…';
+      return;
+    }
+    const el = _ppEl();
+    el.className = '';
     clearTimeout(_ppHideTimer);
-    _ppHideTimer = setTimeout(() => { el.style.display = 'none'; }, 5000);
+    el.style.display = 'none';
   }
 
   // Returns true on success, false on any bail/failure (so the pending-photo
@@ -2982,7 +2992,21 @@
     photosWaiting = n;
     paintStatus();
     let el = document.getElementById('cs-photo-pending');
-    if (!n) { if (el) el.style.display = 'none'; lastPhotoError = ''; return; }
+    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+    // DISGUISE ONLINE PENDING / FAILURE (Spiro 2026-11-18). On signal, a photo
+    // still in the outbox — whether mid-retry or being refused by the server —
+    // must NOT be surfaced: "waiting · tap to see why" and "uploading…" that
+    // never clears are what made a working retry loop look like a broken app.
+    // The blob stays in IndexedDB, the loop keeps retrying, and the failure is
+    // filed to the backend for admin triage. Nothing is lost; it is just not
+    // shown. The ONE case still shown is genuinely OFFLINE: supervisors work in
+    // dead zones and the "your photos are safe, they'll go up when you have
+    // signal" reassurance is honest, not a glitch — it was never the problem.
+    if (!n || !offline) {
+      if (el) el.style.display = 'none';
+      if (!n) lastPhotoError = '';
+      return;
+    }
     if (!el) {
       el = document.createElement('div');
       el.id = 'cs-photo-pending';
@@ -2992,15 +3016,7 @@
     }
     el.style.display = 'block';
     el.title = photoWaitingReason();
-    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
-    // THREE different situations were all being described as "waiting for
-    // signal", including the one where there is signal and the server is
-    // refusing. That is what made a working retry loop look like a stuck app.
-    el.textContent = offline
-      ? `📸 ${n} photo${n > 1 ? 's' : ''} saved on this phone · uploading when you have signal`
-      : (lastPhotoError
-          ? `📸 ${n} photo${n > 1 ? 's' : ''} waiting · tap to see why`
-          : `📸 ${n} photo${n > 1 ? 's' : ''} uploading…`);
+    el.textContent = `📸 ${n} photo${n > 1 ? 's' : ''} saved on this phone · uploading when you have signal`;
   }
   // Which jobs the stuck photos belong to, so the message can name them
   // instead of leaving the user to guess which of 56 jobs it means. Filled by
@@ -4911,11 +4927,20 @@
     await flushDefectOutbox();   // and any photos waiting on those defects
     uploadPendingPhotos().catch(() => {});
     if (ok) { lastPushError = ''; setBanner('✅ Uploaded ' + ok + ' change(s) from this phone', 'ok', 4000); }
-    // `if (ok)` alone left the "⬆️ Uploading N change(s)…" banner on screen
-    // for ever when EVERY commit failed — a total failure looked exactly like
-    // work in progress, which is how 36 stuck changes read as a busy app.
-    else setBanner('⚠️ ' + locals.length + ' change(s) could not be uploaded'
-      + (lastPushError ? ' — ' + lastPushError : '') + '. They are safe on this phone.', 'offline', 9000);
+    // When EVERY commit fails, DON'T surface it (Spiro 2026-11-18: the "N
+    // change(s) could not be uploaded" banner is exactly the kind of thing that
+    // reads as a broken app). The changes are already safe in the outbox and
+    // keep retrying; clear the "Uploading…" banner so the screen looks calm,
+    // and file the failure to the backend for admin triage instead. Nothing is
+    // lost — this only changes what the supervisor sees.
+    else {
+      hideBanner();
+      logAppError('PUSH_FAILED', 'error',
+        locals.length + ' change(s) could not be uploaded — kept on the phone, retrying.',
+        'changes held in outbox: ' + locals.length + '\nserver said: ' + (lastPushError || '(no detail)'),
+        { count: locals.length, raw: String(lastPushError || '').slice(0, 300) },
+        'push:' + String(lastPushError || 'failed').slice(0, 80));
+    }
     persistSyncState();
   }
 

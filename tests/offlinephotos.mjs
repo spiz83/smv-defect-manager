@@ -1,15 +1,20 @@
-// The offline photo queue, as it LOOKS (Spiro 2026-11-16, before a demo):
-// "the 7 photos uploading... they've been uploading for ages, it seems like it
-// could be a bit of a glitch... I'm gonna demo this soon so I just want to make
-// sure this doesn't look like there's a glitch with the software."
+// The offline photo queue, as it LOOKS (Spiro 2026-11-18): "things like this
+// make the app look buggy — disguise them, but keep the log, and make sure
+// there's no data loss."
 //
-// The queue itself was fine — photos land in IndexedDB before any upload is
-// attempted and are only deleted once the server confirms. What was wrong was
-// everything the screen said about it:
-//   · the header said a green "Synced" while 7 photos were NOT synced
-//   · the pill and the sync banner overlapped at the bottom of the screen
-//   · the pill said "uploading when you have signal" on full wifi
-//   · the "upload failed" warning fired again on every single app open
+// The earlier answer (2026-11-16, before a demo) was to make the on-screen
+// pending/failed state HONEST and non-contradictory. The new answer goes
+// further: while online, a photo still in the outbox — mid-retry or being
+// refused by the server — is not surfaced to the supervisor AT ALL. It reads
+// as a glitch. The blob stays in IndexedDB and keeps retrying (nothing is
+// lost), and the failure is filed to the backend (dm_error_log) for the admin
+// to triage. What the supervisor sees stays a calm "Synced".
+//
+// The ONE thing still shown is the genuinely-OFFLINE reassurance — "saved on
+// this phone, uploading when you have signal" — because a dead zone is not a
+// glitch and a supervisor needs to know their photos are safe. This suite now
+// checks exactly that split: silent on signal, reassuring in a dead zone, and
+// the queue itself untouched either way.
 import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -101,99 +106,81 @@ const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? ' 
 check('cloud-sync exposes its indicator so this can be driven without a network',
   await page.evaluate(() => typeof (window.CloudSync && window.CloudSync.indicator) === 'object'), '');
 
-// ================= 1. the header must not claim "Synced" ==================
-console.log('\n--- the status line with photos still queued ---');
-const status = await page.evaluate(() => {
+// ============ 1. online, photos queued: the screen stays calm ============
+// A queued or server-refused photo must NOT surface while online — the old
+// "Synced · N to upload", the pill, and the "tap to see why" reason all read
+// as a broken app. The blob stays in the outbox and keeps retrying, and a
+// failure is logged to the backend; this checks the SCREEN stays calm, not
+// that the queue changed (it does not — that is the whole point, nothing is
+// lost).
+console.log('\n--- online, with photos still queued ---');
+const online = await page.evaluate(() => {
   const h = window.CloudSync.indicator;
   h.setStatus('Synced');
   const clean = (document.getElementById('cs-status') || {}).textContent;
-  h.updatePendingBanner(7);
-  const withPhotos = (document.getElementById('cs-status') || {}).textContent;
+  h.setPhotoError('');
+  h.updatePendingBanner(7);                         // 7 queued, on signal
+  const status = (document.getElementById('cs-status') || {}).textContent;
   const dot = (document.getElementById('cs-dot') || {}).className;
+  let pill = document.getElementById('cs-photo-pending');
+  const pillShown = !!pill && pill.style.display !== 'none';
+  // and again with the server actively refusing them
+  h.setPhotoError('new row violates row-level security policy');
+  h.updatePendingBanner(7);
+  pill = document.getElementById('cs-photo-pending');
+  const pillShownFailing = !!pill && pill.style.display !== 'none';
+  const statusFailing = (document.getElementById('cs-status') || {}).textContent;
+  h.setPhotoError('');
   h.updatePendingBanner(0);
   const after = (document.getElementById('cs-status') || {}).textContent;
-  return { clean, withPhotos, dot, after };
+  return { clean, status, dot, pillShown, pillShownFailing, statusFailing, after };
 });
-console.log('status:', JSON.stringify(status));
-check('with nothing queued the header says Synced', status.clean === 'Synced', status.clean);
-check('with 7 photos queued it does NOT just say Synced',
-  status.withPhotos !== 'Synced', status.withPhotos);
-check('…it says how many are still to go',
-  /7 photos to upload/.test(status.withPhotos || ''), status.withPhotos);
-check('…and the dot stops being the all-clear green',
-  /syncing/.test(status.dot || ''), status.dot);
-check('once they are all up it goes back to plain Synced', status.after === 'Synced', status.after);
+console.log('online:', JSON.stringify(online));
+check('with nothing queued the header says Synced', online.clean === 'Synced', online.clean);
+check('with 7 photos queued on signal it STILL just says Synced',
+  online.status === 'Synced', online.status);
+check('…and the dot stays the all-clear green (no syncing warning)',
+  !/syncing/.test(online.dot || ''), online.dot);
+check('…and no "photos waiting" pill is shown', online.pillShown === false, String(online.pillShown));
+check('even while the server is refusing them, nothing is surfaced',
+  online.pillShownFailing === false && online.statusFailing === 'Synced',
+  `pill ${online.pillShownFailing}, status ${online.statusFailing}`);
+check('once the queue drains it is still a plain Synced', online.after === 'Synced', online.after);
 
-// ================= 2. the pill and the banner must not overlap ============
-console.log('\n--- pill vs sync banner ---');
-const overlap = await page.evaluate(() => {
+// ============ 2. genuinely offline: the one honest reassurance kept =======
+// A dead zone is not a glitch, and a supervisor on a site needs to know their
+// photos are safe. This is the ONE case still shown — and it must still sit
+// clear of the sync banner.
+console.log('\n--- genuinely offline ---');
+const offline = await page.evaluate(() => {
   const h = window.CloudSync.indicator;
+  Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
   h.updatePendingBanner(7);
   const pill = document.getElementById('cs-photo-pending');
+  const text = pill ? pill.textContent : '';
+  const shown = !!pill && pill.style.display !== 'none';
   const alone = pill.getBoundingClientRect();
-  h.setBanner('Uploading 3 change(s)…', 'syncing');
+  h.setBanner('Reconnecting…', 'syncing');
   const b = document.getElementById('cs-banner');
-  // force the transition to its end state for measurement
   b.style.transition = 'none';
   const raised = pill.getBoundingClientRect();
   const bannerBox = b.getBoundingClientRect();
   const clash = !(raised.bottom <= bannerBox.top + 1 || raised.top >= bannerBox.bottom - 1);
   h.hideBanner();
-  const dropped = pill.getBoundingClientRect();
-  h.updatePendingBanner(0);
-  return { aloneBottom: Math.round(alone.bottom), raisedBottom: Math.round(raised.bottom),
-           bannerTop: Math.round(bannerBox.top), clash, droppedBottom: Math.round(dropped.bottom) };
-});
-console.log('geometry:', JSON.stringify(overlap));
-check('when the sync banner comes up, the pill steps above it',
-  overlap.raisedBottom < overlap.aloneBottom, JSON.stringify(overlap));
-check('…so the two never sit on top of each other', overlap.clash === false, JSON.stringify(overlap));
-check('…and the pill drops back once the banner goes',
-  overlap.droppedBottom === overlap.aloneBottom, JSON.stringify(overlap));
-
-// ================= 3. the pill must not blame the signal on wifi ==========
-console.log('\n--- what the pill actually says ---');
-const wording = await page.evaluate(() => {
-  const h = window.CloudSync.indicator;
-  const read = () => (document.getElementById('cs-photo-pending') || {}).textContent;
-  h.setPhotoError('');
-  h.updatePendingBanner(7);
-  const online = read();
-  h.setPhotoError('new row violates row-level security policy');
-  h.updatePendingBanner(7);
-  const failing = read();
   const reason = h.photoWaitingReason();
-  h.updatePendingBanner(0);
-  return { online, failing, reason };
-});
-console.log('wording:', JSON.stringify(wording, null, 1));
-check('online and moving, it does NOT claim to be waiting for signal',
-  !/when you have signal/.test(wording.online || ''), wording.online);
-check('…it says it is uploading', /uploading/.test(wording.online || ''), wording.online);
-check('online and failing, it offers a reason rather than blaming the signal',
-  /tap to see why/.test(wording.failing || '') && !/when you have signal/.test(wording.failing || ''),
-  wording.failing);
-check('…and the reason quotes what the server actually said',
-  /row-level security/.test(wording.reason || ''), wording.reason);
-check('…while still saying the photos are safe',
-  /safe|nothing is lost/i.test(wording.reason || ''), wording.reason);
-
-// ================= 4. offline still says the reassuring thing =============
-const offlineText = await page.evaluate(() => {
-  const h = window.CloudSync.indicator;
-  Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
-  h.updatePendingBanner(7);
-  const t = (document.getElementById('cs-photo-pending') || {}).textContent;
-  const r = h.photoWaitingReason();
   Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
   h.updatePendingBanner(0);
-  return { t, r };
+  return { shown, text, raisedBottom: Math.round(raised.bottom),
+           aloneBottom: Math.round(alone.bottom), clash, reason };
 });
-console.log('offline:', JSON.stringify(offlineText));
-check('genuinely offline, it DOES say it is waiting for signal',
-  /when you have signal/.test(offlineText.t || ''), offlineText.t);
+console.log('offline:', JSON.stringify(offline));
+check('offline, the reassurance pill IS shown', offline.shown === true, String(offline.shown));
+check('…it says the photos are saved and will go up on signal',
+  /saved on this phone/.test(offline.text) && /when you have signal/.test(offline.text), offline.text);
+check('…it steps above the sync banner, never overlapping it',
+  offline.raisedBottom < offline.aloneBottom && offline.clash === false, JSON.stringify(offline));
 check('…and promises the photos survive the app being closed',
-  /nothing is lost if you close the app/.test(offlineText.r || ''), offlineText.r);
+  /nothing is lost if you close the app/.test(offline.reason || ''), offline.reason);
 
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
