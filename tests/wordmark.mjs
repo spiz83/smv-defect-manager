@@ -116,6 +116,8 @@ for (const t of themes) {
       [W.left - H.left + 4, W.top - H.top - 3],
     ];
     const samples = await window.__sample(dataUrl, pts);
+    const burger = document.querySelector('.wm-burger svg rect');
+    const burgerFill = burger ? window.__parse(getComputedStyle(burger).fill) : null;
     const wordFg = window.__parse(getComputedStyle(word).color);
     const badgeBg = window.__parse(getComputedStyle(badge).backgroundColor);
     const ezFg = window.__parse(getComputedStyle(badge).color);
@@ -134,6 +136,12 @@ for (const t of themes) {
       hasRing: !!ring,
       ez: Math.round(window.__ratio(ezFg, badgeBg) * 100) / 100,
       wordSize: getComputedStyle(word).fontSize,
+      burger: burgerFill ? Math.round(worst(burgerFill) * 100) / 100 : null,
+      burgerBars: document.querySelectorAll('.wm-burger svg rect').length,
+      burgerLeadsMark: (() => {
+        const bz = document.querySelector('.wm-burger');
+        return !!bz && bz.getBoundingClientRect().right <= B.left + 1;
+      })(),
     };
   }, dataUrl);
   results[t.id] = r;
@@ -177,6 +185,14 @@ for (const [id, r] of Object.entries(results)) {
     r.badge >= 3 || (r.hasRing && r.ring >= 3),
     r.hasRing ? `badge ${r.badge}:1, keyline ${r.ring}:1` : `badge ${r.badge}:1, no keyline`);
   check(`[${id}] "EZ" is readable inside the badge`, r.ez >= 4.5, `${r.ez}:1`);
+  // The menu symbol. Spiro 2026-11-18: without it the only way into the menu
+  // was invisible. It is three drawn bars, not the ☰ character — that glyph
+  // is missing or differently proportioned in plenty of faces and this has to
+  // look the same on fifteen themes and two platforms.
+  check(`[${id}] the menu symbol is drawn, three bars`, r.burgerBars === 3, String(r.burgerBars));
+  check(`[${id}] …leading the mark, where a hamburger is expected`, r.burgerLeadsMark, '');
+  check(`[${id}] …and is as legible as the words beside it`,
+    r.burger != null && r.burger >= 3, `${r.burger}:1`);
 }
 console.log(`\ngradient-limited: ${JSON.stringify(limited)}`);
 check('exactly the three known palettes fall short, and no new one has joined them',

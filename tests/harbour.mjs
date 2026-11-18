@@ -395,14 +395,14 @@ check('the mark reads "EZ Defect Manager", in sentence case not the bar\'s caps'
 // is capped at 440px wide, so the mark scales to the space the Creation Homes
 // panel leaves rather than sitting at a fixed 24/30.
 //
-// NOTE these widths are measured in the FALLBACK face, which is 3.4% wider
-// than Outfit (271px vs 262px at --wm:24, both measured). So every clearance
-// below is a floor: what ships has a little more room, never less.
+// NOTE these widths are measured in the FALLBACK face, which is ~3% wider
+// than Outfit (307.9px vs 298.8px at --wm:24, both measured). So every
+// clearance below is a floor: what ships has a little more room, never less.
 const wide = await wm('harbour', 1280);
-check('the mark tops out at 24, the most that fits the 440px container',
-  wide.badgeSize === '24px', wide.badgeSize);
+check('the mark tops out at 21, the most that fits the 440px container',
+  wide.badgeSize === '21px', wide.badgeSize);
 check('…and scales down on a phone rather than overlapping the logo',
-  parseFloat(harb.badgeSize) < 24 && parseFloat(harb.badgeSize) > 14,
+  parseFloat(harb.badgeSize) < 21 && parseFloat(harb.badgeSize) > 12,
   `${harb.badgeSize} at 390px`);
 
 const MIN_GAP = 6;   // px of daylight between the logo panel and the mark

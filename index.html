@@ -2023,23 +2023,28 @@
                it exactly as the supplied component does.
 
                IT IS FLUID, and the formula is doing real work. The mark is
-               ~11.3px wide for every 1px of --wm, and it has to live in what
-               the Creation Homes panel leaves of the bar: the app is capped
-               at 440px wide, so that is min(viewport, 440) − 135 for the
-               panel − 20 for the title's padding. Ten more pixels keep it
+               ~12.83px wide for every 1px of --wm (measured, in the harness's
+               fallback face, which is the wider of the two), and it has to
+               live in what the Creation Homes panel leaves of the bar: the app
+               is capped at 440px wide, so that is min(viewport, 440) − 135 for
+               the panel − 20 for the title's padding. Ten more pixels keep it
                from crowding the logo, which leaves
-                   --wm = (min(vw, 440) − 165) / 11.3
-               and that is the middle term below; the 440 cap is what the
-               24px ceiling stands in for.
+                   --wm = (min(vw, 440) − 165) / 12.83
+               and that is the middle term below.
 
-               The original spec said 24 on a phone and 30 on a desktop, which
-               "EZ Defect" fitted easily. "EZ Defect Manager" is 2.4x the word
-               and does not: at 30 it is 339px wide against 285px of space,
-               even at the full 440. So 24 is now the ceiling rather than the
-               phone size, and narrow phones scale down from it. The width
-               sweep in tests/harbour.mjs is what holds this honest — change
-               the logo and it fails. */
-            --wm: clamp(14px, calc(8.85vw - 14.6px), 24px);
+               THE CEILING IS NOT A STYLE CHOICE. Past 440 the container stops
+               growing but vw does not, so the clamp's maximum has to be the
+               value the formula reaches AT 440 — 21.4 — or a wide screen would
+               compute a size that overflows a 440px bar. 21 is that number,
+               not a round one someone liked.
+
+               Every constant here has been re-derived twice: once when
+               "EZ Defect" became "EZ Defect Manager" (2.4x the word), and
+               again when the hamburger went in front of it (Spiro 2026-11-18)
+               and took the per-unit width from 11.3 to 12.83. The nine-width
+               sweep in tests/harbour.mjs is what holds it honest — change the
+               logo, the glyph or the gap and it fails. */
+            --wm: clamp(12px, calc(7.79vw - 12.86px), 21px);
             position: absolute; left: 0; top: 50%; transform: translateY(-50%);
             display: inline-flex; align-items: center; line-height: 1;
             gap: calc(var(--wm) * .38);
@@ -2050,6 +2055,23 @@
                asks for an upright "Defect" with a capital D, not "DEFECT". */
             text-transform: none; font-style: normal;
         }
+        /* THE MENU IS NOT DISCOVERABLE WITHOUT THIS (Spiro 2026-11-18):
+           "when you press it it actually scrolls down — the average person
+           won't know this, it's almost like a hidden thing… maybe use the
+           universal symbol".
+           He is right, and I had made the opposite trade deliberately: a
+           chevron would have widened the mark and the fit is measured to the
+           pixel, so I left it off and the only way in was invisible. An
+           affordance nobody finds is worth less than a few pixels of type.
+           It leads the mark, where a hamburger is expected, and takes its
+           colour from the same token as the words — so it is legible on every
+           palette by the same measurement that keeps them legible. */
+        .wm-burger {
+            display: inline-flex; align-items: center;
+            width: calc(var(--wm) * .82); margin-right: calc(var(--wm) * .34);
+            flex: 0 0 auto;
+        }
+        .wm-burger svg { width: 100%; height: auto; display: block; fill: var(--wm-ink, #FFFFFF); }
         .wm-badge {
             background: var(--wm-badge-bg, #90BFE9); color: var(--wm-badge-ink, #1A2F62);
             /* spread, not a border: it draws outside the box, so the keyline
@@ -3456,7 +3478,7 @@
         function renderHomeView() {
             return `
                 <div class="app-header home-hero">
-                    <div class="header-title"><button type="button" class="wm" id="ez-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-label="EZ Defect Manager — menu" onclick="openMainMenu()"><span class="wm-text">Defect Manager</span><span class="wm-ez" aria-hidden="true"><span class="wm-badge">EZ</span><span class="wm-word">Defect Manager</span></span></button></div>
+                    <div class="header-title"><button type="button" class="wm" id="ez-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-label="EZ Defect Manager — menu" onclick="openMainMenu()"><span class="wm-text">Defect Manager</span><span class="wm-ez" aria-hidden="true"><span class="wm-burger"><svg viewBox="0 0 20 14" focusable="false"><rect x="0" y="0" width="20" height="2.4" rx="1.2"/><rect x="0" y="5.8" width="20" height="2.4" rx="1.2"/><rect x="0" y="11.6" width="20" height="2.4" rx="1.2"/></svg></span><span class="wm-badge">EZ</span><span class="wm-word">Defect Manager</span></span></button></div>
                     <span class="hero-logo"><img src="creation-homes-logo.png" alt="Creation Homes"
                          onerror="this.closest('.hero-logo').remove()"></span>
                 </div>
@@ -16089,7 +16111,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17u';
+        const APP_VERSION = '2026-11-18a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16176,7 +16198,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17u"></script>
+    <script src="cloud-sync.js?v=2026-11-18a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

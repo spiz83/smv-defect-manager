@@ -3754,3 +3754,41 @@ reporting state — which link, on which job, with which flags. The
 diagnostic took one round to build and would have saved three. When a
 failure is invisible from outside, the first move is to make it visible,
 not to guess at it.
+
+## The menu needed a symbol (2026-11-18, `2026-11-18a`)
+
+Spiro, circling the EZ badge: "the fact that when you press it it actually
+scrolls down — the average person won't know this. It's almost like a
+hidden thing. You almost need to create the graphics so that the person
+knows that that is the thing to press… maybe use the universal symbol."
+
+He is right, and I had made the opposite trade **on purpose** the day
+before: a chevron would widen the mark, the fit is measured to the pixel
+across nine widths, so I left it off and said so. That was the wrong call.
+An affordance nobody can find is worth less than a few pixels of type — a
+menu with no way in is not a menu, it is a secret.
+
+Three drawn bars rather than the ☰ character: that glyph is missing or
+differently proportioned in plenty of faces, and this has to be identical
+on fifteen palettes and two platforms. It takes its fill from `--wm-ink`,
+the same token the words use, so it is legible on every palette by the same
+measurement that keeps them legible — no new per-theme decision.
+
+**The cost, paid honestly.** The symbol takes the mark's per-unit width
+from 11.3px to 12.83px, so every constant in the clamp was re-derived from
+a fresh measurement rather than nudged:
+
+    --wm: clamp(12px, calc(7.79vw - 12.86px), 21px)
+
+The type is smaller for it — 17.5px at 390 where it was 19.9. That is the
+trade, and it is the right way round.
+
+**The ceiling is not a style choice.** Past 440 the container stops growing
+but `vw` does not, so the maximum has to be the value the formula reaches
+AT 440 — 21.4 — or a wide screen computes a size that overflows a 440px
+bar. 21 is that number, not a round one that looked nice.
+
+Every constant in that line has now been re-derived twice: once when
+"EZ Defect" became "EZ Defect Manager", and again for this. The sweep is
+what makes that safe to do — change the logo, the glyph or the gap and it
+fails rather than quietly overlapping.
