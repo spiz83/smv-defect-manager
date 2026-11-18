@@ -100,6 +100,9 @@ await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
         window.__dmJobLookups++;
         return chain([{ job_id: JOB_UUID }]);
       }
+      if (name === 'dm_defects' && String(cols).includes('legacy_id') && window.__defectRows) {
+        return chain(window.__defectRows);
+      }
       if (name === 'dm_temp_jobs' && !window.__tempJobsExist) {
         const p = Promise.resolve({ data: null,
           error: { code: '42P01', message: 'relation "public.dm_temp_jobs" does not exist' } });
@@ -159,7 +162,9 @@ await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
       removeChannel() {},
       storage: { from: () => ({
         list: async () => ({ data: [] }), remove: async () => ({}),
-        upload: async () => ({ data: {}, error: null }),
+        upload: async () => (window.__failUpload
+          ? { data: null, error: { message: 'network' } }   // keeps it queued, so the
+          : { data: {}, error: null }),                      // outbox record can be read
         createSignedUrls: async () => ({ data: [] }), createSignedUrl: async () => ({ data: null }),
       }) },
       functions: { invoke: async () => ({ data: null, error: null }) },
@@ -583,6 +588,68 @@ const clearable = await page.evaluate(async () => {
 console.log('clearable:', JSON.stringify(clearable));
 check('a permanently-refused photo is offered for discard like an orphan',
   clearable.marked > 0 && clearable.listed, JSON.stringify(clearable));
+
+// ================= 10. WHY the orphans happened ===========================
+// Spiro: "there is an option to discard those photos but I need to get to the
+// source of the problem rather than sweeping it under the rug." Quite right —
+// Discard clears a counter, it does not explain six photos.
+//
+// The cause is structural. A defect created in CH TRACKER carries
+// legacy_id = NULL in dm_defects, so its local id is hashId(uuid) — a number
+// that appears nowhere in the database. The photo outbox stored only that
+// number, and resolveDefectUuid's fallback asks
+// `.eq('legacy_id', <that number>)`, which cannot match a NULL column. So
+// resolution rested entirely on idMap.defects — which the pull rebuilds, and
+// which SKIPS every defect whose job is not visible.
+//
+// Photograph a CH Tracker defect, let its job leave your view, and the single
+// id the photo carried is unresolvable for ever.
+console.log('\n--- a CH Tracker defect whose job leaves your view ---');
+const root = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  const out = {};
+  const UUID = 'dddddddd-0000-4000-8000-00000000000d';
+  const LID = h.hashId(UUID);                 // what the pull would call it
+  out.lid = LID;
+  out.looksLocal = LID !== Number(UUID);      // a number, not a uuid
+  // It is on the phone AND in the id map when the photo is taken — which is
+  // the only state a photo is ever taken in, since the defect has to be on
+  // screen to photograph. The pull puts it there.
+  db.data.defects.push({ id: LID, addressId: 1, description: 'Flashing missing',
+                         location: 'Roof', status: 'open', createdAt: '2026-11-01T00:00:00.000Z' });
+  db.save();
+  h.rememberDefect(LID, UUID);
+  window.__defectRows = [{ id: UUID, legacy_id: null }];
+  // Hold the upload so the photo stays in the outbox and its record can be
+  // read. What is being checked is what gets WRITTEN DOWN at save time.
+  window.__failUpload = true;
+  await window.CloudPhotos.savePhoto(LID, new File([new Blob(['x'])], 'c.jpg', { type: 'image/jpeg' }));
+  await new Promise(r => setTimeout(r, 120));
+  const queued = await h.pendingRecordFor(LID);
+  out.recordedUuid = queued && queued.defectUuid;
+  // Now the job leaves this login's view: the pull drops the defect and the
+  // map entry with it. This is the exact state the six were in.
+  db.data.defects = db.data.defects.filter(d => Number(d.id) !== LID);
+  db.save();
+  h.forgetDefect(LID);
+  out.goneFromPhone = !(db.data.defects || []).some(d => Number(d.id) === LID);
+  // With the uuid written down, the photo still knows where it belongs.
+  out.stillKnows = (await h.pendingRecordFor(LID) || {}).defectUuid;
+  // And a photo queued BEFORE this fix — no uuid recorded — is recovered by
+  // rebuilding the same hash, as long as the defect is readable.
+  out.byHash = await h.resolveDefectByHash(LID);
+  return out;
+});
+console.log('root:', JSON.stringify(root));
+check('a CH Tracker defect is known locally by a hash of its uuid',
+  Number.isFinite(root.lid) && root.lid > 1000000, String(root.lid));
+check('the photo records that uuid when it is taken — the fix',
+  root.recordedUuid === 'dddddddd-0000-4000-8000-00000000000d', JSON.stringify(root.recordedUuid));
+check('…so when the job leaves view and the defect is dropped…', root.goneFromPhone);
+check('…the photo still knows exactly where it belongs',
+  root.stillKnows === 'dddddddd-0000-4000-8000-00000000000d', JSON.stringify(root.stillKnows));
+check('a photo queued before the fix is recovered by rebuilding the hash',
+  root.byHash === 'dddddddd-0000-4000-8000-00000000000d', JSON.stringify(root.byHash));
 
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');

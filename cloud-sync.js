@@ -2173,8 +2173,10 @@
   // the dm_defect_photos.expires_at default (42 days) as before. BPI report
   // photos pass 60, matching CH Tracker so a report retained the same length
   // whichever app imported it (Spiro 2026-07-30).
-  async function uploadDefectPhoto(legacyId, file, idKey, quiet, keepDays) {
-    const uuid = await resolveDefectUuid(legacyId);
+  async function uploadDefectPhoto(legacyId, file, idKey, quiet, keepDays, known) {
+    // What the photo recorded when it was taken beats anything we can work
+    // out now — that is the entire point of recording it.
+    const uuid = (known && known.defectUuid) || await resolveDefectUuid(legacyId);
     // Worth naming rather than failing mutely: a photo cannot go up before the
     // defect it belongs to exists in the cloud, and that reads from outside as
     // the photo being stuck for no reason.
@@ -2186,9 +2188,17 @@
       // photo has nothing to attach to. Retrying that for ever is why the pill
       // never clears (Spiro 2026-11-18: six of seven were in this state).
       const local = (db.data.defects || []).some(x => Number(x.id) === Number(legacyId));
-      lastPhotoError = local
-        ? 'the defect it belongs to has not synced yet'
-        : 'ORPHAN — the defect it belongs to is not on this phone or in the cloud';
+      if (local) { lastPhotoError = 'the defect it belongs to has not synced yet'; return false; }
+      // Not on the phone. Before calling it an orphan, do the one thing that
+      // can still find it: rebuild the hash the pull would have used.
+      const found = await resolveDefectByHash(legacyId);
+      if (found) {
+        idMap.defects[legacyId] = found;
+        return await uploadDefectPhoto(legacyId, file, idKey, quiet, keepDays,
+          { defectUuid: found, jobUuid: null });
+      }
+      lastPhotoError = 'ORPHAN — not among the ' + defectHashCount
+        + ' defects this login can read, so nothing can attach it';
       return false;
     }
     // Honest failure wording: only claim "No connection" when the device is
@@ -2199,7 +2209,7 @@
     // First path folder is the job uuid when we can resolve it (keeps photos
     // grouped per job), otherwise the defect uuid — we no longer BLOCK on a
     // missing job mapping (the bucket RLS no longer requires it).
-    const jobUuid = await resolveJobUuidForDefect(legacyId, uuid);
+    const jobUuid = (known && known.jobUuid) || await resolveJobUuidForDefect(legacyId, uuid);
     const folder1 = jobUuid || uuid;
     if (!quiet) photoProgStart();
     // Compress, but NEVER lose the photo over a compression hiccup — fall back
@@ -2731,14 +2741,33 @@
       req.onerror = () => reject(req.error);
     });
   }
-  async function pendingPut(legacyId, blob, keepDays) {
+  // `where` is {defectUuid, jobUuid}, resolved while the defect is still in
+  // front of us. THE WHOLE ORPHAN BUG IS THE ABSENCE OF THIS.
+  //
+  // A defect created in CH Tracker carries legacy_id = NULL in dm_defects, so
+  // its local id is hashId(uuid) — a number that exists nowhere in the
+  // database. The outbox stored only that, and resolveDefectUuid's fallback
+  // asks `.eq('legacy_id', <that number>)`, which cannot match a NULL column.
+  // So resolution depended entirely on idMap.defects, which the pull rebuilds
+  // and which SKIPS every defect whose job is not visible. Photograph a
+  // CH Tracker defect, let its job leave your view, and the one id the photo
+  // carried became unresolvable for ever. Six of Spiro's seven got there that
+  // way (2026-11-18).
+  //
+  // Resolved at save time it cannot happen: the photo carries the real uuid,
+  // and nothing that happens to a map or a job list afterwards can take that
+  // away.
+  async function pendingPut(legacyId, blob, keepDays, where) {
     const db = await idbOpen();
     return new Promise((resolve, reject) => {
       const tx = db.transaction('q', 'readwrite');
       // keepDays rides along so a photo queued offline still gets the right
       // retention when it finally uploads. Items queued before this existed
       // have it undefined and fall back to the column default.
-      tx.objectStore('q').put({ key: `${legacyId}|${Date.now()}|${Math.random().toString(36).slice(2)}`, legacyId, blob, ts: Date.now(), keepDays: keepDays || undefined });
+      tx.objectStore('q').put({ key: `${legacyId}|${Date.now()}|${Math.random().toString(36).slice(2)}`,
+        legacyId, blob, ts: Date.now(), keepDays: keepDays || undefined,
+        defectUuid: (where && where.defectUuid) || undefined,
+        jobUuid: (where && where.jobUuid) || undefined });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -2934,6 +2963,7 @@
          + ' · contractors mapped: ' + Object.keys(idMap.contractors).length
          + ' · defects mapped: ' + Object.keys(idMap.defects).length);
     L.push('last photo error: ' + (lastPhotoError || '—'));
+    if (defectHashCount) L.push('defects searched for orphans: ' + defectHashCount);
     L.push('last push error: ' + (lastPushError || '—'));
     // The single most useful line here, and it was missing: whether the table
     // temp jobs sync into actually exists. Everything on a temp job is stuck
@@ -3090,7 +3120,8 @@
           // the outbox, which is the old local-only behaviour.
           const ok = isLocalOnlyDefect(it.legacyId)
             ? await uploadTempPhoto(it.legacyId, it.blob, it.key)
-            : await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays);
+            : await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays,
+                { defectUuid: it.defectUuid, jobUuid: it.jobUuid });
           if (ok) {
             delete photoFailCounts[it.key]; delete photoFailReason[it.key];
             lastPhotoError = ''; await pendingDelete(it.key); await refreshPendingCounts();
@@ -3135,7 +3166,18 @@
   // retry loop lands it whenever signal allows.
   async function savePhotoDurable(legacyId, fileOrBlob, keepDays) {
     let persisted = false;
-    try { await pendingPut(legacyId, fileOrBlob, keepDays); persisted = true; } catch (e) { /* IndexedDB unavailable */ }
+    // Look up where this belongs NOW, while the defect is certainly here.
+    // Best effort: a defect not yet in the cloud resolves to nothing, and the
+    // sweep falls back to the old path, which is right for that case — it is
+    // only ever ABOUT to exist, not gone.
+    let where = null;
+    try {
+      if (!isLocalOnlyDefect(legacyId)) {
+        const defectUuid = await resolveDefectUuid(legacyId);
+        if (defectUuid) where = { defectUuid, jobUuid: await resolveJobUuidForDefect(legacyId, defectUuid) };
+      }
+    } catch (e) { /* offline — the sweep resolves it later as before */ }
+    try { await pendingPut(legacyId, fileOrBlob, keepDays, where); persisted = true; } catch (e) { /* IndexedDB unavailable */ }
     if (persisted) {
       await refreshPendingCounts();                       // badge + banner show it at once
       // A temp defect must NOT be committed to dm_defects — it has no job there
@@ -4290,6 +4332,33 @@
   // Write ONE defect straight to dm_defects (upsert by legacy_id). Advances the
   // diff baseline so the legacy engine won't also touch it. On any failure the
   // id is queued in the outbox for retry — so an offline edit is never lost.
+  // LAST RESORT for a photo queued before the uuid was recorded. The local id
+  // IS hashId(uuid) for a CH Tracker defect, so the mapping is reproducible —
+  // ask for every defect this login can read and hash them the same way the
+  // pull does. Deliberately NOT inside resolveDefectUuid: that runs on hot
+  // paths and this is a full table read, so it is reached only when a photo
+  // has otherwise run out of options.
+  //
+  // It can still come back empty, and that is a real answer rather than a
+  // failure: if the defect is not among the ones this login can read, no
+  // client-side cleverness will attach the photo, and the count it searched
+  // says so plainly instead of leaving it a mystery.
+  let defectHashMap = null, defectHashAt = 0, defectHashCount = 0;
+  async function resolveDefectByHash(legacyId) {
+    if (defectHashMap && defectHashMap[legacyId]) return defectHashMap[legacyId];
+    if (defectHashMap && Date.now() - defectHashAt < 120000) return null;
+    defectHashAt = Date.now();
+    try {
+      const { data, error } = await selectAllRows('dm_defects', 'id, legacy_id', 'id');
+      if (error) return null;
+      const m = {};
+      (data || []).forEach(d => { m[d.legacy_id != null ? d.legacy_id : hashId(d.id)] = d.id; });
+      defectHashMap = m;
+      defectHashCount = (data || []).length;
+      return m[legacyId] || null;
+    } catch (e) { return null; }
+  }
+
   // Why a push is not happening, in the server's own words — so the banner
   // can stop claiming it is uploading when nothing is going up.
   let lastPushError = '';
@@ -4801,6 +4870,15 @@
       photoDiagnostic: () => photoDiagnostic(),
       orphanPhotoKeys: () => orphanPhotoKeys(),
       explainPhotoError: (m) => explainPhotoError(m),
+      resolveDefectByHash: (id) => resolveDefectByHash(id),
+      forgetDefect: (id) => { delete idMap.defects[id]; defectHashMap = null; defectHashAt = 0; },
+      // What a pull does when it maps a defect — the state a photo is
+      // always taken in.
+      rememberDefect: (id, uuid) => { idMap.defects[id] = uuid; },
+      pendingRecordFor: async (legacyId) => {
+        let items = []; try { items = await pendingAll(); } catch (e) {}
+        return items.find(it => Number(it.legacyId) === Number(legacyId)) || null;
+      },
       pendingKeysFor: async (legacyId) => {
         let items = []; try { items = await pendingAll(); } catch (e) {}
         return items.filter(it => Number(it.legacyId) === Number(legacyId)).map(it => it.key);

@@ -4030,3 +4030,51 @@ three produced the same screen: a number that would not go down. Three
 different causes behind one symptom is the normal case, not the unlucky
 one — and no amount of thinking about the symptom separates them. Only
 reporting per-item state does.
+
+## The actual source of the orphaned photos (2026-11-18, `2026-11-18i`)
+
+Spiro: "there is an option to discard those photos but I need to get to the
+source of the problem rather than sweeping it under the rug." Correct.
+Discard clears a counter; it does not explain six photos, and a counter
+that can be cleared by hand is not a fixed bug.
+
+**The cause, in three facts that only matter together:**
+
+1. A defect created in **CH Tracker** carries `legacy_id = NULL` in
+   `dm_defects`. The pull therefore names it locally `hashId(uuid)` — a
+   number that exists nowhere in the database.
+2. The photo outbox stored **only that number**.
+3. `resolveDefectUuid`'s fallback asks
+   `.eq('legacy_id', <that number>)` — against a column that is NULL for
+   exactly those rows. **It can never match.** The fallback is structurally
+   incapable of resolving any CH Tracker defect; it only ever worked for
+   defects this app created.
+
+So resolution rested entirely on `idMap.defects`, which the pull rebuilds
+and which **skips every defect whose job is not visible** (line 1263,
+`if (addressLid == null) return`). Photograph a CH Tracker defect, let its
+job leave your view — completed, reassigned, access changed — and the one
+id the photo carried becomes unresolvable for ever.
+
+That is the whole of it, and it explains the seventh too: Lot 5's photo
+fails with an access refusal because that job has left this login's reach,
+and the other six are on jobs that left it earlier.
+
+**The fix is to write down where the photo belongs at the moment it is
+taken** — defect uuid and job uuid, resolved while the defect is certainly
+in front of us — rather than storing a local id and hoping it can be
+resolved later. Nothing that happens to a map or a job list afterwards can
+take that away.
+
+**For photos already queued**, the local id is `hashId(uuid)` and that
+mapping is reproducible: ask for every defect this login can read and hash
+them the same way the pull does. Deliberately not inside
+`resolveDefectUuid`, which runs on hot paths — it is a full table read,
+reached only when a photo has otherwise run out of options. If it comes
+back empty that is a real answer, and the message now says how many
+defects were searched rather than leaving it a mystery.
+
+**What Discard is for now.** Not "a photo we could not be bothered to
+chase" — a photo whose defect genuinely is not readable by this login,
+after the app has looked for it properly. That is a legitimate state and
+it should be clearable. It should never have been the first answer.
