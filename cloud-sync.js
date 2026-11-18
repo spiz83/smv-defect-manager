@@ -738,18 +738,13 @@
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'cs-statusbar';
+      // Just the sync state. The email, the change-password key and the
+      // Sign out button all moved into the EZ menu (Spiro 2026-11-17): they
+      // are things you touch once a month sitting permanently across the top
+      // of a screen people use all day.
       bar.innerHTML = `<span class="dot" id="cs-dot"></span>
-        <span id="cs-status">Synced</span>
-        <span class="cs-who" style="opacity:.7">· ${userEmail || ''}</span>
-        <button id="cs-password" title="Change password" aria-label="Change password">🔑</button>
-        <button id="cs-signout">Sign out</button>`;
+        <span id="cs-status">Synced</span>`;
       document.body.appendChild(bar);
-      document.getElementById('cs-password').onclick = () => showPasswordCard('change');
-      document.getElementById('cs-signout').onclick = async () => {
-        clearCachedIdentity();
-        await sb.auth.signOut();
-        location.reload();
-      };
     }
   }
   // How many photos are still sitting in the outbox. Kept here so the status
@@ -4650,6 +4645,13 @@
   window.CloudAuth = {
     openChangePassword: () => showPasswordCard('change'),
     currentEmail: () => userEmail,
+    // Moved out of the status bar and into the EZ menu, so the app needs a
+    // way to call it.
+    signOut: async () => {
+      clearCachedIdentity();
+      await sb.auth.signOut();
+      location.reload();
+    },
   };
 
   // ===========================================================================

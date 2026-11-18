@@ -389,7 +389,18 @@ console.log('\n--- G · the table is not there yet ---');
     stillHere: (db.data.addresses || []).some(a => a.isTemp),
     onScreen: [...document.querySelectorAll('[data-job-search]')].some(e => /Rosewood/.test(e.innerText)),
     syncOn: tempSyncOn(),
-    wording: (document.querySelector('[onclick*="createTempJob"]') || {}).textContent || '',
+    // The wording moved into the EZ menu with the button (2026-11-17), and
+    // it is the whole point of this check: before the migration a temp job
+    // lives on THIS DEVICE, and the row has to say the honest one of the two.
+    wording: (() => {
+      document.getElementById('ez-menu')?.remove();
+      openMainMenu();
+      const it = [...document.querySelectorAll('#ez-menu .ezm-item')]
+        .find(i => /Add temp job/.test(i.textContent));
+      const t = it ? it.textContent : '';
+      closeMainMenu();
+      return t;
+    })(),
     defectsPushed: (window.__stub.T.dm_defects || []).some(d => /Reseal shower/.test(d.description || '')),
   }));
   console.log('pre-migration:', JSON.stringify(st));

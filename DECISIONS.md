@@ -3663,3 +3663,50 @@ nothing is worse than no button.
 is, which is precisely the problem this addresses. The next screenshot
 names the broken link instead of the symptom, and the fix after it will be
 aimed rather than guessed.
+
+## The EZ menu, and taking the clutter off the home screen (2026-11-17, `2026-11-17t`)
+
+Spiro: "when clicking EZ top left it does drop down menu showing: Shopping
+list / Reports / Add temp job / Settings // Logged in as: / Change password
+/ Sign out. Then you can remove the stuff up top and at the bottom to
+remove the clutter."
+
+The point of the change is **subtraction**. A menu that adds a route
+without removing the old one is just more clutter, so the suite is mostly
+about what is GONE: the Shopping List card, the Reports section, the
+Settings / View All Defects footer, the Add temp job card, and — from the
+status bar — the email, the 🔑 button and Sign out. What is left on the
+home screen is the search and the job list, which is what people actually
+work from.
+
+The status bar keeps the one thing it is for: live sync state. Identity and
+the two buttons were things you touch once a month sitting permanently
+across the top of a screen used all day.
+
+**The whole wordmark is the button, not just the badge.** The badge is 35px
+and a finger needs 44. A chevron would have signalled "menu" more plainly
+but the mark is measured to the pixel across nine widths — widening it
+would have broken the fit that took several rounds to get right.
+
+**Two things that were nearly lost in the move, and were caught:**
+
+- **"· this device only".** The temp-job card carried an honest subtitle
+  saying where a temp job actually lives, which depends on whether the
+  2026-09-04 migration has run. I dropped it building the menu row.
+  `tempsync.mjs` failed on exactly that wording — the flattering version of
+  that sentence loses someone's work. The row carries it again.
+- **The admin gate.** Add temp job was admin-only as a card. Moving it into
+  a menu must not quietly hand it to everyone; the suite now checks a
+  non-admin does not see it.
+
+**View All Defects was added, though Spiro did not list it.** It lived in
+the footer being removed and is a primary action, not clutter — dropping it
+would have been losing a feature to a tidy-up. Easy to take out if it is
+not wanted there.
+
+The remaining `.shop-home`, `.manage-row`, `.view-all-link` and
+`.report-link` CSS is now inert. Left in place and noted rather than
+pruned: removing CSS is a separate change with its own risk, and this one
+was already large. `renderShoppingEntry()` itself is gone — a render
+function for a card we deliberately removed is an invitation to put it back
+by accident.

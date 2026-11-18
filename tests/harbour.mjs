@@ -351,11 +351,16 @@ check('Harbour shows the EZ Defect wordmark instead',
   harb.ezShown && !harb.textShown, `text=${harb.textShown} ez=${harb.ezShown}`);
 // Read from the accessibility tree, not from innerText: the question is what
 // a screen reader says, and the hidden text must not be part of it.
-const named = await page.getByRole('img', { name: 'EZ Defect Manager', exact: true }).count();
+// The mark became the menu button (Spiro 2026-11-17), so it is announced as
+// a button rather than an image — and its name has to carry BOTH the product
+// and the fact that it opens something, since it is the only way in.
+const named = await page.getByRole('button', { name: /^EZ Defect Manager/ }).count();
 const snap = await page.locator('.header-title').ariaSnapshot();
 check('…and a screen reader is handed exactly one product name',
   named === 1 && (snap.match(/Defect Manager/gi) || []).length === 1,
   `${named} match(es); tree: ${JSON.stringify(snap)}`);
+check('…and told it opens a menu',
+  /menu/i.test(snap), snap);
 
 // --- THE BAR KEEPS ITS HEIGHT. Spiro: "don't alter the height of the little
 //     header section". The badge is taller than the line of type it replaces,

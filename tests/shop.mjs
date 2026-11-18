@@ -220,30 +220,36 @@ check('Back from a job list returns to that job',
 console.log('\n--- the global list ---');
 await page.evaluate(() => showHomeView());
 await page.waitForTimeout(250);
+// The home screen entry moved into the EZ menu (Spiro 2026-11-17): "when
+// clicking EZ top left it does drop down menu… then you can remove the stuff
+// up top and at the bottom to remove the clutter". So what is checked is that
+// it is reachable in one tap from the mark, still carries its count, and is
+// no longer a card competing with the job list.
 const home = await page.evaluate(() => {
-  const btn = document.querySelector('.shop-home');
-  const jobs = document.getElementById('myjobs-list');
-  const reports = [...document.querySelectorAll('.section-title')].find(t => /Reports/i.test(t.textContent));
+  const card = document.querySelector('.shop-home');
+  openMainMenu();
+  const items = [...document.querySelectorAll('#ez-menu .ezm-item')];
+  const shop = items.find(i => /Shopping List/.test(i.textContent));
   return {
-    exists: !!btn,
-    n: (btn.querySelector('.shop-home-n') || {}).textContent,
-    sub: btn.textContent.replace(/\s+/g, ' ').trim().slice(0, 80),
-    belowJobs: btn.getBoundingClientRect().top >= jobs.getBoundingClientRect().bottom - 1,
-    aboveReports: btn.getBoundingClientRect().bottom <= reports.getBoundingClientRect().top + 1,
-    width: Math.round(btn.getBoundingClientRect().width),
-    jobsWidth: Math.round(jobs.getBoundingClientRect().width),
+    cardGone: !card,
+    menuOpened: !!document.getElementById('ez-menu'),
+    inMenu: !!shop,
+    n: shop ? (shop.querySelector('.ezm-badge') || {}).textContent : null,
+    firstItem: items.length ? items[0].textContent.replace(/\s+/g, ' ').trim() : null,
+    tapTarget: shop ? Math.round(shop.getBoundingClientRect().height) : 0,
   };
 });
 console.log('home entry:', JSON.stringify(home));
-check('a Shopping List entry exists on the home screen', home.exists);
-check('it sits directly BELOW the job list', home.belowJobs);
-check('…and ABOVE Reports — where Spiro circled it', home.aboveReports);
-check('it lines up with the job list', Math.abs(home.width - home.jobsWidth) <= 2, `${home.width} vs ${home.jobsWidth}`);
-check('it carries the total across all jobs', home.n === '3', home.n);
-check('the subtitle names the job spread', /3 items to order across 2 jobs/.test(home.sub), home.sub);
-await shot('73-home-entry');
+check('the home screen no longer carries a Shopping List card', home.cardGone);
+check('the EZ mark opens the menu', home.menuOpened);
+check('…and Shopping List is in it', home.inMenu);
+check('…first, where the card used to be the first thing under the jobs',
+  /Shopping List/.test(home.firstItem || ''), home.firstItem);
+check('it still carries the total across all jobs', home.n === '3', home.n);
+check('…on a finger-sized row', home.tapTarget >= 44, `${home.tapTarget}px`);
 
-await page.evaluate(() => document.querySelector('.shop-home').click());
+await page.evaluate(() => [...document.querySelectorAll('#ez-menu .ezm-item')]
+  .find(i => /Shopping List/.test(i.textContent)).click());
 await page.waitForTimeout(300);
 const global = await page.evaluate(() => ({
   view: state.currentView,
@@ -352,11 +358,16 @@ await shot('76-empty');
 
 await page.evaluate(() => showHomeView());
 await page.waitForTimeout(200);
-check('the home entry is still there at zero, greyed not hidden',
+check('the menu entry is still there at zero, greyed not hidden',
   await page.evaluate(() => {
-    const b = document.querySelector('.shop-home');
-    return !!b && b.querySelector('.shop-home-n').textContent === '0'
-      && b.querySelector('.shop-home-n').classList.contains('zero');
+    document.getElementById('ez-menu')?.remove();
+    openMainMenu();
+    const it = [...document.querySelectorAll('#ez-menu .ezm-item')]
+      .find(i => /Shopping List/.test(i.textContent));
+    const n = it && it.querySelector('.ezm-badge');
+    const out = !!n && n.textContent === '0' && n.classList.contains('zero');
+    closeMainMenu();
+    return out;
   }));
 
 const copied = await page.evaluate(async () => {
@@ -386,8 +397,14 @@ const scoped = await page.evaluate(() => {
   db.data.addresses.forEach(a => { a.supervisorId = a.id === 2 ? 'me' : 'someone-else'; });
   window.CloudJobs = { isManager: () => false, currentUserId: () => 'me' };
   render();
-  const btn = document.querySelector('.shop-home');
-  return { visible: btn.querySelector('.shop-home-n').textContent, raw: shoppingItems(null).length };
+  // The count lives on the menu item now, not a card on the home screen.
+  document.getElementById('ez-menu')?.remove();
+  openMainMenu();
+  const it = [...document.querySelectorAll('#ez-menu .ezm-item')]
+    .find(i => /Shopping List/.test(i.textContent));
+  const visible = it ? it.querySelector('.ezm-badge').textContent : null;
+  closeMainMenu();
+  return { visible, raw: shoppingItems(null).length };
 });
 console.log('scoping:', JSON.stringify(scoped));
 check('the global list only shows jobs allocated to that supervisor',

@@ -1598,3 +1598,12 @@ made at install time. Worth a line in whatever note goes out with this.
 - **Status needs more than colour.** See DECISIONS — the 7px status tab
   carries meaning in colour alone, in every theme. A short text label or a
   shape difference would fix it for all fourteen at once.
+
+## Dead CSS after the EZ menu (2026-11-17)
+
+The markup is gone but the rules are still in the sheet: `.shop-home`,
+`.shop-home-n`, `.manage-row`, `.manage-link`, `.view-all-link`,
+`.reports-actions` and `.report-link` (the last two also in the
+JS-injected block near the report screens). Inert, not harmful. Worth a
+sweep as its own small change, with the suite green either side, rather
+than bundled into the move itself.

@@ -237,6 +237,20 @@ async function submitChange(page, { current, next, confirm }) {
 const stored = (page) => page.evaluate(() => window.__auth.account.password);
 const updates = (page) => page.evaluate(() => window.__auth.updateCalls.length);
 
+// Change password and Sign out both live in the EZ menu now, so every route
+// to them goes through it.
+const menuPick = async (page, label) => {
+  await page.evaluate((l) => {
+    document.getElementById('ez-menu')?.remove();
+    openMainMenu();
+    const it = [...document.querySelectorAll('#ez-menu .ezm-item')]
+      .find(i => new RegExp(l).test(i.textContent));
+    if (!it) throw new Error('no menu item: ' + l);
+    it.click();
+  }, label);
+  await page.waitForTimeout(80);
+};
+
 const fail = [];
 const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? '  ' + d : '')); if (!c) fail.push(l); };
 
@@ -253,9 +267,17 @@ console.log('\n=== the round trip: change it, then actually use it ===');
   await signInAndBoot(page, OLD_PASS);
   check('the seeded password signs in', await page.isVisible('#cs-statusbar'));
 
-  check('the status bar offers a way to change it',
-    await page.isVisible('#cs-password'));
-  await page.click('#cs-password');
+  // The key button moved off the status bar and into the EZ menu
+  // (Spiro 2026-11-17, "remove the stuff up top… to remove the clutter").
+  // Still one tap from the home screen, just a different one.
+  check('the menu offers a way to change it',
+    await page.evaluate(() => {
+      document.getElementById('ez-menu')?.remove();
+      openMainMenu();
+      return [...document.querySelectorAll('#ez-menu .ezm-item')]
+        .some(i => /Change password/.test(i.textContent));
+    }));
+  await menuPick(page, 'Change password');
   await page.waitForSelector('#cs-pw-overlay', { timeout: 5000 });
   check('…which opens the change-password screen',
     await page.isVisible('#cs-pw-cur') && await page.isVisible('#cs-pw-new') && await page.isVisible('#cs-pw-new2'));
@@ -268,7 +290,7 @@ console.log('\n=== the round trip: change it, then actually use it ===');
 
   // THE POINT OF THE SUITE. Sign out, come back, and use the new password.
   await page.click('#cs-pw-cancel');
-  await page.click('#cs-signout');
+  await menuPick(page, 'Sign out');   // moved into the EZ menu too
   await page.waitForSelector('#cs-overlay', { timeout: 20000 });
 
   await signIn(page, OLD_PASS);
@@ -298,7 +320,7 @@ console.log('\n=== what it refuses, before touching the network ===');
 {
   const { ctx, page, errs } = await open();
   await signInAndBoot(page, OLD_PASS);
-  await page.click('#cs-password');
+  await menuPick(page, 'Change password');
   await page.waitForSelector('#cs-pw-overlay');
 
   const cases = [
@@ -332,7 +354,7 @@ console.log('\n=== when the server says no ===');
 {
   const { ctx, page, errs } = await open();
   await signInAndBoot(page, OLD_PASS);
-  await page.click('#cs-password');
+  await menuPick(page, 'Change password');
   await page.waitForSelector('#cs-pw-overlay');
 
   await page.evaluate(() => { window.__auth.updateError = { message: 'Password should be at least 6 characters.', status: 422 }; });
@@ -352,7 +374,7 @@ console.log('\n=== when the server says no ===');
 
   // Getting the current password wrong must not eject you from the app.
   await page.click('#cs-pw-cancel');
-  await page.click('#cs-password');
+  await menuPick(page, 'Change password');
   await page.waitForSelector('#cs-pw-overlay');
   await submitChange(page, { current: 'totallywrong', next: 'another12345' });
   check('a wrong current password leaves you signed in',
@@ -372,7 +394,7 @@ console.log('\n=== offline ===');
 {
   const { ctx, page } = await open();
   await signInAndBoot(page, OLD_PASS);
-  await page.click('#cs-password');
+  await menuPick(page, 'Change password');
   await page.waitForSelector('#cs-pw-overlay');
 
   await ctx.setOffline(true);
@@ -393,7 +415,7 @@ console.log('\n=== on a phone ===');
 {
   const { ctx, page } = await open();
   await signInAndBoot(page, OLD_PASS);
-  await page.click('#cs-password');
+  await menuPick(page, 'Change password');
   await page.waitForSelector('#cs-pw-overlay');
 
   check('all three fields start masked',
@@ -409,12 +431,9 @@ console.log('\n=== on a phone ===');
   const box = await page.evaluate(() => {
     const b = document.getElementById('cs-pw-go').getBoundingClientRect();
     const c = document.getElementById('cs-pw-cancel').getBoundingClientRect();
-    const s = document.getElementById('cs-signout').getBoundingClientRect();
-    return { go: b.height, cancel: c.height, signoutRight: s.right, w: innerWidth };
+    return { go: b.height, cancel: c.height, w: innerWidth };
   });
   check('the buttons are thumb-sized', box.go >= 40 && box.cancel >= 40, JSON.stringify(box));
-  check('Sign out is still on screen next to the new 🔑 button',
-    box.signoutRight <= box.w && box.signoutRight > 0, JSON.stringify(box));
 
   // Cancel must close it and change nothing.
   await page.fill('#cs-pw-new', 'abandoned1234');
@@ -524,7 +543,7 @@ console.log('\n=== change it from the sign-in screen ===');
     await page.isVisible('#cs-statusbar') && !(await page.isVisible('#cs-overlay')));
 
   // And the new password genuinely works on a cold sign-in afterwards.
-  await page.click('#cs-signout');
+  await menuPick(page, 'Sign out');   // moved into the EZ menu too
   await page.waitForSelector('#cs-overlay', { timeout: 20000 });
   await signIn(page, NEW_PASS);
   await page.waitForSelector('#cs-statusbar', { timeout: 20000 });

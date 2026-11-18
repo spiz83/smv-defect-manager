@@ -1952,7 +1952,68 @@
            phone, where the title carries the safe-area inset as padding and
            centring on the padding box would drop the wordmark down the page
            by half the notch. */
-        .wm { position: relative; display: inline-block; }
+        /* The mark is a <button> now. Every default a button brings — its
+           own font, padding, border, background, centred text — would change
+           the box the mark is measured in, so they are all reset. The nine-
+           width sweep in tests/harbour.mjs is what proves it still fits. */
+        .wm {
+            position: relative; display: inline-block;
+            background: none; border: 0; padding: 0; margin: 0;
+            font: inherit; color: inherit; text-align: inherit;
+            letter-spacing: inherit; text-transform: inherit;
+            line-height: inherit; cursor: pointer; -webkit-appearance: none;
+        }
+        .wm:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+
+        /* ---- the menu the mark opens ---- */
+        #ez-menu {
+            position: fixed; inset: 0; z-index: 10000;
+            background: rgba(0,0,0,.42);
+        }
+        #ez-menu .ezm-panel {
+            position: absolute; left: 8px; right: 8px; max-width: 360px;
+            max-height: calc(100vh - 80px); overflow-y: auto;
+            background: var(--sur, #fff); color: var(--t1, #111);
+            border: 1px solid var(--brd, rgba(128,128,128,.3));
+            border-radius: 14px; padding: 6px;
+            box-shadow: 0 18px 44px rgba(0,0,0,.35);
+        }
+        #ez-menu .ezm-item {
+            display: flex; align-items: center; gap: 11px; width: 100%;
+            background: none; border: 0; border-radius: 9px;
+            padding: 12px 11px; min-height: 46px;
+            font: 600 15px/1.25 inherit; color: inherit; text-align: left;
+            cursor: pointer;
+        }
+        #ez-menu .ezm-item:hover, #ez-menu .ezm-item:focus-visible {
+            background: var(--ele, rgba(128,128,128,.14)); outline: none;
+        }
+        #ez-menu .ezm-ico { font-size: 18px; line-height: 1; width: 22px; text-align: center; }
+        #ez-menu .ezm-lbl { flex: 1; }
+        /* A temp job is not a CH Tracker job, and where it actually lives
+           depends on whether the 2026-09-04 migration has run. The card this
+           replaced said so and the menu row has to as well — the flattering
+           version of this sentence loses someone's work. */
+        #ez-menu .ezm-sub {
+            display: block; font-size: 11.5px; font-weight: 500;
+            color: var(--t3, #777); margin-top: 2px;
+        }
+        #ez-menu .ezm-badge {
+            background: var(--acc, #2563eb); color: var(--accFg, #fff);
+            border-radius: 999px; min-width: 22px; padding: 2px 7px;
+            font-size: 12px; font-weight: 700; text-align: center;
+        }
+        #ez-menu .ezm-badge.zero { background: var(--ele, rgba(128,128,128,.2)); color: var(--t3, #777); }
+        #ez-menu .ezm-head {
+            font-size: 11px; font-weight: 700; letter-spacing: .1em;
+            text-transform: uppercase; color: var(--t3, #777);
+            padding: 13px 12px 5px; border-top: 1px solid var(--brd, rgba(128,128,128,.22));
+            margin-top: 5px;
+        }
+        #ez-menu .ezm-who {
+            padding: 0 12px 7px; font-size: 13px; color: var(--t2, #555);
+            word-break: break-all;
+        }
         /* visibility, not display: the line box stays and sets the height,
            while the text leaves the accessibility tree so a screen reader
            hears one product name. */
@@ -3315,10 +3376,87 @@
         }
 
         // View Components
+        // ===================================================================
+        //  THE EZ MENU (Spiro 2026-11-17)
+        //  "when clicking EZ top left it does drop down menu… then you can
+        //   remove the stuff up top and at the bottom to remove the clutter"
+        //
+        //  Everything that used to sit above and below the job list lives
+        //  here, so the home screen is the list people actually work from and
+        //  nothing else. The whole wordmark is the button, not just the badge:
+        //  a 35px badge is under the 44px a finger needs, and the mark is
+        //  measured to the pixel across nine widths — widening it for a
+        //  chevron would have broken that fit.
+        // ===================================================================
+        function closeMainMenu() {
+            const ov = document.getElementById('ez-menu');
+            if (ov) ov.remove();
+            const b = document.getElementById('ez-menu-btn');
+            if (b) b.setAttribute('aria-expanded', 'false');
+            document.removeEventListener('keydown', _ezMenuKey);
+        }
+        function _ezMenuKey(e) { if (e.key === 'Escape') closeMainMenu(); }
+        function openMainMenu() {
+            if (document.getElementById('ez-menu')) { closeMainMenu(); return; }
+            const btn = document.getElementById('ez-menu-btn');
+            if (btn) btn.setAttribute('aria-expanded', 'true');
+
+            const visible = new Set(scopeAddressesToUser(db.getAddresses() || []).map(a => a.id));
+            const shopN = shoppingItems(null).filter(d => visible.has(d.addressId)).length;
+            const email = (window.CloudAuth && window.CloudAuth.currentEmail && window.CloudAuth.currentEmail()) || '';
+
+            const item = (icon, label, call, badge, sub) =>
+                `<button type="button" role="menuitem" class="ezm-item" data-call="${call}">
+                    <span class="ezm-ico">${icon}</span>
+                    <span class="ezm-lbl">${label}${sub ? `<span class="ezm-sub">${sub}</span>` : ''}</span>
+                    ${badge != null ? `<span class="ezm-badge${badge ? '' : ' zero'}">${badge}</span>` : ''}
+                 </button>`;
+
+            const hero = document.querySelector('.app-header.home-hero');
+            const top = hero ? Math.round(hero.getBoundingClientRect().bottom) : 56;
+
+            const ov = document.createElement('div');
+            ov.id = 'ez-menu';
+            ov.style.top = top + 'px';
+            ov.innerHTML =
+                `<div class="ezm-panel" role="menu" aria-label="Menu">
+                    ${item('🛒', 'Shopping List', 'openShoppingList(null)', shopN)}
+                    ${item('📋', 'View All Defects', 'viewAllDefects()')}
+                    ${isAppAdmin() ? item('🛠️', 'Add temp job', 'createTempJob()', null,
+                        tempSyncOn() ? 'private to your login' : 'this device only') : ''}
+                    ${item('⚙️', 'Settings', 'showManageScreen()')}
+                    <div class="ezm-head">Reports</div>
+                    ${item('🗂️', 'View Recent Reports', 'openRecentReports()')}
+                    ${item('📥', 'Add Report', 'openReportImport()')}
+                    ${item('📑', 'Generate PDF Report', 'openReportBuilder()')}
+                    ${item('🗑️', 'Delete Report', 'openDeleteReports()')}
+                    ${email || window.CloudAuth ? `
+                    <div class="ezm-head">Logged in as</div>
+                    ${email ? `<div class="ezm-who">${_escHtml(email)}</div>` : ''}
+                    ${window.CloudAuth ? item('🔑', 'Change password', 'window.CloudAuth.openChangePassword()') : ''}
+                    ${window.CloudAuth && window.CloudAuth.signOut ? item('🚪', 'Sign out', 'window.CloudAuth.signOut()') : ''}` : ''}
+                 </div>`;
+            document.body.appendChild(ov);
+
+            // Tap the scrim to dismiss; tap an item to run it and dismiss.
+            ov.addEventListener('click', (e) => {
+                const it = e.target.closest && e.target.closest('.ezm-item');
+                if (!it) { if (e.target === ov) closeMainMenu(); return; }
+                const call = it.getAttribute('data-call');
+                closeMainMenu();
+                // Run after the menu has gone, so a screen it opens is not
+                // drawn underneath it.
+                setTimeout(() => { try { (new Function(call))(); } catch (err) { console.error(err); } }, 0);
+            });
+            document.addEventListener('keydown', _ezMenuKey);
+            const first = ov.querySelector('.ezm-item');
+            if (first) first.focus();
+        }
+
         function renderHomeView() {
             return `
                 <div class="app-header home-hero">
-                    <div class="header-title"><span class="wm"><span class="wm-text">Defect Manager</span><span class="wm-ez" role="img" aria-label="EZ Defect Manager"><span class="wm-badge" aria-hidden="true">EZ</span><span class="wm-word" aria-hidden="true">Defect Manager</span></span></span></div>
+                    <div class="header-title"><button type="button" class="wm" id="ez-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-label="EZ Defect Manager — menu" onclick="openMainMenu()"><span class="wm-text">Defect Manager</span><span class="wm-ez" aria-hidden="true"><span class="wm-badge">EZ</span><span class="wm-word">Defect Manager</span></span></button></div>
                     <span class="hero-logo"><img src="creation-homes-logo.png" alt="Creation Homes"
                          onerror="this.closest('.hero-logo').remove()"></span>
                 </div>
@@ -3327,7 +3465,6 @@
                     ${renderUnifiedSearch()}
 
                     ${renderMyJobsSection()}
-                    ${renderShoppingEntry()}
 
                     ${showMultiContractors() ? `
                     <div class="section-title">Multiple Contractors</div>
@@ -3377,21 +3514,6 @@
                         <button class="search-btn" onclick="searchMultipleTrades()">🔍 Search</button>
                     </div>` : ''}
 
-                    <div class="section-title">Reports</div>
-                    <div class="reports-actions">
-                        <a href="#" class="report-link" onclick="event.preventDefault(); openRecentReports()"><span>🗂️</span> View Recent Reports</a>
-                        <a href="#" class="report-link" onclick="event.preventDefault(); openReportImport()"><span>📥</span> Add Report</a>
-                        <a href="#" class="report-link" onclick="event.preventDefault(); openReportBuilder()"><span>📑</span> Generate PDF Report</a>
-                        <a href="#" class="report-link" onclick="event.preventDefault(); openDeleteReports()"><span>🗑️</span> Delete Report</a>
-                    </div>
-
-                    <div class="manage-row">
-                        <a href="#" class="manage-link" onclick="event.preventDefault(); showManageScreen()">
-                            <span>⚙️</span>
-                            <span>Settings</span>
-                        </a>
-                        <a href="#" class="view-all-link" onclick="event.preventDefault(); viewAllDefects()">View All Defects</a>
-                    </div>
                 </div>
             `;
         }
@@ -10242,11 +10364,10 @@
             // job and never becomes one, so it does not belong anywhere in the
             // normal job flow — it belongs at the bottom, out of the way of the
             // list people actually work from (Spiro 2026-09-02).
-            const tempBtn = isAppAdmin() ? `
-                <div onclick="createTempJob()" style="display:flex;align-items:center;justify-content:center;gap:7px;margin:-8px 0 18px;padding:10px 12px;border:1px dashed var(--border-color,#ccc);border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;color:var(--text-secondary,#777);">
-                    🛠️ ＋ Add temp job
-                    <span style="font-weight:400;font-size:12px;opacity:.8;">· ${tempSyncOn() ? 'private to your login' : 'this device only'}</span>
-                </div>` : '';
+            // Moved into the EZ menu (Spiro 2026-11-17) along with Shopping
+            // List, Reports and Settings, to leave the home screen as the job
+            // list and nothing else.
+            const tempBtn = '';
             return `
                 <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
                 <div id="myjobs-list" style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:360px;overflow-y:auto;margin-bottom:18px;">
@@ -10258,23 +10379,14 @@
         // supervisor holds, in one list — the point being that a hardware run is
         // planned across jobs, not one job at a time. Always shown, even at zero,
         // so it's in the same place every time they reach for it.
-        function renderShoppingEntry() {
-            const visible = new Set(scopeAddressesToUser(db.getAddresses() || []).map(a => a.id));
-            const items = shoppingItems(null).filter(d => visible.has(d.addressId));
-            const jobs = new Set(items.map(d => d.addressId)).size;
-            const sub = items.length
-                ? `${items.length} item${items.length === 1 ? '' : 's'} to order across ${jobs} job${jobs === 1 ? '' : 's'}`
-                : 'Parts and materials to order';
-            return `
-                <button class="shop-home" onclick="openShoppingList(null)" title="Everything to order across all your jobs">
-                    <span style="font-size:20px;line-height:1">🛒</span>
-                    <span>
-                        <span style="display:block;font-weight:600">Shopping List</span>
-                        <span style="display:block;font-size:12px;color:var(--text-secondary)">${sub}</span>
-                    </span>
-                    <span class="shop-home-n ${items.length ? '' : 'zero'}">${items.length}</span>
-                </button>`;
-        }
+        // renderShoppingEntry() lived here. The Shopping List card moved into
+        // the EZ menu (Spiro 2026-11-17) and nothing called this any more; a
+        // render function for a card we deliberately removed is an invitation
+        // to put it back by accident. Its .shop-home styles are still in the
+        // sheet above, inert — along with .manage-row, .view-all-link and
+        // .report-link, whose markup went the same way. Listed in NEXT_STEPS
+        // rather than pruned here: removing CSS is a separate change with its
+        // own risk, and this one is already large.
 
         function startDefectsForJob(addressId) {
             const address = db.getAddress(addressId);
@@ -15977,7 +16089,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-17s';
+        const APP_VERSION = '2026-11-17t';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16064,7 +16176,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-17s"></script>
+    <script src="cloud-sync.js?v=2026-11-17t"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

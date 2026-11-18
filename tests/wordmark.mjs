@@ -207,7 +207,8 @@ const sameness = await page.evaluate(async () => {
     const tc = txt && getComputedStyle(txt);
     if (tc && tc.visibility !== 'hidden' && tc.display !== 'none') out.oldTextVisible.push(t.id);
     out.shapes.add(Math.round(ez.getBoundingClientRect().width) + 'x' + Math.round(ez.getBoundingClientRect().height));
-    out.names.add(ez.getAttribute('aria-label') || '');
+    // The label lives on the button that wraps the mark now, not on the mark.
+    out.names.add((ez.closest('#ez-menu-btn') || ez).getAttribute('aria-label') || '');
   }
   return { shapes: [...out.shapes], names: [...out.names], oldTextVisible: out.oldTextVisible };
 });
@@ -216,8 +217,8 @@ check('every theme shows the mark, none still shows "Defect Manager" as text',
   sameness.oldTextVisible.length === 0, JSON.stringify(sameness.oldTextVisible));
 check('…at one size, so it is the same mark and not fifteen',
   sameness.shapes.length === 1, JSON.stringify(sameness.shapes));
-check('…under one accessible name',
-  sameness.names.length === 1 && sameness.names[0] === 'EZ Defect Manager',
+check('…under one accessible name, on every theme',
+  sameness.names.length === 1 && /^EZ Defect Manager/.test(sameness.names[0]),
   JSON.stringify(sameness.names));
 
 // The bar's height is the thing Spiro ruled out moving. Check it on all of

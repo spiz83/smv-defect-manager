@@ -80,15 +80,23 @@ console.log('\n--- A · only the admin sees it ---');
 
   await asAdmin(true);
   await page.waitForTimeout(250);
+  // Moved off the home screen and into the EZ menu (Spiro 2026-11-17). It was
+  // deliberately at the bottom, out of the way of the list people work from;
+  // a menu is further out of the way again, which is the same intent.
   const btn = await page.evaluate(() => {
-    const b = document.querySelector('[onclick*="createTempJob"]');
+    document.getElementById('ez-menu')?.remove();
+    openMainMenu();
+    const b = [...document.querySelectorAll('#ez-menu .ezm-item')]
+      .find(i => /Add temp job/.test(i.textContent));
     if (!b) return null;
-    const list = document.getElementById('myjobs-list');
-    return { text: b.textContent.replace(/\s+/g, ' ').trim(), belowList: b.getBoundingClientRect().top >= list.getBoundingClientRect().bottom - 1 };
+    const out = { text: b.textContent.replace(/\s+/g, ' ').trim(),
+                  onHomeScreen: !!document.querySelector('.home-container [onclick*="createTempJob"]') };
+    closeMainMenu();
+    return out;
   });
   console.log('button:', JSON.stringify(btn));
   check('the admin gets it', !!btn);
-  check('…at the BOTTOM, under the job list', btn && btn.belowList, JSON.stringify(btn));
+  check('…in the menu, not back on the home screen', btn && !btn.onHomeScreen, JSON.stringify(btn));
   // No cloud in this harness, so temp jobs cannot sync here — and the button
   // must say the honest one of the two things rather than the flattering one.
   check('…saying where the job actually lives', /this device only/i.test((btn || {}).text || ''), (btn || {}).text);
