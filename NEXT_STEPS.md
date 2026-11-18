@@ -13,6 +13,42 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## 🧊 The masthead holds still — build `2026-11-18l`
+
+Three movements behind one complaint (Spiro 2026-11-18). DECISIONS.md has the
+reasoning; this is what you need to know before touching the top of a screen.
+
+- **`--cs-bar-h` is declared ONCE**, on `body.cs-authed` in index.html. It is
+  the page's top reserve, the app header's freeze point AND the status bar's
+  own height (cloud-sync.js sizes the bar from it). Change it in one place or
+  the masthead gets its sliver back. Nothing measures the bar any more.
+- **`--app-header-h` is still measured**, in `syncStickyHeader()`, because the
+  theme and the notch both move it. `getBoundingClientRect()`, not
+  `offsetHeight` — a rounded height is a hairline of background between the
+  two frozen layers on the defect screen.
+- **`cs_bar` in localStorage** means "this phone had a status bar last time",
+  so the strip is reserved before the first frame. cloud-sync writes it in
+  `showStatusBar()` and clears it in `showLogin()` and `signOut()`. A new
+  storage key that needs clearing on sign-out goes in the same two places.
+- **The page cannot bounce** (`overscroll-behavior: none` on html/body). That
+  is load-bearing for every frozen header in the app, not decoration: during a
+  rubber-band the scroll offset is negative and `position: sticky` is inactive.
+  It also means the browser's pull-to-refresh is gone; Refresh is in the footer
+  and the EZ menu.
+- **The home screen does not scroll the document.** The jobs scroll inside
+  `#myjobs-list` (max-height 360px, `overscroll-behavior: contain`). Any test
+  that scrolls the home page is testing nothing — `nojitter.mjs` opens a job's
+  defect list for the document-level checks, and uses a 600px-tall phone for
+  the ones that need the home screen itself to scroll.
+- **`tests/nojitter.mjs`** samples the masthead's position on EVERY frame of a
+  boot, with auth answering deliberately late, and fails if it moves. Several
+  of its checks are guards that fail when the thing they rely on (a scrollable
+  list, a boot without a bar) did not happen — a position compared with itself
+  proves nothing.
+- **`tests/addrhdr.mjs` had never run.** Written 2026-11-18, counted in the
+  gate header, missing from the gate's list. It and `nojitter` are both
+  registered now; the gate runs 57 suites and the header says 57.
+
 ## ✉ Pinned suppliers, general email first, tick boxes — build `2026-11-16c` — DEPLOYED 2026-11-16, live bytes hashed identical
 
 Replaces 16a's rules (Spiro 2026-11-16). The Look Up directory is the source of
