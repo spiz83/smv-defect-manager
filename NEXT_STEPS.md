@@ -13,6 +13,43 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## 📸 OPEN — one photo the bucket refuses, and a wrong theory to drop
+
+**Lot 5, 22 Skylark Rd. The app says `POLICY` — the job reads fine, the photo
+bucket refuses the write.** Six orphans were cleared by `2026-11-18k` (temp-job
+recovery); this is the last one and it is a DATABASE question, not an app one.
+
+**My hypothesis was wrong — do not carry it forward.** I suspected
+`supabase/storage.sql`'s policies were live and checking
+`is_workspace_member(<first folder>)` against what is really a job uuid. On
+2026-11-18 the database answered:
+
+```
+ERROR 42883: function public.is_workspace_member(uuid) does not exist
+```
+
+That function is what all three policies in `storage.sql` are built on. If
+those were the live policies, EVERY defect photo read and write would fail with
+that error — not one photo. So **the live `defect-photos` policies are not the
+ones in this repo**, and `supabase/storage.sql` does not describe what is
+running. Treat that file as historical until proven otherwise.
+
+**Next step: `INSPECT_photo_policy.sql`, BLOCK 1, run on its own.** It lists
+every policy on `storage.objects` with the condition it actually enforces —
+the only thing that can say why a write is refused while the read succeeds.
+Read-only.
+
+Two process notes worth keeping:
+- The earlier version of that file put two queries in one script. The Supabase
+  SQL editor shows only the LAST result and abandons the run on the first
+  error, so the failing second query threw away the first one's answer. **One
+  block per run.**
+- This session has no DB credentials and `AGENT_INSTRUCTIONS` requires asking
+  before a schema change on the Supabase shared with CH Tracker. Do not write
+  a storage policy from a guess — the 072 note in
+  `supabase/migrations/2026-09-04_temp_jobs.sql` is what a guessed policy did
+  to supervisors' devices mid-push.
+
 ## 🧊 The masthead holds still — build `2026-11-18l`
 
 Three movements behind one complaint (Spiro 2026-11-18). DECISIONS.md has the
