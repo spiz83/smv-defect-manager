@@ -3822,3 +3822,37 @@ gap, so clearance to the Creation Homes panel improved at every width
 (18–30px, from 17–23). The fit formula still assumes the old 20px padding
 and is therefore conservative — deliberately, rather than re-derive every
 constant for 5px of slack.
+
+## Addresses looked different on the trade screen (2026-11-18, `2026-11-18c`)
+
+Spiro: "the font is different in the view defects by trade. The addresses
+seem to be a whole lot bigger and different font. It needs to match the
+other view screens where the address is in capitals and match size font."
+
+The trade view hand-rolled its address header:
+
+    style="font-size: 17px; font-weight: 600; color: var(--text-primary); …"
+
+The rule that makes an address small accent-coloured CAPS hangs off
+`.contractor-name`, and **an inline style is not reached by a class rule**.
+So one screen drifted and nothing anywhere failed. It now uses the same
+markup the contractor view uses, and gains the tap-through to that address
+that came with the class — which that screen had also been missing.
+
+Two more screens had the same inline override and the same symptom:
+`renderAllDefectsView` and `renderMultipleContractorsView`. Only the
+`font-size` and `color` are removed there; their band stays, because that
+layout bleeds it into the card with negative margins and the complaint was
+about type, not the band.
+
+**The suite compares the screens with each other, not with constants.**
+Pinning "15px uppercase" in a test would move the duplication into the
+test: the rule is that they MATCH, so that is what is asserted, across all
+fifteen palettes.
+
+One assertion in it exists because the first version of the suite was
+quietly worthless: `showDefectsForTrade(1)` bailed on a seed whose
+contractor had no `tradeIds`, so the view never changed and the test
+compared the contractor screen with itself — and passed. It now asserts
+each screen actually opened before comparing them. A comparison of one
+thing with itself always passes, which is the most dangerous kind of green.
