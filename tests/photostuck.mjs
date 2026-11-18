@@ -529,6 +529,61 @@ check('…saying no keeps every one of them',
   orphan.keptOnNo === orphan.keys, `${orphan.keptOnNo} of ${orphan.keys}`);
 check('…saying yes clears them', orphan.goneOnYes === 0, String(orphan.goneOnYes));
 
+// ================= 9. the storage refusal, told apart ======================
+// The last of Spiro's seven (2026-11-18). Every link resolved —
+// jobMapped=yes defectInCloud=yes contractor=mapped — and the upload itself
+// came back "new row violates row-level security policy".
+//
+// That sentence is the server saying no and nothing else. It reads the same
+// whether the job has stopped being yours or the bucket policy has a gap, and
+// those need completely different people to fix them. One query tells them
+// apart: can this login still READ the job it is filing the photo under?
+console.log('\n--- an upload the server refuses ---');
+const refused = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  const out = {};
+  const RLS = { message: 'new row violates row-level security policy' };
+  // (a) the job is gone from this login's reach
+  window.__jobReadable = false;
+  window.__storageError = RLS;
+  out.access = await h.explainPhotoError('ACCESS — this login cannot add photos to that job any more');
+  // (b) the job is readable, so the refusal is a policy gap
+  out.policy = await h.explainPhotoError('POLICY — the job is yours but the photo bucket refused it');
+  // (c) the raw sentence must no longer be what a person is shown
+  out.raw = await h.explainPhotoError('new row violates row-level security policy');
+  return out;
+});
+console.log('refused:', JSON.stringify(refused, null, 1));
+check('a job that is no longer yours says exactly that',
+  /not one this login can add photos to/.test(refused.access.what), refused.access.what);
+check('…and says the photo is safe meanwhile', /safe on the phone/.test(refused.access.fix), '');
+check('a job that IS yours points at the database instead of the user',
+  /the job IS yours/.test(refused.policy.what) && /database end/.test(refused.policy.fix), '');
+check('…and does not tell them to go asking for access they already have',
+  !/manages access/.test(refused.policy.fix), '');
+check('the bare Postgres sentence still has a plain-English form',
+  /would not take them/.test(refused.raw.what), refused.raw.what);
+
+// Something the server will refuse for ever is as unclearable as an orphan,
+// and the counter cannot reach zero while either sits in the queue.
+const clearable = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  try {
+    await window.CloudPhotos.savePhoto(999666157,
+      new File([new Blob(['x'])], 'r.jpg', { type: 'image/jpeg' }));
+  } catch (e) {}
+  await new Promise(r => setTimeout(r, 80));
+  const all = await h.pendingKeysFor(999666157);
+  // Something the server refuses outright, not an orphan: the defect exists,
+  // the job is mapped, and the upload is still never going to be accepted.
+  all.forEach(k => h.setPhotoFailReason(k, 'ACCESS — this login cannot add photos to that job any more'));
+  const keys = await h.orphanPhotoKeys();
+  return { marked: all.length, listed: all.every(k => keys.includes(k)), total: keys.length };
+});
+console.log('clearable:', JSON.stringify(clearable));
+check('a permanently-refused photo is offered for discard like an orphan',
+  clearable.marked > 0 && clearable.listed, JSON.stringify(clearable));
+
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
 await browser.close();

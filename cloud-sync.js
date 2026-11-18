@@ -2215,7 +2215,22 @@
         60000, 'photo upload');
       if (up.error) {
         console.error('[CloudSync] upload', up.error);
-        lastPhotoError = String(up.error.message || up.error).slice(0, 120);
+        let msg = String(up.error.message || up.error).slice(0, 120);
+        // "new row violates row-level security policy" is the server saying
+        // no, and nothing more. It is the same sentence whether the job is no
+        // longer yours or the bucket policy has a gap in it, and those need
+        // completely different people to fix them. The app can tell them
+        // apart in one query: can this login still READ the job it is trying
+        // to file the photo under?
+        if (/row-level security|not authorized|permission denied/i.test(msg) && jobUuid) {
+          const reach = await jobReadable(jobUuid);
+          if (reach === false) {
+            msg = 'ACCESS — this login cannot add photos to that job any more';
+          } else if (reach === true) {
+            msg = 'POLICY — the job is yours but the photo bucket refused it';
+          }
+        }
+        lastPhotoError = msg;
         if (!quiet) photoProgError(failMsg());
         return false;
       }
@@ -2245,6 +2260,21 @@
     // Re-query authoritatively so the badge reflects the now-confirmed cloud row.
     refreshPhotoCounts();
     return true;
+  }
+
+  // Can this login still see that job at all? Only asked after a refusal, and
+  // remembered per job, because the answer is what turns one unreadable
+  // Postgres sentence into something a person can act on.
+  const jobReach = {};
+  async function jobReadable(jobUuid) {
+    if (jobUuid in jobReach) return jobReach[jobUuid];
+    try {
+      const { data, error } = await withTimeout(
+        sb.from('jobs').select('id').eq('id', jobUuid).maybeSingle(), 20000, 'job reach');
+      if (error) return null;                 // could not tell; do not claim
+      jobReach[jobUuid] = !!(data && data.id);
+      return jobReach[jobUuid];
+    } catch (e) { return null; }
   }
 
   async function deleteOnePhoto(path) {
@@ -2839,6 +2869,14 @@
     if (/timeout|network|fetch|failed to fetch/i.test(m))
       return { what: 'the connection dropped partway',
                fix: 'It keeps trying on its own — nothing to do.', stuck: false };
+    if (/^ACCESS/i.test(m))
+      return { what: 'that job is not one this login can add photos to any more',
+               fix: 'The photo is safe on the phone. Whoever manages access needs to put that job back on your login — or if it genuinely is not yours now, Discard below is the only way to clear the counter.',
+               stuck: true };
+    if (/^POLICY/i.test(m))
+      return { what: 'the job IS yours but the photo store refused the upload',
+               fix: 'That is a gap at the database end rather than anything you can fix here. Send this screen to whoever manages the app.',
+               stuck: true };
     if (/^ORPHAN/i.test(m))
       return { what: 'the defect they were taken against no longer exists',
                fix: 'Nothing can attach them, so they will not upload however long they sit there — usually the defect was deleted after the photo was taken. Use Discard below to clear them.',
@@ -2935,7 +2973,10 @@
   async function orphanPhotoKeys() {
     let items = [];
     try { items = await pendingAll(); } catch (e) { return []; }
-    return items.filter(it => /^ORPHAN/i.test(photoFailReason[it.key] || '')).map(it => it.key);
+    // Orphans, and anything else the server will refuse for ever. Both are
+    // photos no amount of waiting will move; leaving them queued is what
+    // stops the counter ever reaching zero.
+    return items.filter(it => /^(ORPHAN|ACCESS)/i.test(photoFailReason[it.key] || '')).map(it => it.key);
   }
 
   // The pill opens this rather than firing a toast: a toast cannot be copied,
@@ -4759,6 +4800,11 @@
       // the state Spiro was looking at: on wifi, with changes stuck in front.
       photoDiagnostic: () => photoDiagnostic(),
       orphanPhotoKeys: () => orphanPhotoKeys(),
+      explainPhotoError: (m) => explainPhotoError(m),
+      pendingKeysFor: async (legacyId) => {
+        let items = []; try { items = await pendingAll(); } catch (e) {}
+        return items.filter(it => Number(it.legacyId) === Number(legacyId)).map(it => it.key);
+      },
       setPhotoFailReason: (k, v) => { photoFailReason[k] = v; },
       tempJobsAvailable: () => tempJobsAvailable(),
       lastPhotoError: () => lastPhotoError,

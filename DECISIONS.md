@@ -3994,3 +3994,39 @@ Also fixed in the suite: the copy check compared two separate
 `photoDiagnostic()` calls, which is a race rather than a property. It now
 stubs the clipboard, clicks Copy, and compares what landed against what is
 on the screen.
+
+## The last one: telling a refusal apart from a refusal (2026-11-18, `2026-11-18h`)
+
+Six of Spiro's seven were orphans. The seventh:
+
+    defect 999666157 — Lot 5, 22 Skylark Rd
+       jobMapped=yes defectInCloud=yes contractor=mapped
+       last tried: new row violates row-level security policy
+
+Every link resolved and the STORAGE upload was refused. That sentence is
+the server saying no and nothing else — and it reads identically whether
+the job has stopped being this login's, or the bucket policy has a gap in
+it. Those need completely different people to fix them, which is why the
+same sentence sent me chasing a permissions theory on day one.
+
+One query tells them apart: can this login still READ the job it is filing
+the photo under? Asked only after a refusal, remembered per job:
+
+- readable → `POLICY` — the job is yours and the bucket still said no. A
+  database-end gap; the message says so and stops telling the user to go
+  asking for access they already have.
+- not readable → `ACCESS` — the job is genuinely not theirs any more. The
+  photo is safe, and Discard is the only thing that clears the counter.
+
+Discard now covers anything permanently refused, not just orphans. A photo
+the server will never accept is exactly as unclearable as one with no
+defect to attach to, and the counter cannot reach zero while either sits
+there.
+
+**Worth recording about the shape of this whole hunt.** Forty-seven photos
+and thirty-six changes were one bug (a migration never run). Six were a
+second (defects that no longer exist). One is a third (job access). All
+three produced the same screen: a number that would not go down. Three
+different causes behind one symptom is the normal case, not the unlucky
+one — and no amount of thinking about the symptom separates them. Only
+reporting per-item state does.
