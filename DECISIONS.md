@@ -3893,3 +3893,38 @@ a clean one, and the two must match.
 holding up as correct all afternoon. "Match the other screens" is only a
 good instruction while the other screens are right, and nothing had ever
 checked that they were.
+
+## One address, one appearance (2026-11-18, `2026-11-18e`)
+
+Spiro: "Formatting is still off fix for all themes styles."
+
+The type matched after `2026-11-18c`; the LAYOUT did not, and I had only
+been measuring type. There were **three** treatments of the same thing:
+
+- **contractor view** — address inside `.contractor-section`, taking the
+  card's padding and surface;
+- **trade view** — address OUTSIDE the card, so it got neither: flush
+  against the screen edge, on the page background;
+- **all defects / multi-contractor** — inside the card but bleeding a
+  `--bg-secondary` band out to its edges with negative margins.
+
+The trade view groups address → contractor → defects, so its address
+cannot sit inside the card the way the contractor view's does. `.addr-head`
+gives it the card's surface and inset directly, and sits flush to the card
+below rather than floating above it, because it is that group's header
+rather than a sibling of it. The other two lost their band: one address,
+one appearance.
+
+Its padding is 16, not the card's 15, because the card sits 1px inside its
+container — so a child of the card lands at 16, and a header carrying its
+own inset has to carry the whole of it to line up.
+
+**What the test was missing.** It compared fonts, colours and cases, and
+passed while one header sat at x=0 and three sat at x=16. It now compares
+where the GLYPHS land (box left plus padding — one screen insets with the
+card's padding and another with its own, which is a difference nobody can
+see; the type being a pixel out is not) and what surface is behind them.
+Both across all fifteen palettes.
+
+Measuring the thing you changed and not the thing next to it is how all
+three of these treatments got there in the first place.

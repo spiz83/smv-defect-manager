@@ -186,7 +186,16 @@ const across = await page.evaluate(async (SCREENS) => {
       const el = [...document.querySelectorAll('.contractor-name')].find(e => /Skylark/.test(e.textContent));
       if (!el) { rows[label] = null; continue; }
       const cs = getComputedStyle(el);
+      // Type AND layout. Matching fonts on a header that is flush to the
+      // screen edge on one screen and indented on a card on another is still
+      // "formatting off" to anyone looking at it (Spiro 2026-11-18).
+      const r = el.getBoundingClientRect();
       rows[label] = { key: [cs.fontSize, cs.fontWeight, cs.textTransform, cs.color].join('|'),
+                      // Where the GLYPHS land, not where the box starts. One
+                      // screen insets with the card's padding and another with
+                      // its own, which is a difference nobody can see; the type
+                      // being 1px out is not.
+                      textLeft: Math.round(r.left + parseFloat(cs.paddingLeft)),
                       fg: parse(cs.color), bg: behind(el) };
     }
     out[t.id] = rows;
@@ -202,6 +211,16 @@ for (const [id, rows] of Object.entries(across)) {
   const keys = new Set(live.map(([, v]) => v.key));
   check(`[${id}] …and they all spell it the same way`, keys.size <= 1,
     keys.size <= 1 ? '' : JSON.stringify(Object.fromEntries(live.map(([k, v]) => [k, v.key]))));
+  const lefts = live.map(([, v]) => v.textLeft);
+  check(`[${id}] …and start at the same place on the screen`,
+    Math.max(...lefts) - Math.min(...lefts) <= 1,
+    JSON.stringify(Object.fromEntries(live.map(([k, v]) => [k, v.textLeft + 'px']))));
+  // Same surface behind them too — a header on the page background next to
+  // one on a card reads as a different thing however the type is set.
+  const surfaces = new Set(live.map(([, v]) => v.bg.join(',')));
+  check(`[${id}] …on the same surface`, surfaces.size <= 1,
+    surfaces.size <= 1 ? `rgb(${live[0][1].bg.join(',')})` :
+      JSON.stringify(Object.fromEntries(live.map(([k, v]) => [k, `rgb(${v.bg.join(',')})`]))));
   // Readable on whatever each screen paints behind it.
   const worst = live.reduce((acc, [k, v]) => {
     const r = Math.round(ratio(v.fg, v.bg) * 100) / 100;
