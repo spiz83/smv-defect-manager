@@ -142,6 +142,17 @@ for (const t of themes) {
         const bz = document.querySelector('.wm-burger');
         return !!bz && bz.getBoundingClientRect().right <= B.left + 1;
       })(),
+      // Evenly spaced between the screen edge and the badge: the gap on each
+      // side of the symbol, measured rather than assumed from two constants
+      // that could drift apart.
+      gapEdge: (() => {
+        const bz = document.querySelector('.wm-burger');
+        return bz ? Math.round(bz.getBoundingClientRect().left - hero.getBoundingClientRect().left) : null;
+      })(),
+      gapBadge: (() => {
+        const bz = document.querySelector('.wm-burger');
+        return bz ? Math.round(B.left - bz.getBoundingClientRect().right) : null;
+      })(),
     };
   }, dataUrl);
   results[t.id] = r;
@@ -193,6 +204,9 @@ for (const [id, r] of Object.entries(results)) {
   check(`[${id}] …leading the mark, where a hamburger is expected`, r.burgerLeadsMark, '');
   check(`[${id}] …and is as legible as the words beside it`,
     r.burger != null && r.burger >= 3, `${r.burger}:1`);
+  check(`[${id}] …sitting evenly between the screen edge and the badge`,
+    r.gapEdge != null && Math.abs(r.gapEdge - r.gapBadge) <= 1,
+    `${r.gapEdge}px to the edge, ${r.gapBadge}px to the badge`);
 }
 console.log(`\ngradient-limited: ${JSON.stringify(limited)}`);
 check('exactly the three known palettes fall short, and no new one has joined them',

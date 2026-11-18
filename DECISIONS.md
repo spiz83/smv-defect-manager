@@ -3792,3 +3792,33 @@ Every constant in that line has now been re-derived twice: once when
 "EZ Defect" became "EZ Defect Manager", and again for this. The sweep is
 what makes that safe to do — change the logo, the glyph or the gap and it
 fails rather than quietly overlapping.
+
+## Evening the menu symbol (2026-11-18, `2026-11-18b`)
+
+Spiro: "make those 3 lines further to the left so that it is evenly spaced
+between edge and EZ logo."
+
+Two numbers set to 12 each measured 16 and 19, because two things were
+adding space nobody had counted:
+
+- `.app-header .header-title` carries `margin-left: 4px`, which exists to
+  clear a back chevron on OTHER headers. The home hero has no chevron, and
+  that 4px was pushing the symbol off centre. Zeroed, scoped to the hero.
+- `.wm-ez` is a flex row with its own `gap`, so the symbol's right margin
+  was being added to a gap that was already there — the whole of the 3px
+  discrepancy.
+
+So it is one token used twice instead of two numbers that happen to match:
+`--lead` is the space on both sides, and the symbol's margin subtracts the
+flex gap so the MEASURED space comes out equal. Two constants that must
+stay in step will eventually not.
+
+The suite measures both gaps on all fifteen palettes rather than trusting
+the arithmetic — which is the only reason the 16/19 was caught at all,
+since 3px is invisible until someone looks at it next to a straight edge.
+
+Side benefit: 8px came back from the leading edge and ~3 went on the wider
+gap, so clearance to the Creation Homes panel improved at every width
+(18–30px, from 17–23). The fit formula still assumes the old 20px padding
+and is therefore conservative — deliberately, rather than re-derive every
+constant for 5px of slack.
