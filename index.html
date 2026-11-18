@@ -2004,6 +2004,68 @@
            own font, padding, border, background, centred text — would change
            the box the mark is measured in, so they are all reset. The nine-
            width sweep in tests/harbour.mjs is what proves it still fits. */
+        /* ==========================================================
+           SPLASH (Spiro 2026-11-18). "the load bar kinda takes a few
+           seconds with respect to the loading of the photos in the
+           background and then goes into the defect screen."
+
+           So the bar moves on real milestones, not a timer — it
+           advances when something has actually happened. The one thing
+           it must never do is trap anybody, so every exit is covered
+           and there is a hard timeout underneath all of them.
+
+           Its colours are fixed rather than themed: it shows before a
+           theme has been restored, and a brand splash that changes
+           colour per palette is not a brand splash.
+           ========================================================== */
+        #splash {
+            position: fixed; inset: 0; z-index: 100001;
+            background: linear-gradient(180deg, #24406F 0%, #1A2F62 55%, #152748 100%);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 32px 24px calc(28px + env(safe-area-inset-bottom));
+            font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
+            opacity: 1; transition: opacity .34s ease;
+        }
+        #splash.sp-out { opacity: 0; pointer-events: none; }
+        .sp-mark { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+        .sp-badge {
+            background: #90BFE9; color: #1A2F62;
+            font-weight: 800; font-size: 58px; line-height: 1; letter-spacing: -.015em;
+            padding: 24px 30px; border-radius: 26px;
+        }
+        .sp-word {
+            display: flex; flex-direction: column; align-items: center; line-height: 1.04;
+            color: #FFFFFF; font-size: 42px; font-weight: 600; letter-spacing: .005em;
+        }
+        .sp-word .sp-word2 { font-weight: 400; }
+        .sp-status {
+            margin-top: 46px; font-size: 15px; font-weight: 400;
+            color: rgba(255,255,255,.62); letter-spacing: .01em; min-height: 20px;
+        }
+        .sp-track {
+            margin-top: 16px; width: min(58vw, 300px); height: 4px; border-radius: 3px;
+            background: rgba(255,255,255,.16); overflow: hidden;
+        }
+        .sp-track i {
+            display: block; height: 100%; width: 6%; border-radius: 3px;
+            background: #90BFE9; transition: width .45s cubic-bezier(.4,0,.2,1);
+        }
+        /* The logo keeps its white panel; the "in partnership with" line that
+           sat above it is gone, as asked. */
+        .sp-foot {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            bottom: calc(34px + env(safe-area-inset-bottom));
+            background: #fff; border-radius: 12px; padding: 12px 20px;
+        }
+        .sp-foot img { display: block; height: 42px; width: auto; }
+        @media (prefers-reduced-motion: reduce) { #splash, .sp-track i { transition: none; } }
+        @media (max-height: 640px) {
+            .sp-badge { font-size: 46px; padding: 19px 24px; border-radius: 21px; }
+            .sp-word { font-size: 34px; }
+            .sp-status { margin-top: 30px; }
+            .sp-foot img { height: 34px; }
+        }
+
         .wm {
             position: relative; display: inline-block;
             background: none; border: 0; padding: 0; margin: 0;
@@ -2549,9 +2611,88 @@
     </style>
 </head>
 <body>
+    <!-- SPLASH. In the markup rather than rendered by script, so it paints on
+         the first frame: a splash that appears after the JS has parsed is a
+         flash of empty app followed by a splash, which is worse than neither.
+         Removed from the DOM entirely once dismissed. -->
+    <div id="splash" role="status" aria-live="polite">
+        <div class="sp-mark">
+            <div class="sp-badge">EZ</div>
+            <div class="sp-word"><span>Defect</span><span class="sp-word2">Manager</span></div>
+        </div>
+        <div class="sp-status" id="splash-status">Starting up…</div>
+        <div class="sp-track"><i id="splash-bar"></i></div>
+        <div class="sp-foot">
+            <img src="creation-homes-logo.png" alt="Creation Homes"
+                 onerror="this.closest('.sp-foot').remove()">
+        </div>
+    </div>
     <div id="app"></div>
 
     <script>
+        // ===================================================================
+        //  SPLASH CONTROLLER
+        //
+        //  The bar is driven by milestones the boot actually reaches, so it
+        //  reflects work rather than counting seconds. Everything else here
+        //  is about making sure it CANNOT become the thing standing between
+        //  someone and their job list:
+        //
+        //    · a hard 9s timeout, whatever else happens or fails to;
+        //    · it steps aside the moment the sign-in card appears, because a
+        //      login behind a splash is a locked door;
+        //    · a minimum 800ms, so a warm start is a brief hold rather than
+        //      a flash of navy — the one piece of timing that is cosmetic,
+        //      and it only ever makes the splash SHORTER than the work.
+        //
+        //  It is removed from the DOM on the way out, not just hidden: left
+        //  in place it is a full-screen element over the whole app, and one
+        //  mistake in a later opacity rule would be an app nobody can tap.
+        // ===================================================================
+        window.AppSplash = (function () {
+            const el = document.getElementById('splash');
+            if (!el) return { step() {}, done() {}, gone: () => true };
+            const bar = document.getElementById('splash-bar');
+            const label = document.getElementById('splash-status');
+            const shownAt = Date.now();
+            const MIN_MS = 800, HARD_MS = 9000;
+            let finished = false, pct = 6;
+
+            const remove = () => {
+                if (!el.parentNode) return;
+                el.classList.add('sp-out');
+                setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 360);
+            };
+            const finish = () => {
+                if (finished) return;
+                finished = true;
+                if (bar) bar.style.width = '100%';
+                const wait = Math.max(0, MIN_MS - (Date.now() - shownAt));
+                setTimeout(remove, wait);
+            };
+
+            // The backstop. Not a fallback for one failure mode — for all of
+            // them, including the ones nobody has thought of.
+            setTimeout(finish, HARD_MS);
+
+            // A sign-in card means the boot is waiting on a person, not on
+            // work, so the bar has nothing left to say.
+            const watchLogin = setInterval(() => {
+                if (document.getElementById('cs-overlay')) { clearInterval(watchLogin); finish(); }
+                if (finished) clearInterval(watchLogin);
+            }, 250);
+
+            return {
+                step(text, to) {
+                    if (finished) return;
+                    if (text && label) label.textContent = text;
+                    if (typeof to === 'number' && to > pct) { pct = Math.min(to, 97); if (bar) bar.style.width = pct + '%'; }
+                },
+                done: finish,
+                gone: () => !el.parentNode,
+            };
+        })();
+
         // Database Manager - Handles all data operations
         class DatabaseManager {
             constructor() {
@@ -16203,7 +16344,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-18i';
+        const APP_VERSION = '2026-11-18j';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16271,6 +16412,17 @@
         loadClubTheme();
         loadDesign();
         render();
+
+        // A build with no cloud layer has nothing to load and nobody to sign
+        // in, so there is no milestone coming and the 9s backstop would be the
+        // only way out — nine seconds of navy in front of a list that was
+        // ready immediately. Give it a moment for cloud-sync to announce
+        // itself, then go.
+        setTimeout(() => {
+            if (!window.CloudSync && !window.CloudAuth) {
+                try { window.AppSplash && window.AppSplash.done(); } catch (e) {}
+            }
+        }, 1200);
     </script>
 
     <!-- ====================================================================
@@ -16290,7 +16442,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-18i"></script>
+    <script src="cloud-sync.js?v=2026-11-18j"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

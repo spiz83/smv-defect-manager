@@ -359,6 +359,7 @@
   }
 
   function showLogin() {
+    try { window.AppSplash && window.AppSplash.done(); } catch (e) {}
     injectStyles();
     let mode = 'signin';
     const ov = document.createElement('div');
@@ -4962,8 +4963,12 @@
   // ===========================================================================
   //  Boot
   // ===========================================================================
+  const splash = (text, pct) => { try { window.AppSplash && window.AppSplash.step(text, pct); } catch (e) {} };
+  const splashDone = () => { try { window.AppSplash && window.AppSplash.done(); } catch (e) {} };
+
   async function onAuthed() {
     try {
+      splash('Signing in…', 18);
       installSaveHook();
       installDirectWriteHooks();    // defects write straight to the DB per change
       loadDefectOutbox();           // restore any offline direct writes awaiting retry
@@ -4988,6 +4993,7 @@
       if (typeof render === 'function' && !(window.isBusyEditing && window.isBusyEditing())) render();
       showStatusBar();
       setStatus('Loading…', 'syncing');
+      splash('Loading jobs…', 38);
       // Restore the persisted outbox FIRST: if we were closed/killed with
       // un-uploaded offline edits, this re-arms `dirty` + the diff baseline so
       // the upcoming pull pushes them out instead of overwriting them.
@@ -5004,7 +5010,9 @@
         const migrated = await maybeMigrate();
         if (!migrated) {
           await reconcileLocalDefectsUp();   // recover local-only work BEFORE the pull
+          splash('Loading jobs…', 58);
           await pullAll();
+          splash('Checking photos…', 88);
         }
       } catch (e) {
         // Offline / network failure on first load — fine. The app is usable, the
@@ -5035,7 +5043,15 @@
         } catch (e) { /* no outbox to read — nothing to quieten */ }
         uploadPendingPhotos().catch(() => {});   // resume any photo from a previous app close / dead zone
       })();
+      // The jobs are on screen. Photos carry on in the background behind the
+      // app, which is where they belong — nobody should watch a splash for
+      // an upload queue.
+      splashDone();
     } catch (err) {
+      // An init that threw still has to let go of the screen. The app is
+      // usable offline and the user is better off in it than behind a bar
+      // that has stopped moving.
+      splashDone();
       console.error('[CloudSync] init failed', err);
       // Stale/expired session (e.g. password changed): clear it and re-show login
       if (String(err && err.message).indexOf('SESSION_EXPIRED') !== -1) {

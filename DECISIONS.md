@@ -4078,3 +4078,47 @@ defects were searched rather than leaving it a mystery.
 chase" — a photo whose defect genuinely is not readable by this login,
 after the app has looked for it properly. That is a legitimate state and
 it should be clearable. It should never have been the first answer.
+
+## The splash (2026-11-18, `2026-11-18j`)
+
+Spiro: "insert the following splash screen, keep the Creation Homes logo
+however remove the line about being in partnership… the load bar kinda
+takes a few seconds with respect to the loading of the photos in the
+background and then goes into the defect screen."
+
+The bar moves on milestones the boot actually reaches — signing in,
+loading jobs, checking photos — rather than counting seconds. The one
+piece of cosmetic timing is a 800ms minimum so a warm start is a brief
+hold and not a flash of navy, and it can only ever make the splash
+SHORTER than the work, never longer.
+
+**Almost all of the care here went into it not trapping anybody.** It is a
+full-screen element over the whole app, so every way a boot can end has to
+let go of the screen:
+
+- the happy path, once the jobs are on screen (photos carry on behind the
+  app, which is where an upload queue belongs — nobody should watch a
+  splash for one);
+- the sign-in card appearing, because a login behind a splash is a locked
+  door;
+- an init that threw, where the user is better off in an offline-usable
+  app than behind a bar that has stopped;
+- a build with no cloud layer, where no milestone is ever coming;
+- and a hard 9s timeout under all of them, for the failure modes nobody
+  has thought of.
+
+It is also REMOVED from the DOM rather than hidden. Left in place it is a
+full-screen element over everything, and one mistake in a later opacity
+rule would be an app nobody can tap.
+
+Its colours are fixed rather than themed: it shows before a theme has been
+restored, and a brand splash that changes colour per palette is not one.
+
+**What it cost the suite, which is the interesting part.** Three suites
+started failing and two of those only sometimes — they sample pixels or
+drag on the screen during the first second, and were getting navy and a
+sky-blue badge. The fix is the splash wait, and it went into **all 50**
+suites that boot the app, not the three that happened to fail. The others
+were passing on timing, which is the same bug asleep: the next one to grow
+a screenshot would have failed for a reason that looked nothing like its
+own change.

@@ -99,6 +99,10 @@ await page.addInitScript(seed => {
 }, SEED);
 await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
 await page.waitForFunction(() => typeof window.render === 'function');
+// The splash covers the whole screen for the first second of a boot, so
+// anything that measures PIXELS has to let it finish. Without this the
+// readings below are of navy and a sky-blue badge (2026-11-18).
+await page.waitForFunction(() => !document.getElementById('splash'), { timeout: 15000 });
 
 const fail = [];
 const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? '  ' + d : '')); if (!c) fail.push(l); };

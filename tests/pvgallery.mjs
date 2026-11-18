@@ -82,6 +82,12 @@ await page.addInitScript(seed => {
 }, SEED);
 await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
 await page.waitForFunction(() => typeof window.render === 'function');
+// The splash covers the whole screen for the first second of a boot, so
+// every suite waits it out before touching or measuring anything. Added to
+// all of them at once rather than to the three that happened to fail: the
+// ones that passed were passing on timing, which is the same bug asleep
+// (2026-11-18).
+await page.waitForFunction(() => !document.getElementById('splash'), { timeout: 15000 });
 
 const fail = [];
 const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? '  ' + d : '')); if (!c) fail.push(l); };
