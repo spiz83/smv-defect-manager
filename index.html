@@ -1650,10 +1650,19 @@
            text-transform keeps the shouty look Bebas gave for free (it has no
            lowercase glyphs), and the size drops a touch because Titillium is the
            wider face — same footprint, so the compact rows don't grow. */
+        /* --accText, not --acc. An accent is picked to work as a FILL and on
+           the page background; nothing makes it legible as TYPE on a raised
+           card. Five palettes have a dark accent on a dark surface and their
+           addresses were almost invisible — Cobalt worst at 1.36:1, which is
+           not low contrast, it is no contrast. It defaults to the accent, and
+           the palettes where that fails name a readable relative of it.
+           Surfaced by the all-themes sweep Spiro asked for (2026-11-18); it
+           had been like this long before today. */
         body.design-f1 .contractor-name, body.design-f1 .sg-name {
             font-family: 'Titillium Web', sans-serif !important;
             font-weight: 700 !important; text-transform: uppercase;
-            font-size: 15px; letter-spacing: .02em; color: var(--acc) !important;
+            font-size: 15px; letter-spacing: .02em;
+            color: var(--accText, var(--acc)) !important;
         }
 
         /* Status pills / badges → telemetry flags (mono, glow-less) */
@@ -10794,16 +10803,16 @@
         /* ---- F1 Telemetry themes (ported from CH Tracker) ---- */
         const F1_THEMES = [
             { id:'mercedes', markRing:true, name:'Teal Carbon', sub:'Dark · Modern', vars:{'--acc':'#00A19A','--acc2':'#00C9C0','--bg':'#06090A','--sur':'#10171A','--ele':'#1A2529','--inp':'#0A1316','--brd':'#243137','--brd2':'#162026','--t1':'#F0F5F6','--t2':'#9BB0B4','--t3':'#5C7177','--accFg':'#fff'} },
-            { id:'ferrari', name:'Ember', sub:'Red · Bold', vars:{'--acc':'#DC0000','--acc2':'#FF1A1A','--bg':'#0A0606','--sur':'#1A1010','--ele':'#241616','--inp':'#150909','--brd':'#3A1F1F','--brd2':'#1F1212','--t1':'#FFF5F0','--t2':'#C9A89C','--t3':'#7A5A52','--amber':'#FFEB3B','--accFg':'#fff'} },
-            { id:'redbull', name:'Cobalt', sub:'Deep · Navy', vars:{'--acc':'#1A2A5C','--acc2':'#2A3F7A','--bg':'#04060E','--sur':'#0B1224','--ele':'#141C36','--inp':'#070A18','--brd':'#1F2845','--brd2':'#0F1428','--t1':'#EFF2FA','--t2':'#9DA8C2','--t3':'#5868A0','--red':'#D31E36','--amber':'#FFCD00','--accFg':'#fff'} },
+            { id:'ferrari', name:'Ember', sub:'Red · Bold', vars:{'--acc':'#DC0000','--acc2':'#FF1A1A','--bg':'#0A0606','--sur':'#1A1010','--ele':'#241616','--inp':'#150909','--brd':'#3A1F1F','--brd2':'#1F1212','--t1':'#FFF5F0','--t2':'#C9A89C','--t3':'#7A5A52','--amber':'#FFEB3B','--accText':'#FF1A1A','--accFg':'#fff'} },
+            { id:'redbull', name:'Cobalt', sub:'Deep · Navy', vars:{'--acc':'#1A2A5C','--acc2':'#2A3F7A','--bg':'#04060E','--sur':'#0B1224','--ele':'#141C36','--inp':'#070A18','--brd':'#1F2845','--brd2':'#0F1428','--t1':'#EFF2FA','--t2':'#9DA8C2','--t3':'#5868A0','--red':'#D31E36','--amber':'#FFCD00','--accText':'#9DA8C2','--accFg':'#fff'} },
             { id:'mclaren', markRing:true, name:'Papaya', sub:'Orange · Vibrant', vars:{'--acc':'#FF8000','--acc2':'#FFA040','--bg':'#0A0805','--sur':'#1A140C','--ele':'#251D11','--inp':'#120E08','--brd':'#3A2C18','--brd2':'#1F180D','--t1':'#FFF5E8','--t2':'#C9B59A','--t3':'#7A6A52','--accFg':'#000'} },
-            { id:'aston', name:'Heritage', sub:'Green · Racing', vars:{'--acc':'#006F62','--acc2':'#1A9B85','--bg':'#06090A','--sur':'#0F1715','--ele':'#1A2422','--inp':'#0A1311','--brd':'#1F2D2A','--brd2':'#121C1A','--t1':'#EEF4F2','--t2':'#94B0AA','--t3':'#506862','--accFg':'#fff'} },
+            { id:'aston', name:'Heritage', sub:'Green · Racing', vars:{'--acc':'#006F62','--acc2':'#1A9B85','--bg':'#06090A','--sur':'#0F1715','--ele':'#1A2422','--inp':'#0A1311','--brd':'#1F2D2A','--brd2':'#121C1A','--t1':'#EEF4F2','--t2':'#94B0AA','--t3':'#506862','--accText':'#1A9B85','--accFg':'#fff'} },
             { id:'alpine', markRing:true, name:'Blush', sub:'Pink · Accent', vars:{'--acc':'#FF87BC','--acc2':'#FFB3D1','--bg':'#0C0608','--sur':'#1F1015','--ele':'#2C171F','--inp':'#160A0E','--brd':'#3F1F2C','--brd2':'#26121A','--t1':'#FFF0F6','--t2':'#C99DB0','--t3':'#7A5266','--accFg':'#000'} },
             { id:'williams', markRing:true, name:'Cerulean', sub:'Blue · Electric', vars:{'--acc':'#00A0E1','--acc2':'#37C2FF','--bg':'#04060D','--sur':'#0C121F','--ele':'#171F33','--inp':'#080C18','--brd':'#1E2942','--brd2':'#111626','--t1':'#EEF4FF','--t2':'#94A4C2','--t3':'#5867A0','--amber':'#FFD800','--accFg':'#fff'} },
             { id:'haas', markRing:true, name:'Titanium', sub:'Grey · Classic', vars:{'--acc':'#B6BABD','--acc2':'#E0E3E6','--bg':'#08090A','--sur':'#15181B','--ele':'#1F2429','--inp':'#0E1114','--brd':'#2A2F36','--brd2':'#181C20','--t1':'#F5F6F8','--t2':'#9CA3AD','--t3':'#5C6470','--red':'#E10600','--accFg':'#000'} },
-            { id:'sauber', name:'Emerald', sub:'Green · Minimal', vars:{'--acc':'#00802A','--acc2':'#1AA346','--bg':'#04080A','--sur':'#0D1612','--ele':'#152319','--inp':'#08120D','--brd':'#1E2F25','--brd2':'#111B15','--t1':'#EEF5F0','--t2':'#94B0A0','--t3':'#506862','--accFg':'#fff'} },
+            { id:'sauber', name:'Emerald', sub:'Green · Minimal', vars:{'--acc':'#00802A','--acc2':'#1AA346','--bg':'#04080A','--sur':'#0D1612','--ele':'#152319','--inp':'#08120D','--brd':'#1E2F25','--brd2':'#111B15','--t1':'#EEF5F0','--t2':'#94B0A0','--t3':'#506862','--accText':'#1AA346','--accFg':'#fff'} },
             { id:'rb', markRing:true, name:'Horizon', sub:'Blue · Soft', vars:{'--acc':'#6692BD','--acc2':'#87B0D9','--bg':'#06080C','--sur':'#101622','--ele':'#1A2235','--inp':'#0A0F18','--brd':'#1F2A40','--brd2':'#131A26','--t1':'#EEF2F8','--t2':'#94A4B8','--t3':'#506072','--red':'#EF1A2D','--accFg':'#fff'} },
-            { id:'gunmetal', name:'Gunmetal', sub:'Neutral · Default', vars:{'--acc':'#5A6675','--acc2':'#7B8794','--bg':'#0A0B0D','--sur':'#15171B','--ele':'#1E2127','--inp':'#0F1115','--brd':'#2A2D33','--brd2':'#181B1F','--t1':'#F0F2F5','--t2':'#9BA3AE','--t3':'#5C6470','--accFg':'#fff'} },
+            { id:'gunmetal', name:'Gunmetal', sub:'Neutral · Default', vars:{'--acc':'#5A6675','--acc2':'#7B8794','--bg':'#0A0B0D','--sur':'#15171B','--ele':'#1E2127','--inp':'#0F1115','--brd':'#2A2D33','--brd2':'#181B1F','--t1':'#F0F2F5','--t2':'#9BA3AE','--t3':'#5C6470','--accText':'#7B8794','--accFg':'#fff'} },
             { id:'framework', name:'Blueprint', sub:'Light · Professional (logistics)', vars:{'--acc':'#1E4DA8','--acc2':'#3D6FCC','--bg':'#EFEBE2','--sur':'#FFFFFF','--ele':'#F5F1E8','--inp':'#FFFFFF','--brd':'#A8A8A8','--brd2':'#D6D6D6','--t1':'#1A1A1A','--t2':'#4A4A4A','--t3':'#7A7A7A','--green':'#2D8030','--amber':'#D87E2E','--red':'#B81E2E','--accFg':'#FFFFFF'} },
             /* Harbour (Spiro 2026-11-17). Supplied as a full colour system
                rather than a palette: deep navy frame, cream headings, a sky
@@ -10828,6 +10837,9 @@
               glow:'rgba(144,191,233,.38)', markInvert:true, markInk:'#10273D', vars:{'--acc':'#1F5B8C','--acc2':'#2F6EA3','--bg':'#F2F7FC','--sur':'#FFFFFF','--ele':'#E7F0F9','--inp':'#FFFFFF','--brd':'#C9DEF1','--brd2':'#A8C9E6','--t1':'#0F2133','--t2':'#33495C','--t3':'#4A5E70','--green':'#10724E','--amber':'#8A5510','--red':'#C42B30','--accFg':'#FFFFFF'} },
             { id:'powershell', markInvert:true, markRing:true, markInk:'#000000', name:'Terminal', sub:'Retro · Console', vars:{'--acc':'#FFFF55','--acc2':'#FFFFAA','--bg':'#000000','--sur':'#000000','--ele':'#1A1A1A','--inp':'#000000','--brd':'#C0C0C0','--brd2':'#404040','--t1':'#FFFFFF','--t2':'#C0C0C0','--t3':'#808080','--green':'#55FF55','--amber':'#FFFF55','--red':'#FF5555','--accFg':'#000000'} }
         ];
+        // Every variable ANY palette sets. Used to wipe the slate between
+        // themes so one palette cannot inherit another's leftovers.
+        const F1_VAR_KEYS = [...new Set(F1_THEMES.flatMap(t => Object.keys(t.vars)))];
         function currentF1Theme() { return lsGet('f1Theme') || 'framework'; }
         function applyF1Theme(id) {
             const t = F1_THEMES.find(x => x.id === id) || F1_THEMES[0];
@@ -10843,6 +10855,17 @@
             // two token blocks are the whole difference between them.
             [...new Set(F1_THEMES.map(x => x.family).filter(Boolean))]
                 .forEach(f => document.body.classList.toggle('family-' + f, t.family === f));
+            // CLEAR FIRST. setProperty only ever ADDS, so any variable one
+            // palette defines and the next does not was left behind on the
+            // body — the previous theme's colour, quietly surviving the
+            // switch. Until the all-themes sweep (2026-11-18) nothing looked:
+            // Blueprint was rendering its addresses in Gunmetal's grey at
+            // 3.08:1 purely because Gunmetal had been selected at some point
+            // beforehand. Every optional variable has this hole — --green,
+            // --amber, --red and --accText are each absent from some palette —
+            // so the fix is the union of every key, not a list of the ones
+            // that happened to bite.
+            F1_VAR_KEYS.forEach(k => b.removeProperty(k));
             Object.entries(t.vars).forEach(([k, v]) => b.setProperty(k, v));
             // Page background follows the theme too (no separate light/dark layer).
             if (t.vars['--bg']) b.setProperty('--page-bg', t.vars['--bg']);
@@ -16162,7 +16185,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-18c';
+        const APP_VERSION = '2026-11-18d';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16249,7 +16272,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-18c"></script>
+    <script src="cloud-sync.js?v=2026-11-18d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

@@ -3856,3 +3856,40 @@ contractor had no `tradeIds`, so the view never changed and the test
 compared the contractor screen with itself — and passed. It now asserts
 each screen actually opened before comparing them. A comparison of one
 thing with itself always passes, which is the most dangerous kind of green.
+
+## "Make sure it is across all Theme styles" — two real bugs (2026-11-18, `2026-11-18d`)
+
+Spiro asked me to confirm the address-header fix held on every palette. It
+did. The sweep that confirmed it found two things that did not, neither of
+which I had caused and neither of which anything was watching.
+
+**1. Addresses were unreadable on five palettes.** The rule sets
+`color: var(--acc)`, and an accent is picked to work as a FILL and on the
+page background — nothing makes it legible as TYPE on a raised card. Cobalt
+was 1.36:1: not low contrast, no contrast. Also Ember 3.59, Heritage 2.99,
+Emerald 3.61, Gunmetal 3.07.
+
+It reads `--accText` now, defaulting to the accent, with those five naming
+a readable relative. Four take their own brighter accent; Cobalt's navy has
+no readable form on near-black, so it takes the palette's secondary text
+colour — still blue, just one a person can read.
+
+**2. `applyF1Theme` leaked variables between palettes.** `setProperty` only
+ever adds, so any variable one palette defines and the next does not stayed
+on the body. Blueprint was rendering its addresses in **Gunmetal's grey**,
+at 3.08:1, purely because Gunmetal had been selected at some point earlier
+in the session. Every optional variable has this hole — `--green`,
+`--amber`, `--red`, and now `--accText`, are each absent from some palette —
+so the fix is to clear the union of every key before applying, not to
+patch the one that happened to bite.
+
+That second one only appeared because the suite walks all fifteen palettes
+in one page: a test that reloads between themes would never see it, and
+neither would anyone checking a single theme by eye. `harbour.mjs` now
+asserts it directly — each palette is applied over a dirtied slate and over
+a clean one, and the two must match.
+
+**Worth noting about the first one.** It was in the screen I had been
+holding up as correct all afternoon. "Match the other screens" is only a
+good instruction while the other screens are right, and nothing had ever
+checked that they were.

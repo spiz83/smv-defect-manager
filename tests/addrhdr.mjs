@@ -88,10 +88,14 @@ const read = async (label, open) => await page.evaluate(async ([label, open]) =>
   };
 }, [label, open]);
 
+// All FOUR screens that group defects under an address. The last two were
+// changed in the same pass and were going untested, which is how this drifted
+// in the first place.
 const SCREENS = [
   ['by contractor', 'viewDefectsForContractor(1)'],
   ['by trade',      'showDefectsForTrade(1)'],
   ['all defects',   'viewAllDefects()'],
+  ['multi-contractor', 'state.currentView="view-multiple-contractors"; state.filters={contractorIds:[1]}; render();'],
 ];
 
 console.log('\n--- the address header, screen by screen ---');
@@ -141,28 +145,70 @@ check('…and opens that address', tap.view === 'view-defects-address' && tap.ad
   `${tap.view} / ${tap.addressId}`);
 
 // Every palette, because the rule that does this is a theme rule.
-console.log('\n--- on all fifteen palettes ---');
-const across = await page.evaluate(async () => {
+console.log('\n--- all four screens, on all fifteen palettes ---');
+// Spiro: "make sure it is across all Theme styles."
+//
+// Two things per palette. First that the four screens still agree — the rule
+// doing the work is a theme rule, so agreeing on one palette proves nothing
+// about the other fourteen.
+//
+// Second, and this is the one I owed: removing `color: var(--text-primary)`
+// from two of these headers handed their colour to the theme accent, on a
+// band painted with --bg-secondary. That pairing had never been measured
+// anywhere. An accent is chosen to sit on the page background, and nothing
+// guarantees it also clears 4.5:1 on a raised band.
+const lum = (rgb) => { const [r, g, b] = rgb.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const ratio = (x, y) => { const [h, l] = [lum(x), lum(y)].sort((p, q) => q - p); return (h + 0.05) / (l + 0.05); };
+
+const across = await page.evaluate(async (SCREENS) => {
+  const parse = (c) => (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  // What is really behind the text: the header's own background if it paints
+  // one, otherwise the first painted ancestor. A band with no colour of its
+  // own would otherwise be measured against transparent and read as perfect.
+  const behind = (el) => {
+    let n = el;
+    while (n && n !== document.documentElement) {
+      const bg = getComputedStyle(n).backgroundColor;
+      const p = parse(bg);
+      const alpha = (bg.match(/[\d.]+/g) || [])[3];
+      if (p.length === 3 && (alpha === undefined || Number(alpha) > 0.95)) return p;
+      n = n.parentElement;
+    }
+    return parse(getComputedStyle(document.body).backgroundColor);
+  };
   const out = {};
   for (const t of F1_THEMES) {
     applyF1Theme(t.id);
-    const grab = async (open) => {
+    const rows = {};
+    for (const [label, open] of SCREENS) {
       (new Function(open))();
       await new Promise(r => setTimeout(r, 40));
       const el = [...document.querySelectorAll('.contractor-name')].find(e => /Skylark/.test(e.textContent));
-      if (!el) return null;
+      if (!el) { rows[label] = null; continue; }
       const cs = getComputedStyle(el);
-      return [cs.fontSize, cs.fontWeight, cs.textTransform, cs.color].join('|');
-    };
-    const a = await grab('viewDefectsForContractor(1)');
-    const b = await grab('showDefectsForTrade(1)');
-    out[t.id] = { a, b, same: a != null && a === b };
+      rows[label] = { key: [cs.fontSize, cs.fontWeight, cs.textTransform, cs.color].join('|'),
+                      fg: parse(cs.color), bg: behind(el) };
+    }
+    out[t.id] = rows;
   }
   applyF1Theme('framework');
   return out;
-});
-for (const [id, v] of Object.entries(across)) {
-  check(`[${id}] trade matches contractor`, v.same, v.same ? '' : `${v.b} vs ${v.a}`);
+}, SCREENS);
+
+for (const [id, rows] of Object.entries(across)) {
+  const live = Object.entries(rows).filter(([, v]) => v);
+  check(`[${id}] all four screens render an address header`,
+    live.length === SCREENS.length, `${live.length} of ${SCREENS.length}`);
+  const keys = new Set(live.map(([, v]) => v.key));
+  check(`[${id}] …and they all spell it the same way`, keys.size <= 1,
+    keys.size <= 1 ? '' : JSON.stringify(Object.fromEntries(live.map(([k, v]) => [k, v.key]))));
+  // Readable on whatever each screen paints behind it.
+  const worst = live.reduce((acc, [k, v]) => {
+    const r = Math.round(ratio(v.fg, v.bg) * 100) / 100;
+    return r < acc.r ? { r, k, fg: v.fg, bg: v.bg } : acc;
+  }, { r: Infinity, k: null });
+  check(`[${id}] …and it is readable on all of them`, worst.r >= 4.5,
+    `worst ${worst.r}:1 on "${worst.k}" (rgb(${(worst.fg||[]).join(',')}) on rgb(${(worst.bg||[]).join(',')}))`);
 }
 
 check('no page errors', errs.length === 0, JSON.stringify(errs));

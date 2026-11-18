@@ -105,6 +105,40 @@ check('selecting it adds its own class', /theme-harbour\b/.test(isolation.on.cls
 check('…and switching away removes it, so the other palettes are untouched',
   !/theme-harbour/.test(isolation.off.cls) && !/family-harbour/.test(isolation.off.cls)
   && /theme-framework/.test(isolation.off.cls), isolation.off.cls);
+// Switching palettes must not leave the previous one's colours behind.
+// setProperty only ADDS, so every variable that one palette defines and
+// another does not used to survive the switch — Blueprint was rendering its
+// addresses in Gunmetal's grey purely because Gunmetal had been picked at some
+// point earlier in the session (2026-11-18).
+const leak = await page.evaluate(() => {
+  const read = () => {
+    const cs = getComputedStyle(document.body);
+    const out = {};
+    for (const k of F1_VAR_KEYS) out[k] = cs.getPropertyValue(k).trim();
+    return out;
+  };
+  // Apply every palette in turn, then land on each one FRESH (from a clean
+  // body) and compare: whatever a palette shows must not depend on what was
+  // selected before it.
+  const bad = [];
+  for (const t of F1_THEMES) {
+    F1_THEMES.forEach(x => applyF1Theme(x.id));      // dirty the slate
+    applyF1Theme(t.id);
+    const after = read();
+    F1_VAR_KEYS.forEach(k => document.body.style.removeProperty(k));
+    applyF1Theme(t.id);                               // clean slate
+    const fresh = read();
+    for (const k of F1_VAR_KEYS) {
+      if (after[k] !== fresh[k]) bad.push(`${t.id}${k}: "${after[k]}" vs fresh "${fresh[k]}"`);
+    }
+  }
+  applyF1Theme('harbour');
+  return bad;
+});
+console.log('leaked vars:', JSON.stringify(leak));
+check('no palette inherits a variable from whichever was selected before it',
+  leak.length === 0, leak.slice(0, 4).join(' | '));
+
 check('the two Harbour palettes share a family class and nothing else does',
   /family-harbour/.test(isolation.on.cls) && /family-harbour/.test(isolation.lightCls)
   && isolation.lightCls.includes('theme-harbour-light'), isolation.lightCls);
