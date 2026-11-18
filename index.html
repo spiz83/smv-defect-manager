@@ -91,6 +91,54 @@
             box-sizing: border-box;
         }
 
+        /* NO POINTLESS DRAG, ANY SCREEN (Spiro 2026-11-18: "it can be moved…
+           no benefit from being able to move it"). This is the iOS rubber-band:
+           every page can be dragged and springs back, even one that fits the
+           screen. overscroll-behavior:none removes that bounce and stops a
+           scroll gesture leaking from an inner list up to the page. A screen
+           with more content than fits still scrolls — that part is a benefit;
+           what goes is the drag on a screen with nothing below the fold. */
+        html, body { overscroll-behavior: none; }
+
+        /* PORTRAIT-ONLY GUARD. Hidden by default; shown only when a PHONE is in
+           landscape — landscape orientation AND a short viewport (a tablet or
+           laptop in landscape is taller than this and keeps the normal app).
+           The max-height is in the orientation query, not a width one, because
+           a phone on its side is wide but only ~430px tall. */
+        #rotate-guard { display: none; }
+        @media (orientation: landscape) and (max-height: 500px) {
+            #rotate-guard {
+                display: flex;
+                position: fixed;
+                inset: 0;
+                z-index: 2147483647;      /* above masthead, modals, banners */
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 12px;
+                text-align: center;
+                padding: 20px calc(20px + env(safe-area-inset-right, 0px))
+                         20px calc(20px + env(safe-area-inset-left, 0px));
+                background: #1A2F62;       /* brand navy, as the splash/manifest */
+                color: #fff;
+            }
+            #rotate-guard .rg-icon {
+                font-size: 44px; line-height: 1;
+                animation: rg-turn 1.8s ease-in-out infinite;
+            }
+            #rotate-guard .rg-title { font-size: 20px; font-weight: 700; }
+            #rotate-guard .rg-sub { font-size: 14px; opacity: .8; }
+            /* Nothing behind it should scroll or be reachable. */
+            body { overflow: hidden; }
+        }
+        @keyframes rg-turn {
+            0%, 100% { transform: rotate(0deg); }
+            50%      { transform: rotate(-90deg); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #rotate-guard .rg-icon { animation: none; }
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: var(--bg-secondary);
@@ -2651,6 +2699,19 @@
         </div>
     </div>
     <div id="app"></div>
+
+    <!-- PORTRAIT ONLY (Spiro 2026-11-18: "ensure it can only be seen in
+         portrait, not landscape — I turned my phone around and had this").
+         The manifest asks for portrait, but iOS Safari ignores that, so this
+         opaque guard covers the app whenever a PHONE is held landscape (short
+         viewport). Tablets and desktops, which are tall enough in landscape to
+         use the app properly, are left alone. CSS-only: the media query shows
+         and hides it, nothing to run. -->
+    <div id="rotate-guard" aria-hidden="true">
+        <div class="rg-icon">↻</div>
+        <div class="rg-title">Turn your phone upright</div>
+        <div class="rg-sub">EZ Defect Manager works in portrait.</div>
+    </div>
 
     <script>
         // ===================================================================
@@ -10662,7 +10723,7 @@
             const tempBtn = '';
             return `
                 <div class="section-title">${title}${list.length ? ` (${list.length})` : ''}</div>
-                <div id="myjobs-list" style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;max-height:360px;overflow-y:auto;overscroll-behavior:contain;margin-bottom:18px;">
+                <div id="myjobs-list" style="border:1px solid var(--brd,rgba(128,128,128,.25));border-radius:10px;overflow:hidden;margin-bottom:18px;">
                     ${body}
                 </div>
                 ${tempBtn}`;
