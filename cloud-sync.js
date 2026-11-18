@@ -2226,6 +2226,12 @@
       if (await recoverOrphanToTempJob(legacyId, file, idKey)) return true;
       lastPhotoError = 'ORPHAN — not among the ' + defectHashCount
         + ' defects this login can read, nor in any temp job, so nothing can attach it';
+      logAppError('PHOTO_ORPHAN', 'warn',
+        'A photo has no defect to attach to (orphan) — kept on the phone.',
+        'legacyDefectId: ' + legacyId + '\nreadable defects: ' + defectHashCount
+          + '\nnot found in dm_defects by id or hash, nor in any temp job',
+        { legacyDefectId: legacyId, readableDefects: defectHashCount },
+        'photo:PHOTO_ORPHAN:' + legacyId);
       return false;
     }
     // Honest failure wording: only claim "No connection" when the device is
@@ -2268,6 +2274,23 @@
           }
         }
         lastPhotoError = msg;
+        // File it for the admin to triage; the supervisor just sees the calm
+        // "kept on your phone" line. One row per stuck photo (fingerprint keyed
+        // on the job/defect folders, not the filename, so retries coalesce).
+        const code = /^POLICY/.test(msg) ? 'PHOTO_POLICY'
+                   : /^ACCESS/.test(msg) ? 'PHOTO_ACCESS'
+                   : /row-level security|not authorized|permission denied/i.test(msg) ? 'PHOTO_REFUSED'
+                   : 'PHOTO_UPLOAD_FAILED';
+        const human = code === 'PHOTO_POLICY' ? 'A photo could not upload — the storage bucket refused it (job is readable, so a bucket policy gap).'
+                    : code === 'PHOTO_ACCESS' ? 'A photo could not upload — this login can no longer add photos to that job.'
+                    : code === 'PHOTO_REFUSED' ? 'A photo could not upload — the storage bucket refused the write.'
+                    : 'A photo could not upload — the storage upload failed.';
+        logAppError(code, 'error', human,
+          'bucket: ' + PHOTO_BUCKET + '\npath: ' + path + '\njob: ' + (jobUuid || '—')
+            + '\ndefect: ' + uuid + '\nserver said: ' + String(up.error.message || up.error),
+          { bucket: PHOTO_BUCKET, path, jobUuid: jobUuid || null, defectUuid: uuid,
+            raw: String(up.error.message || up.error).slice(0, 300) },
+          'photo:' + code + ':' + folder1 + '/' + uuid);
         if (!quiet) photoProgError(failMsg());
         return false;
       }
@@ -2301,6 +2324,73 @@
 
   // Can this login still see that job at all? Only asked after a refusal, and
   // remembered per job, because the answer is what turns one unreadable
+  // ---- Backend error telemetry (Spiro 2026-11-18) -----------------------
+  // "I don't want to expose [supervisors] to errors — log it into CH Tracker's
+  // hidden Defect Manager tab so I can resolve it in the backend and it sorts
+  // itself out without causing an issue for the person viewing the app."
+  //
+  // BEST-EFFORT AND SILENT. This must never throw, never block a sync and never
+  // surface anything. If the RPC, the network or the table isn't there, it is
+  // swallowed — a logger that can break the app is worse than no log. The
+  // server (migration 195) dedups by fingerprint; we also throttle the same
+  // fingerprint client-side so a photo retrying every sync isn't a round trip
+  // every sync.
+  const _loggedErrAt = new Map();                 // fingerprint -> last send (ms)
+  const ERR_RELOG_MS = 30 * 60 * 1000;            // at most ~twice an hour per problem
+  function _buildTag() {
+    try { const el = document.getElementById('app-ver'); if (el) return (el.textContent || '').trim(); } catch (e) {}
+    return '';
+  }
+  async function logAppError(code, severity, summary, detail, context, fingerprint) {
+    try {
+      const fp = String(fingerprint || ('defect-manager:' + code + ':' + summary)).slice(0, 300);
+      const now = Date.now();
+      if (now - (_loggedErrAt.get(fp) || 0) < ERR_RELOG_MS) return;
+      _loggedErrAt.set(fp, now);
+      const ctx = Object.assign({
+        build: _buildTag(),
+        ua: (typeof navigator !== 'undefined' && navigator.userAgent) || '',
+        online: (typeof navigator !== 'undefined') ? navigator.onLine : null,
+        at: new Date().toISOString(),
+      }, context || {});
+      await sb.rpc('log_app_error', {
+        p_app: 'defect-manager',
+        p_code: String(code || 'UNKNOWN'),
+        p_severity: severity || 'error',
+        p_summary: String(summary || '').slice(0, 300),
+        p_detail: detail != null ? String(detail) : null,
+        p_context: ctx,
+        p_fingerprint: fp,
+        p_reporter_email: userEmail || null,
+      });
+    } catch (e) { /* telemetry must never break the app */ }
+  }
+  // Expose for use elsewhere and for the global catchers below.
+  try { window.CloudLog = { error: (c, sev, sum, det, ctx, fp) => logAppError(c, sev, sum, det, ctx, fp) }; } catch (e) {}
+  // Uncaught script errors and promise rejections — the errors a user would
+  // otherwise hit with nothing recorded. Deduped on message+source so a
+  // repeating one is a single climbing row.
+  if (typeof window !== 'undefined' && !window.__ezErrHooked) {
+    window.__ezErrHooked = true;
+    window.addEventListener('error', (ev) => {
+      try {
+        const m = (ev && ev.message) || 'script error';
+        const src = (ev && (ev.filename || '')) + ':' + (ev && ev.lineno || '');
+        logAppError('JS_ERROR', 'error', 'App script error: ' + m,
+          m + '\n' + src + '\n' + ((ev && ev.error && ev.error.stack) || ''),
+          { source: src }, 'js:' + m + ':' + src);
+      } catch (e) {}
+    });
+    window.addEventListener('unhandledrejection', (ev) => {
+      try {
+        const r = ev && ev.reason;
+        const m = (r && (r.message || r)) || 'unhandled rejection';
+        logAppError('JS_REJECTION', 'error', 'Unhandled promise rejection: ' + String(m).slice(0, 160),
+          String((r && r.stack) || m), {}, 'jsrej:' + String(m).slice(0, 160));
+      } catch (e) {}
+    });
+  }
+
   // Postgres sentence into something a person can act on.
   const jobReach = {};
   async function jobReadable(jobUuid) {
