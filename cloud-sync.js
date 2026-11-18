@@ -159,6 +159,8 @@
   // job is on this device only, which is also the pre-migration state.
   const tempUuid = {};                // local temp job id -> dm_temp_jobs.id
   let tempJobsTable = null;           // null = not probed, false = migration not run
+  let tempJobsProbedAt = 0;           // when we last concluded "missing"
+  const TEMP_PROBE_RETRY = 120000;    // re-ask every 2 min while it is missing
   const defectUuidToLegacy = {};      // cloud uuid -> legacy defect id
 
   // Framework call-up (BPI import): address legacy id -> the job's Order Profile
@@ -3616,7 +3618,19 @@
   // than erroring on every sync. A "no" is cached; an offline probe is not,
   // because that answer would be wrong the moment signal returns.
   async function tempJobsAvailable() {
-    if (tempJobsTable !== null) return tempJobsTable;
+    // TRUE is cached for good — a table does not un-create itself.
+    //
+    // FALSE is not, and that asymmetry matters. It used to be sticky for the
+    // whole session, so a phone that was open when the migration ran would
+    // never find out: every pull-to-refresh, every sweep, every retry would
+    // short-circuit on a stale "missing" and nothing would ever upload again
+    // until the app was force-closed. Nobody would connect those two things,
+    // and the screen would go on saying the migration had not been run after
+    // it had. Ask again every couple of minutes instead, so the app heals
+    // itself within a few minutes of the table appearing (Spiro ran it
+    // 2026-11-18 with 54 photos queued).
+    if (tempJobsTable === true) return true;
+    if (tempJobsTable === false && Date.now() - tempJobsProbedAt < TEMP_PROBE_RETRY) return false;
     if (!sb || !userId) return false;
     try {
       // Scoped to this login even though it is only a probe: RLS would hide
@@ -3625,11 +3639,21 @@
       const { error } = await sb.from('dm_temp_jobs').select('id').eq('owner_id', userId).limit(1);
       if (error && (error.code === '42P01' || /relation .* does not exist|could not find the table/i.test(error.message || ''))) {
         tempJobsTable = false;
+        tempJobsProbedAt = Date.now();
         console.warn('[CloudSync] dm_temp_jobs is missing — temp jobs stay on this device until 2026-09-04_temp_jobs.sql is run');
         return false;
       }
       if (error) return false;                 // transient — probe again next time
+      const wasMissing = tempJobsTable === false;
       tempJobsTable = true;
+      if (wasMissing) {
+        // It just appeared. Clear the message that said it had not, and go
+        // straight at the queue rather than waiting out a five-minute
+        // back-off that exists for photos that are genuinely failing.
+        lastPhotoError = ''; lastPushError = '';
+        console.info('[CloudSync] dm_temp_jobs is there now — pushing the temp jobs that were waiting');
+        pushTempJobs().then(() => uploadPendingPhotos()).catch(() => {});
+      }
     } catch (e) { return false; }
     return tempJobsTable;
   }
@@ -4667,6 +4691,11 @@
       // The defect queue the photos wait behind, so a test can put the pill in
       // the state Spiro was looking at: on wifi, with changes stuck in front.
       photoDiagnostic: () => photoDiagnostic(),
+      tempJobsAvailable: () => tempJobsAvailable(),
+      lastPhotoError: () => lastPhotoError,
+      // Wind the probe's back-off clock forward, so a test can show the
+      // app noticing the table WITHOUT sitting still for two minutes.
+      expireTempProbe: () => { tempJobsProbedAt = 0; },
       commitDefect: (id) => commitDefect(id),
       lastPushError: () => lastPushError,
       outboxHas: (id) => defectOutbox.includes(Number(id)),

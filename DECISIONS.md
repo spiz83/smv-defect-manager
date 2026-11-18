@@ -3928,3 +3928,30 @@ Both across all fifteen palettes.
 
 Measuring the thing you changed and not the thing next to it is how all
 three of these treatments got there in the first place.
+
+## The migration ran, and the app would not have noticed (2026-11-18, `2026-11-18f`)
+
+Spiro ran `2026-09-04_temp_jobs.sql` with the app open and 54 photos
+queued. All five verification columns came back true.
+
+`tempJobsAvailable()` cached its answer in `tempJobsTable`, and `false` was
+sticky **for the whole session**. So that phone would never have found out:
+every pull-to-refresh, every sweep, every retry short-circuits on the stale
+"missing" and nothing uploads again until the app is force-quit. The screen
+would have gone on saying the migration had not been run, after it had —
+and nobody would have connected those two things. We would have spent
+another round on it.
+
+`true` is still cached for good, since a table does not un-create itself.
+`false` now expires after two minutes, so the app heals itself a few
+minutes after the table appears. The moment it comes good it clears the
+stale "has not been run" message and goes straight at the queue, rather
+than waiting out the five-minute back-off meant for photos that are
+genuinely failing.
+
+**The shape, again, and this is the fourth time today.** A cached negative
+inside a retry loop is the same bug as a lookup that reads only local
+state: the retry cannot reach the thing that would fix it, so the app sits
+there looking busy for ever. `resolveDefectUuid`, `jobUuidForDefect`,
+`commitDefect`, and now this. Worth grepping for on sight: any `if (cached
+!== null) return cached` where the cached value is a failure.

@@ -418,6 +418,45 @@ check('the message stops reading like a permissions problem',
 check('…and says the phone, the signal and the login are all fine',
   /Nothing is wrong with the phone/.test(temp.reason), '');
 
+// ================= 7. the migration gets run mid-session ==================
+// Spiro ran 2026-09-04_temp_jobs.sql with the app open and 54 photos queued.
+// The probe used to cache "missing" for the whole session, so that phone
+// would never have found out: every refresh, sweep and retry short-circuits
+// on the stale answer and nothing uploads again until the app is force-quit.
+// Nobody would connect those two things — the screen would go on saying the
+// migration had not been run, after it had.
+console.log('\n--- the table appears while the app is open ---');
+const healed = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  const out = {};
+  // Pre-migration: the probe concludes missing.
+  window.__tempJobsExist = false;
+  out.before = await h.tempJobsAvailable();
+  out.errBefore = h.lastPushError();
+  // The migration runs. Nothing else changes — no reload, no sign-in.
+  window.__tempJobsExist = true;
+  // Immediately after, the cached answer still stands: it is a 2-minute
+  // back-off, not a free round trip on every single photo.
+  out.rightAway = await h.tempJobsAvailable();
+  // Wind the clock past the retry window.
+  h.expireTempProbe();
+  out.afterRetry = await h.tempJobsAvailable();
+  await new Promise(r => setTimeout(r, 60));
+  out.errAfter = h.lastPhotoError();
+  return out;
+});
+console.log('healed:', JSON.stringify(healed));
+check('before the migration the probe says the table is missing',
+  healed.before === false, String(healed.before));
+check('…and says why, in the push error',
+  /temp_jobs\.sql/.test(healed.errBefore || ''), healed.errBefore);
+check('it does not re-ask on every single photo — that is a 2-minute back-off',
+  healed.rightAway === false, String(healed.rightAway));
+check('…but it DOES re-ask, so a migration run mid-session is noticed',
+  healed.afterRetry === true, String(healed.afterRetry));
+check('…and the stale "has not been run" message is cleared when it is',
+  !/temp_jobs\.sql/.test(healed.errAfter || ''), JSON.stringify(healed.errAfter));
+
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
 await browser.close();
