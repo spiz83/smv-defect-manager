@@ -169,32 +169,47 @@ async function boot({ authDelayMs = 350, session = true, flag = '1', viewport = 
     `reserve ${geo.pad}, bar ${geo.barH}, sticky top ${geo.stickyTop}`);
   check('the bar writes the flag that keeps the NEXT boot still', geo.flag === '1', String(geo.flag));
 
-  // ── 2a. The home screen scrolls INSIDE the job list ────────────────────
-  // The home screen is shorter than the phone, so the document does not
-  // scroll at all there — the jobs scroll in their own box. That is why a
-  // flick on the home screen used to bounce the whole app: the gesture ran
-  // off the end of the list and chained straight to the document.
+  // ── 2a. The home screen scrolls as ONE page ────────────────────────────
+  // It did not always. The job list used to scroll inside its own 360px box
+  // on a home screen SHORTER than the phone, so a flick ran off the end of
+  // the list and chained to a document with nothing to scroll, which bounced
+  // (Spiro 2026-11-18). That inner scroller was removed the same day — the
+  // page scrolls as one now — and this checks the arrangement that shipped:
+  // no inner scroller, and a masthead that does not move while the one page
+  // underneath it does.
   await page.evaluate(() => {
     window.CloudJobs = { isManager: () => true, currentUserId: () => 'me' };
     render();
   });
-  const inner = await page.evaluate(async () => {
+  const home = await page.evaluate(async () => {
     const list = document.getElementById('myjobs-list');
-    const head = () => document.querySelector('.app-header').getBoundingClientRect().top;
-    const before = head();
-    list.scrollTop = 200;
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    return { scrolled: list.scrollTop, canScroll: list.scrollHeight > list.clientHeight + 50,
-             before, after: head(), docMoved: window.scrollY,
-             contain: getComputedStyle(list).overscrollBehaviorY };
+    const head = () => document.querySelector('.app-header').getBoundingClientRect();
+    const bar = () => document.getElementById('cs-statusbar').getBoundingClientRect();
+    const rest = head().top;
+    const out = [];
+    for (const y of [1, 4, 40, 300]) {
+      window.scrollTo(0, y);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      out.push({ y: window.scrollY, top: head().top, gap: head().top - bar().bottom });
+    }
+    window.scrollTo(0, 0);
+    return { rest, out, innerScroll: getComputedStyle(list).overflowY,
+             maxH: getComputedStyle(list).maxHeight,
+             // overflow:hidden stays on the box — it is what clips the rows to
+             // the rounded corners. What matters is that nothing is HELD
+             // inside it: no max-height, so the list is as tall as its jobs
+             // and the page does the scrolling.
+             innerTall: list.scrollHeight > list.clientHeight + 10,
+             pageScrolls: document.documentElement.scrollHeight > window.innerHeight + 100 };
   });
-  check('the job list really does scroll inside itself (otherwise nothing is proven)',
-    inner.canScroll && inner.scrolled > 100, `scrollTop ${inner.scrolled}`);
-  check('scrolling the job list leaves the masthead exactly where it was',
-    Math.abs(inner.after - inner.before) < 0.5 && inner.docMoved === 0,
-    `${inner.before} → ${inner.after}, page at ${inner.docMoved}`);
-  check('a flick off the end of the job list does not reach the page underneath',
-    inner.contain === 'contain', inner.contain);
+  check('the home page scrolls as one: nothing is held inside the job list',
+    !home.innerTall && home.maxH === 'none',
+    `#myjobs-list max-height ${home.maxH}, ${home.innerTall ? 'content is clipped' : 'full height'}`);
+  check('the home page is long enough to scroll (otherwise nothing is proven)',
+    home.pageScrolls && home.out.some(o => o.y > 100), JSON.stringify(home.out.map(o => o.y)));
+  check('the masthead holds still while the home page scrolls under it',
+    home.out.every(o => Math.abs(o.top - home.rest) < 0.5 && Math.abs(o.gap) < 0.5),
+    `at rest ${home.rest}, scrolled ${JSON.stringify(home.out.map(o => o.top))}`);
 
   // ── 2b. A job's defect list: the document scrolls, two frozen layers ────
   await page.evaluate(() => { viewDefectsForAddress(1); });

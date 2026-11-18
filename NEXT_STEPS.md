@@ -50,7 +50,20 @@ Two process notes worth keeping:
   `supabase/migrations/2026-09-04_temp_jobs.sql` is what a guessed policy did
   to supervisors' devices mid-push.
 
-## 🧊 The masthead holds still — build `2026-11-18l`
+## 🧊 The masthead holds still — builds `2026-11-18l` / `2026-11-18m`
+
+**Two sessions fixed the same complaint from opposite ends within the hour**
+(2026-11-18). Session 01F3h5… came at it as "the page can be dragged for no
+benefit" and shipped `overscroll-behavior: none`, a portrait-only guard, and —
+after one reverted attempt at a fixed home shell — the removal of the job
+list's inner 360px scroller, so the home page scrolls as one. This session came
+at it as "the header jitters" and shipped the items below. Both landed on
+`main`; `2026-11-18m` is the merged state, with the duplicated
+`overscroll-behavior` declaration folded into one rule near the top of the
+sheet. **The home list has NO inner scroller any more** — `tests/nojitter.mjs`
+asserts that, so a future change that reinstates one fails the gate rather than
+quietly bringing the bounce back.
+
 
 Three movements behind one complaint (Spiro 2026-11-18). DECISIONS.md has the
 reasoning; this is what you need to know before touching the top of a screen.
