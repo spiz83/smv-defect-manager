@@ -88,6 +88,10 @@ await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
     id: i === 1100 ? JOB_UUID : `0000${String(i).padStart(4, '0')}-0000-4000-8000-00000000ffff`,
     active: false, status: 'completed',
   }));
+  // The table temp jobs sync into does not exist — which is the state Spiro's
+  // database was actually in, since 2026-09-04_temp_jobs.sql had never been
+  // run. Postgres answers 42P01, and everything on a temp job stops here.
+  window.__tempJobsExist = false;
   const table = (name) => ({
     // The server always knows which job a defect belongs to. That is the whole
     // point of the fallback.
@@ -95,6 +99,14 @@ await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
       if (name === 'dm_defects' && String(cols).includes('job_id')) {
         window.__dmJobLookups++;
         return chain([{ job_id: JOB_UUID }]);
+      }
+      if (name === 'dm_temp_jobs' && !window.__tempJobsExist) {
+        const p = Promise.resolve({ data: null,
+          error: { code: '42P01', message: 'relation "public.dm_temp_jobs" does not exist' } });
+        ['select', 'eq', 'is', 'in', 'not', 'order', 'limit', 'range', 'gte', 'lte', 'filter']
+          .forEach(k => { p[k] = () => p; });
+        p.maybeSingle = () => p; p.single = () => p;
+        return p;
       }
       if (name === 'dm_contractors' && String(cols).includes('legacy_id')) {
         window.__conFetches++;
@@ -357,6 +369,54 @@ check('every queued photo names its job and every link in its chain',
 check('…and it says which of them is the broken link',
   /jobMapped=NO|defectInCloud=NO|contractor=NOT MAPPED|NOT IN LOCAL DB/.test(diag.text),
   'at least one link reported as broken in this fixture');
+
+// ================= 6. the actual cause, found 2026-11-17 ==================
+// The diagnostic's first real use. Spiro's phone reported:
+//
+//   defect 999665643 — Lot 4545, 7 Hermes St
+//      addressId=1556837901 temp=true jobMapped=NO defectInCloud=NO queued=yes
+//
+// temp=true was the whole answer, and none of the three theories before it
+// had looked there. A temp job is not a CH Tracker job: it has no row in
+// `jobs`, so NO amount of resolving a job uuid can ever work, and its defects
+// must not go into dm_defects at all (2026-09-04_temp_jobs.sql sets out why).
+// They sync through dm_temp_jobs — a table that was drafted in September and
+// never created, so everything on a temp job had been stuck ever since with
+// nothing on screen saying so.
+console.log('\n--- a temp job, before the migration has been run ---');
+const temp = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  // A temp job and a defect on it, exactly as the app holds them.
+  db.data.addresses.push({ id: 1556837901, lot: '4545', street: 'Lot 4545, 7 Hermes St',
+                           streetName: 'Hermes St', isTemp: true });
+  db.data.defects.push({ id: 999665643, addressId: 1556837901, description: 'Reseal shower',
+                         location: 'Ensuite', status: 'open', createdAt: '2026-11-01T00:00:00.000Z' });
+  db.save();
+  h.setPushState(0, '');
+  // A photo on the temp defect, through the real save path.
+  try {
+    await window.CloudPhotos.savePhoto(999665643,
+      new File([new Blob(['x'])], 't.jpg', { type: 'image/jpeg' }));
+  } catch (e) {}
+  await window.CloudSync.indicator.commitDefect(999665643);
+  await new Promise(r => setTimeout(r, 60));
+  const text = await h.photoDiagnostic();
+  return { text, pushErr: h.lastPushError ? h.lastPushError() : null,
+           stillQueued: h.outboxHas ? h.outboxHas(999665643) : null,
+           reason: h.photoWaitingReason() };
+});
+console.log(temp.text.split('\n').slice(0, 9).join('\n'));
+check('the diagnostic says outright that temp-job sync is unavailable',
+  /temp-job sync: NOT AVAILABLE/.test(temp.text), '');
+check('…and names the migration that has to be run',
+  /2026-09-04_temp_jobs\.sql/.test(temp.text), '');
+check('a temp defect is NOT left queued for dm_defects',
+  temp.stillQueued === false, String(temp.stillQueued));
+check('the message stops reading like a permissions problem',
+  /temp job/i.test(temp.reason) && !/login can see/i.test(temp.reason),
+  temp.reason.slice(0, 160));
+check('…and says the phone, the signal and the login are all fine',
+  /Nothing is wrong with the phone/.test(temp.reason), '');
 
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');

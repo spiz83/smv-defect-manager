@@ -2825,7 +2825,11 @@
     if (/timeout|network|fetch|failed to fetch/i.test(m))
       return { what: 'the connection dropped partway',
                fix: 'It keeps trying on its own — nothing to do.', stuck: false };
-    if (/could not be found in the cloud/i.test(m))
+    if (/temp_jobs\.sql|temp jobs cannot sync|temp-job photos cannot upload/i.test(m))
+      return { what: 'they are on a temp job, and temp jobs cannot sync yet',
+               fix: 'Nothing is wrong with the phone or your login — the database is missing the table temp jobs go into. Whoever manages the app needs to run 2026-09-04_temp_jobs.sql. Everything stays safe on this phone until they do.',
+               stuck: true };
+    if (/could not be found in the cloud|not one this login can see/i.test(m))
       return { what: 'the job they belong to is not in the cloud for this login',
                fix: 'Pull down to refresh. If it still says this, send this screen to whoever set up your account.',
                stuck: true };
@@ -2875,6 +2879,14 @@
          + ' · defects mapped: ' + Object.keys(idMap.defects).length);
     L.push('last photo error: ' + (lastPhotoError || '—'));
     L.push('last push error: ' + (lastPushError || '—'));
+    // The single most useful line here, and it was missing: whether the table
+    // temp jobs sync into actually exists. Everything on a temp job is stuck
+    // behind this one fact, and nothing else in the block reveals it.
+    const anyTemp = items.some(it => isLocalOnlyDefect(it.legacyId));
+    if (anyTemp || tempJobsTable === false) {
+      L.push('temp-job sync: ' + (tempJobsTable === false ? 'NOT AVAILABLE — 2026-09-04_temp_jobs.sql has not been run'
+                                 : tempJobsTable === true ? 'available' : 'not probed yet'));
+    }
     L.push('');
     const seen = new Set();
     for (const it of items) {
@@ -3733,8 +3745,15 @@
   // in dm_defects, and a temp defect deliberately has no row there.
   async function uploadTempPhoto(legacyId, file, idKey) {
     const a = tempJobFor(legacyId);
-    if (!a) return false;
-    if (!(await tempJobsAvailable())) return false;    // pre-migration: stays put
+    if (!a) { lastPhotoError = 'the temp job it belongs to is no longer on this phone'; return false; }
+    if (!(await tempJobsAvailable())) {
+      // Pre-migration the photo stays put, which is correct — but silence here
+      // is what made 54 photos look like a network problem for a week. There
+      // is nothing wrong with the phone, the connection or the login: the
+      // table these go into does not exist yet.
+      lastPhotoError = 'temp-job photos cannot upload yet — 2026-09-04_temp_jobs.sql has not been run on the database';
+      return false;
+    }
     if (!a.tempCloudId) await pushTempJobs();          // needs a row to hang off
     const folder = a.tempCloudId || tempUuid[a.id];
     if (!folder) return false;                         // push failed — retry later
@@ -4221,6 +4240,24 @@
     // Claimed BEFORE the first await, not after: the capability probe below is a
     // real round-trip on the first write of a session, and a pull landing in
     // that window would rebuild db.data with this edit still unguarded.
+    // A TEMP JOB'S DEFECT DOES NOT BELONG IN dm_defects, and the whole of
+    // 2026-09-04_temp_jobs.sql is the argument for why: that table is open by
+    // RLS, carries a unique index that would merge two unrelated maintenance
+    // calls, and archives its deletes. A temp job lives in dm_temp_jobs and
+    // its defects ride with it as JSON.
+    //
+    // Queuing one here was quiet and permanent. It can never resolve a job
+    // uuid — a temp job has no row in `jobs` — so it sat in the outbox for
+    // ever, counted in "36 change(s) saved on this phone", and left the last
+    // push error reading like a permissions problem. Take it out of a queue
+    // it was never going to leave; pushTempJobs() is what carries it.
+    if (isLocalOnlyDefect(legacyId)) {
+      outboxRemove(legacyId);
+      if (!(await tempJobsAvailable())) {
+        lastPushError = 'temp jobs cannot sync yet — 2026-09-04_temp_jobs.sql has not been run on the database';
+      }
+      return;
+    }
     outboxAdd(legacyId);
     await ensureOrderColumn();                    // before defectRow() is built
     // The job this defect belongs to must be mapped before it can be written.
@@ -4630,6 +4667,9 @@
       // The defect queue the photos wait behind, so a test can put the pill in
       // the state Spiro was looking at: on wifi, with changes stuck in front.
       photoDiagnostic: () => photoDiagnostic(),
+      commitDefect: (id) => commitDefect(id),
+      lastPushError: () => lastPushError,
+      outboxHas: (id) => defectOutbox.includes(Number(id)),
       openPhotoHelp: () => openPhotoHelp(),
       setPushState: (n, err) => {
         defectOutbox = Array.from({ length: Number(n) || 0 }, (_, i) => i + 1);

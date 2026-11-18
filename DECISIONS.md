@@ -3710,3 +3710,47 @@ pruned: removing CSS is a separate change with its own risk, and this one
 was already large. `renderShoppingEntry()` itself is gone — a render
 function for a card we deliberately removed is an invitation to put it back
 by accident.
+
+## The stuck photos: temp jobs, and a migration never run (2026-11-18, `2026-11-17u`)
+
+The diagnostic's first use answered it in one line:
+
+    defect 999665643 — Lot 4545, 7 Hermes St
+       addressId=1556837901 temp=true jobMapped=NO defectInCloud=NO queued=yes
+
+**`temp=true`.** Not one of the three things I had guessed, and nowhere
+near them. A temp job is not a CH Tracker job: it has no row in `jobs`, so
+no amount of resolving a job uuid could ever have worked, and its defects
+must not go into `dm_defects` at all — 2026-09-04_temp_jobs.sql is a page
+of argument for why. They sync through `dm_temp_jobs`, a table drafted in
+September and **never created**. Everything on a temp job had been stuck
+since then, with nothing on screen saying so.
+
+Lot 4545, 7 Hermes St is a temp job. 54 photos and most of the 36 changes
+were on it.
+
+What was wrong on this side, independent of the migration:
+
+- **`commitDefect` queued temp defects for `dm_defects`.** It could never
+  resolve a job uuid for one, so each sat in the outbox for ever, counted
+  in "36 change(s) saved on this phone", and left the last push error
+  reading like a permissions problem — which is exactly where it sent me.
+  They are taken out of a queue they were never going to leave;
+  `pushTempJobs()` is what carries them. (Safe: `pullAll` preserves temp
+  defects through `localTempDefects`, not through the outbox.)
+- **`uploadTempPhoto` returned false in silence** when the table was
+  missing. Correct behaviour, no explanation — and silence is what made 54
+  photos look like a network problem for a week.
+- **The diagnostic did not report the one fact everything hung on.** It
+  now prints `temp-job sync: NOT AVAILABLE — 2026-09-04_temp_jobs.sql has
+  not been run` whenever a queued photo is on a temp job.
+
+The message now says it plainly: nothing is wrong with the phone, the
+signal or the login; the database is missing the table these go into.
+
+**The lesson, paid for three times.** Every theory I formed came from a
+sentence describing a symptom, and the thing that actually settled it was
+reporting state — which link, on which job, with which flags. The
+diagnostic took one round to build and would have saved three. When a
+failure is invisible from outside, the first move is to make it visible,
+not to guess at it.
