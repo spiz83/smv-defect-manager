@@ -4122,3 +4122,46 @@ suites that boot the app, not the three that happened to fail. The others
 were passing on timing, which is the same bug asleep: the next one to grow
 a screenshot would have failed for a reason that looked nothing like its
 own change.
+
+## dm_defects is not the only place a defect lives (2026-11-18, `2026-11-18k`)
+
+The hash search answered honestly and was still not the whole truth:
+
+    ORPHAN — not among the 2116 defects this login can read
+
+True. And a **temp job's defects are not in `dm_defects` at all** — they
+ride in `dm_temp_jobs.defects` as JSON. A photo taken on one is invisible
+to a search of `dm_defects` however complete that search is, and reporting
+the count made the answer sound more thorough than it was.
+
+Spiro's six sit in the same id band as the temp defects that DID sync,
+which is what pointed here. The photos were queued, the local temp job was
+then replaced by the cloud's copy, and the local defect rows went with it —
+leaving six photos pointing at ids that exist only inside a JSON column.
+
+So before writing a photo off, the temp job rows are searched too, and a
+match is filed under that job's folder. The orphan message now says both
+places were looked in, because "not in dm_defects" was never the same
+claim as "nowhere".
+
+### The seventh is now a server-side question, not an app one
+
+    POLICY — the job is yours but the photo bucket refused it
+
+The job reads fine and the bucket refuses the write, so the two policies
+disagree. Worth noting what the repo's own `storage.sql` contains:
+
+    using (public.is_workspace_member(((storage.foldername(name))[1])::uuid))
+
+The first folder the app writes is a **job** uuid, not a workspace id. If
+that is still the live policy it is false for every job, and no defect
+photo could ever be written — which fits what we saw today exactly. The
+forty-seven that uploaded were all on the temp job, and temp jobs got
+their own storage policy when the migration ran this afternoon.
+
+That is a hypothesis, not a finding: the live policy may have been changed
+on the CH Tracker side. `INSPECT_photo_policy.sql` prints it. Writing a
+security policy for a shared production database from a guess is exactly
+the move that has cost this project before — see migration 072 in
+2026-09-04_temp_jobs.sql, where a supervisor-scoping policy froze devices
+mid-push.

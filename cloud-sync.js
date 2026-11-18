@@ -2198,8 +2198,12 @@
         return await uploadDefectPhoto(legacyId, file, idKey, quiet, keepDays,
           { defectUuid: found, jobUuid: null });
       }
+      // dm_defects is not the only place a defect can be. A temp job carries
+      // its own as JSON, and a photo from one is invisible to every search of
+      // dm_defects no matter how complete.
+      if (await recoverOrphanToTempJob(legacyId, file, idKey)) return true;
       lastPhotoError = 'ORPHAN — not among the ' + defectHashCount
-        + ' defects this login can read, so nothing can attach it';
+        + ' defects this login can read, nor in any temp job, so nothing can attach it';
       return false;
     }
     // Honest failure wording: only claim "No connection" when the device is
@@ -2286,6 +2290,41 @@
       jobReach[jobUuid] = !!(data && data.id);
       return jobReach[jobUuid];
     } catch (e) { return null; }
+  }
+
+  // LAST CHANCE BEFORE "ORPHAN". A temp job's defects do not live in
+  // dm_defects at all — they ride in dm_temp_jobs.defects as JSON — so a
+  // photo taken on one and left behind when the local copy was replaced by
+  // the cloud's will never be found by searching dm_defects, however
+  // thoroughly. Spiro's six are in the same id band as the temp defects that
+  // DID sync, which is what pointed here (2026-11-18).
+  //
+  // Search the temp job rows themselves, and if the defect is in one, the
+  // photo belongs in that job's folder.
+  async function recoverOrphanToTempJob(legacyId, file, idKey) {
+    const rows = await fetchTempJobs();
+    if (!rows || !rows.length) return false;
+    const row = rows.find(r => Array.isArray(r.defects)
+      && r.defects.some(d => d && Number(d.id) === Number(legacyId)));
+    if (!row || !row.id) return false;
+    let blob = null;
+    try { blob = await compressImage(file); } catch (e) { blob = null; }
+    if (!blob) blob = file;
+    const name = idKey ? (String(idKey).replace(/[^a-z0-9]+/gi, '_').slice(0, 60) + '.jpg') : randName();
+    const path = `${row.id}/${legacyId}/${name}`;
+    try {
+      const up = await withTimeout(
+        sb.storage.from(PHOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: true }),
+        60000, 'orphan temp photo');
+      if (up.error) { lastPhotoError = String(up.error.message || up.error).slice(0, 120); return false; }
+      const photos = Array.isArray(row.photos) ? row.photos.slice() : [];
+      if (!photos.some(x => x && x.path === path)) photos.push({ defectId: Number(legacyId), path });
+      const { error } = await withTimeout(
+        sb.from('dm_temp_jobs').update({ photos }).eq('id', row.id), 30000, 'temp photo record');
+      if (error) { lastPhotoError = String(error.message || error).slice(0, 120); return false; }
+      console.info('[CloudSync] recovered a photo onto temp job ' + row.id);
+      return true;
+    } catch (e) { return false; }
   }
 
   async function deleteOnePhoto(path) {

@@ -103,6 +103,9 @@ await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
       if (name === 'dm_defects' && String(cols).includes('legacy_id') && window.__defectRows) {
         return chain(window.__defectRows);
       }
+      if (name === 'dm_temp_jobs' && window.__tempJobsExist && window.__tempRows) {
+        return chain(window.__tempRows);
+      }
       if (name === 'dm_temp_jobs' && !window.__tempJobsExist) {
         const p = Promise.resolve({ data: null,
           error: { code: '42P01', message: 'relation "public.dm_temp_jobs" does not exist' } });
@@ -162,9 +165,12 @@ await page.addInitScript(([JOB_UUID, DEF_UUID, CON_UUID]) => {
       removeChannel() {},
       storage: { from: () => ({
         list: async () => ({ data: [] }), remove: async () => ({}),
-        upload: async () => (window.__failUpload
-          ? { data: null, error: { message: 'network' } }   // keeps it queued, so the
-          : { data: {}, error: null }),                      // outbox record can be read
+        upload: async (path) => {
+          (window.__uploadedPaths = window.__uploadedPaths || []).push(path);
+          return window.__failUpload
+            ? { data: null, error: { message: 'network' } }   // keeps it queued, so the
+            : { data: {}, error: null };                      // outbox record can be read
+        },
         createSignedUrls: async () => ({ data: [] }), createSignedUrl: async () => ({ data: null }),
       }) },
       functions: { invoke: async () => ({ data: null, error: null }) },
@@ -656,6 +662,60 @@ check('…the photo still knows exactly where it belongs',
   root.stillKnows === 'dddddddd-0000-4000-8000-00000000000d', JSON.stringify(root.stillKnows));
 check('a photo queued before the fix is recovered by rebuilding the hash',
   root.byHash === 'dddddddd-0000-4000-8000-00000000000d', JSON.stringify(root.byHash));
+
+// ================= 11. the defect is in a TEMP JOB, not dm_defects ========
+// Spiro's six, after the hash search: "not among the 2116 defects this login
+// can read". True, and still not the whole truth — a TEMP job's defects never
+// go into dm_defects at all. They ride in dm_temp_jobs.defects as JSON, so a
+// photo taken on one is invisible to a search of dm_defects however complete
+// that search is. His six sit in the same id band as the temp defects that
+// DID sync, which is what pointed here.
+console.log('\n--- a defect that lives inside a temp job row ---');
+const inTemp = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  const LID = 999665638;                       // one of Spiro's actual six
+  const TEMPJOB = 'eeeeeeee-0000-4000-8000-00000000000e';
+  window.__tempJobsExist = true;
+  window.__tempRows = [{ id: TEMPJOB, owner_id: 'u', legacy_id: 1556837901,
+                         name: 'Lot 4545, 7 Hermes St',
+                         defects: [{ id: LID, description: 'Reseal shower' }],
+                         photos: [] }];
+  window.__defectRows = [];                    // not in dm_defects, correctly
+  window.__failUpload = false;
+  window.__uploadedPaths = [];
+  try {
+    await window.CloudPhotos.savePhoto(LID, new File([new Blob(['x'])], 't.jpg', { type: 'image/jpeg' }));
+  } catch (e) {}
+  await new Promise(r => setTimeout(r, 250));
+  const left = await h.pendingKeysFor(LID);
+  // NOT lastPhotoError — that is one variable for the whole queue and another
+  // item overwrites it, which is the very bug this suite exists to stop
+  // believing. Ask whether THIS defect is still being reported.
+  const diag = await h.photoDiagnostic();
+  return { stillQueued: left.length, paths: window.__uploadedPaths.slice(),
+           listedInDiag: diag.includes(String(LID)), tempJob: TEMPJOB };
+});
+console.log('inTemp:', JSON.stringify(inTemp));
+check('a photo whose defect is only in a temp job is NOT written off as an orphan',
+  !inTemp.listedInDiag, 'still reported as stuck: ' + inTemp.listedInDiag);
+check('…it is filed under that temp job',
+  inTemp.paths.some(p => p.startsWith(inTemp.tempJob + '/')), JSON.stringify(inTemp.paths));
+check('…and leaves the queue', inTemp.stillQueued === 0, String(inTemp.stillQueued));
+
+// And when it really is nowhere, the message says BOTH places were looked.
+const nowhere = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  window.__tempRows = [];
+  try {
+    await window.CloudPhotos.savePhoto(777777,
+      new File([new Blob(['x'])], 'n.jpg', { type: 'image/jpeg' }));
+  } catch (e) {}
+  await new Promise(r => setTimeout(r, 200));
+  return h.lastPhotoError();
+});
+console.log('nowhere:', JSON.stringify(nowhere));
+check('a genuine orphan says both dm_defects AND the temp jobs were searched',
+  /ORPHAN/.test(nowhere) && /temp job/i.test(nowhere), nowhere);
 
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
