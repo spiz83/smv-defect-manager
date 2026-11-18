@@ -335,10 +335,18 @@ const diag = await page.evaluate(async () => {
   await h.openPhotoHelp();
   const ov = document.getElementById('cs-phelp');
   const pre = document.getElementById('cs-phelp-pre');
+  // What Copy actually puts on the clipboard, vs what is on the screen. The
+  // previous version compared two separate photoDiagnostic() calls, which is
+  // a race rather than a property — the queue can move between them.
+  let copied = null;
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { writeText: (t) => { copied = t; return Promise.resolve(); } }, configurable: true });
+  document.getElementById('cs-phelp-copy').click();
+  await new Promise(r => setTimeout(r, 40));
   const out = {
     text,
     shown: !!ov,
-    preMatches: pre ? pre.textContent === text : false,
+    preMatches: pre ? copied === pre.textContent : false,
     hasCopy: !!document.getElementById('cs-phelp-copy'),
     hasRetry: !!document.getElementById('cs-phelp-retry'),
     explains: ov ? /still on this phone/.test(ov.textContent) : false,
@@ -353,7 +361,7 @@ check('the panel opens with the plain explanation at the top', diag.shown && dia
 check('…and a Copy details button, because a toast cannot be copied', diag.hasCopy, '');
 check('…and a Try again, for the person who will not wait out the timer', diag.hasRetry, '');
 check('…and closes', diag.closed, '');
-check('what it copies is exactly what it shows', diag.preMatches, '');
+check('what it copies is exactly what is on the screen', diag.preMatches, '');
 // The links themselves. Each of these was a theory at some point, and the
 // point of the block is that it answers all of them at once.
 for (const needle of ['build ', 'online:', 'photos queued:', 'changes queued:',
@@ -456,6 +464,70 @@ check('…but it DOES re-ask, so a migration run mid-session is noticed',
   healed.afterRetry === true, String(healed.afterRetry));
 check('…and the stale "has not been run" message is cleared when it is',
   !/temp_jobs\.sql/.test(healed.errAfter || ''), JSON.stringify(healed.errAfter));
+
+// ================= 8. photos with nothing to attach to ====================
+// After the migration ran, Spiro's queue went 54 -> 7 and his changes 36 -> 0.
+// Six of the seven read "NOT IN LOCAL DB": the defect they were taken against
+// is on neither the phone nor the cloud, usually deleted after the photo, or
+// left behind when a temp job was replaced by its cloud copy under new ids.
+//
+// Nothing can attach those. Retrying them for ever is why a counter that says
+// "7 photos waiting" never reaches zero, and why the toast kept promising a
+// background retry that could not possibly work.
+console.log('\n--- photos whose defect no longer exists ---');
+const orphan = await page.evaluate(async () => {
+  const h = window.CloudSync.indicator;
+  const out = {};
+  // A photo against a defect id that is in neither place.
+  try {
+    await window.CloudPhotos.savePhoto(424242,
+      new File([new Blob(['x'])], 'o.jpg', { type: 'image/jpeg' }));
+  } catch (e) {}
+  await new Promise(r => setTimeout(r, 120));
+  const text1 = await h.photoDiagnostic();
+  out.saysOrphan = /ORPHAN/.test(text1);
+  out.perItem = /\[ORPHAN/.test(text1) || /last tried: ORPHAN/.test(text1);
+  // The message stops promising a retry that cannot work.
+  h.setPhotoError('ORPHAN — the defect it belongs to is not on this phone or in the cloud');
+  out.reason = h.photoWaitingReason();
+  // …and the panel offers the only thing that CAN clear them.
+  const keys = await h.orphanPhotoKeys();
+  out.keys = keys.length;
+  await h.openPhotoHelp();
+  out.hasDiscard = !!document.getElementById('cs-phelp-drop');
+  out.discardLabel = (document.getElementById('cs-phelp-drop') || {}).textContent;
+  // Never without asking.
+  let asked = null;
+  window.confirm = (m) => { asked = m; return false; };
+  document.getElementById('cs-phelp-drop').click();
+  await new Promise(r => setTimeout(r, 60));
+  out.asked = asked;
+  out.keptOnNo = (await h.orphanPhotoKeys()).length;
+  // Say yes, and they go.
+  window.confirm = () => true;
+  document.getElementById('cs-phelp-drop').click();
+  await new Promise(r => setTimeout(r, 120));
+  out.goneOnYes = (await h.orphanPhotoKeys()).length;
+  document.getElementById('cs-phelp')?.remove();
+  return out;
+});
+console.log('orphan:', JSON.stringify(orphan, null, 1));
+check('a photo whose defect is in neither place is called an orphan',
+  orphan.saysOrphan, '');
+check('…and the diagnostic says so against THAT photo, not the queue as a whole',
+  orphan.perItem, '');
+check('…the message stops promising a retry that cannot work',
+  /no longer exists/.test(orphan.reason) && !/keeps trying on its own/.test(orphan.reason),
+  orphan.reason.slice(0, 140));
+check('…and points at the only thing that clears them', /Discard/i.test(orphan.reason), '');
+check('the panel offers a Discard, counting exactly the unattachable ones',
+  orphan.hasDiscard && orphan.keys >= 1 && new RegExp(`Discard ${orphan.keys} `).test(orphan.discardLabel || ''),
+  `${orphan.keys} orphan(s): ${orphan.discardLabel}`);
+check('…and never deletes without asking first',
+  /cannot be undone/i.test(orphan.asked || ''), JSON.stringify(orphan.asked));
+check('…saying no keeps every one of them',
+  orphan.keptOnNo === orphan.keys, `${orphan.keptOnNo} of ${orphan.keys}`);
+check('…saying yes clears them', orphan.goneOnYes === 0, String(orphan.goneOnYes));
 
 check('no page errors', errs.length === 0, JSON.stringify(errs));
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');

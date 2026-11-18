@@ -2178,7 +2178,19 @@
     // Worth naming rather than failing mutely: a photo cannot go up before the
     // defect it belongs to exists in the cloud, and that reads from outside as
     // the photo being stuck for no reason.
-    if (!uuid) { lastPhotoError = 'the defect it belongs to has not synced yet'; return false; }
+    if (!uuid) {
+      // TWO VERY DIFFERENT THINGS, reported as one until now. A defect that is
+      // on this phone and not yet in the cloud will get there, and its photo
+      // should wait. A defect on NEITHER — deleted, or left behind when a temp
+      // job was replaced by its cloud copy under new ids — never will, and its
+      // photo has nothing to attach to. Retrying that for ever is why the pill
+      // never clears (Spiro 2026-11-18: six of seven were in this state).
+      const local = (db.data.defects || []).some(x => Number(x.id) === Number(legacyId));
+      lastPhotoError = local
+        ? 'the defect it belongs to has not synced yet'
+        : 'ORPHAN — the defect it belongs to is not on this phone or in the cloud';
+      return false;
+    }
     // Honest failure wording: only claim "No connection" when the device is
     // actually offline; otherwise say what really happened (server error).
     const failMsg = () => (typeof navigator !== 'undefined' && navigator.onLine === false)
@@ -2827,6 +2839,10 @@
     if (/timeout|network|fetch|failed to fetch/i.test(m))
       return { what: 'the connection dropped partway',
                fix: 'It keeps trying on its own — nothing to do.', stuck: false };
+    if (/^ORPHAN/i.test(m))
+      return { what: 'the defect they were taken against no longer exists',
+               fix: 'Nothing can attach them, so they will not upload however long they sit there — usually the defect was deleted after the photo was taken. Use Discard below to clear them.',
+               stuck: true };
     if (/temp_jobs\.sql|temp jobs cannot sync|temp-job photos cannot upload/i.test(m))
       return { what: 'they are on a temp job, and temp jobs cannot sync yet',
                fix: 'Nothing is wrong with the phone or your login — the database is missing the table temp jobs go into. Whoever manages the app needs to run 2026-09-04_temp_jobs.sql. Everything stays safe on this phone until they do.',
@@ -2897,7 +2913,8 @@
       seen.add(it.legacyId);
       const d = (db.data.defects || []).find(x => Number(x.id) === Number(it.legacyId));
       const a = d && (db.data.addresses || []).find(x => Number(x.id) === Number(d.addressId));
-      if (!d) { L.push('defect ' + it.legacyId + ': NOT IN LOCAL DB'); continue; }
+      if (!d) { L.push('defect ' + it.legacyId + ': NOT IN LOCAL DB'
+             + (photoFailReason[it.key] ? '  [' + photoFailReason[it.key] + ']' : '')); continue; }
       L.push('defect ' + it.legacyId + ' — ' + (a ? (a.street || ('Lot ' + a.lot)) : 'JOB NOT IN LOCAL DB'));
       L.push('   addressId=' + d.addressId
            + ' temp=' + (a ? !!a.isTemp : '?')
@@ -2906,8 +2923,19 @@
            + ' queued=' + (defectOutbox.includes(Number(it.legacyId)) ? 'yes' : 'no')
            + ' contractor=' + (d.contractorId == null ? 'none'
                : (idMap.contractors[d.contractorId] ? 'mapped' : 'NOT MAPPED')));
+      if (photoFailReason[it.key]) L.push('   last tried: ' + photoFailReason[it.key]);
     }
     return L.join('\n');
+  }
+
+  // Photos whose defect is on neither this phone nor the cloud. They cannot
+  // be uploaded by any means, so they are the one case where the right answer
+  // is to offer to delete them — NEVER to delete them quietly. A photo someone
+  // walked a site to take is not ours to bin on a guess.
+  async function orphanPhotoKeys() {
+    let items = [];
+    try { items = await pendingAll(); } catch (e) { return []; }
+    return items.filter(it => /^ORPHAN/i.test(photoFailReason[it.key] || '')).map(it => it.key);
   }
 
   // The pill opens this rather than firing a toast: a toast cannot be copied,
@@ -2915,6 +2943,7 @@
   async function openPhotoHelp() {
     document.getElementById('cs-phelp')?.remove();
     const text = await photoDiagnostic();
+    const orphans = await orphanPhotoKeys();
     const ov = document.createElement('div');
     ov.id = 'cs-phelp';
     ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.55);display:flex;'
@@ -2937,10 +2966,31 @@
       + 'cursor:pointer">Try again</button>'
       + '<button id="cs-phelp-close" style="flex:0 0 auto;background:transparent;color:#555;border:none;'
       + 'padding:11px 14px;font-weight:600;font-size:14px;cursor:pointer">Close</button>'
-      + '</div></div>';
+      + '</div>'
+      + (orphans.length ? '<div style="margin-top:14px;padding-top:13px;border-top:1px solid #e5e7eb">'
+          + '<div style="font-size:13px;color:#555;margin-bottom:9px">'
+          + orphans.length + ' of these belong to defects that no longer exist, so they can never '
+          + 'upload. Discarding them is the only way to clear the counter.</div>'
+          + '<button id="cs-phelp-drop" style="width:100%;background:#fff;color:#b91c1c;'
+          + 'border:1px solid #b91c1c;border-radius:9px;padding:11px;font-weight:700;font-size:14px;'
+          + 'cursor:pointer">Discard ' + orphans.length + ' unattachable photo'
+          + (orphans.length > 1 ? 's' : '') + '</button></div>' : '')
+      + '</div>';
     document.body.appendChild(ov);
     ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
     document.getElementById('cs-phelp-close').onclick = () => ov.remove();
+    const drop = document.getElementById('cs-phelp-drop');
+    if (drop) drop.onclick = async () => {
+      // Asked, every time. These are photographs of someone's work.
+      if (!confirm('Delete ' + orphans.length + ' photo' + (orphans.length > 1 ? 's' : '')
+          + ' whose defect no longer exists? This cannot be undone.')) return;
+      for (const k of orphans) { try { await pendingDelete(k); delete photoFailReason[k]; delete photoFailCounts[k]; } catch (e) {} }
+      lastPhotoError = '';
+      await refreshPendingCounts();
+      ov.remove();
+      showToastSafe('Discarded ' + orphans.length + ' photo' + (orphans.length > 1 ? 's' : '')
+        + ' that had nothing to attach to');
+    };
     document.getElementById('cs-phelp-retry').onclick = () => {
       ov.remove();
       showToastSafe('Trying again…');
@@ -2974,6 +3024,13 @@
   // is loud (toast); background retries are quiet. Repeated failures back the
   // timer off so a permanently-rejected photo can't hammer + toast every 20s.
   const photoFailCounts = {};
+  // Why each individual photo last failed. lastPhotoError is one variable for
+  // the whole queue, so whichever item the sweep touched last wrote over
+  // everyone else's reason — a diagnostic listing seven photos could only ever
+  // give one explanation between them, and it was not necessarily any of
+  // theirs. Declared here with its sibling; both are read by photoDiagnostic
+  // above, which runs long after this module has finished loading.
+  const photoFailReason = {};
   async function uploadPendingPhotos() {
     if (sweepingPhotos) return;
     sweepingPhotos = true;
@@ -2993,9 +3050,19 @@
           const ok = isLocalOnlyDefect(it.legacyId)
             ? await uploadTempPhoto(it.legacyId, it.blob, it.key)
             : await uploadDefectPhoto(it.legacyId, it.blob, it.key, quiet, it.keepDays);
-          if (ok) { delete photoFailCounts[it.key]; lastPhotoError = ''; await pendingDelete(it.key); await refreshPendingCounts(); }
-          else { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; failedJobs.add(jobLabelForDefect(it.legacyId) || ''); }
-        } catch (e) { photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1; failedJobs.add(jobLabelForDefect(it.legacyId) || ''); }
+          if (ok) {
+            delete photoFailCounts[it.key]; delete photoFailReason[it.key];
+            lastPhotoError = ''; await pendingDelete(it.key); await refreshPendingCounts();
+          } else {
+            photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1;
+            photoFailReason[it.key] = lastPhotoError || 'no reason given';
+            failedJobs.add(jobLabelForDefect(it.legacyId) || '');
+          }
+        } catch (e) {
+          photoFailCounts[it.key] = (photoFailCounts[it.key] || 0) + 1;
+          photoFailReason[it.key] = String((e && e.message) || e).slice(0, 100);
+          failedJobs.add(jobLabelForDefect(it.legacyId) || '');
+        }
       }
       stuckPhotoJobs = [...failedJobs].filter(Boolean);
     } finally {
@@ -4691,6 +4758,8 @@
       // The defect queue the photos wait behind, so a test can put the pill in
       // the state Spiro was looking at: on wifi, with changes stuck in front.
       photoDiagnostic: () => photoDiagnostic(),
+      orphanPhotoKeys: () => orphanPhotoKeys(),
+      setPhotoFailReason: (k, v) => { photoFailReason[k] = v; },
       tempJobsAvailable: () => tempJobsAvailable(),
       lastPhotoError: () => lastPhotoError,
       // Wind the probe's back-off clock forward, so a test can show the

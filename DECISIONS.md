@@ -3955,3 +3955,42 @@ state: the retry cannot reach the thing that would fix it, so the app sits
 there looking busy for ever. `resolveDefectUuid`, `jobUuidForDefect`,
 `commitDefect`, and now this. Worth grepping for on sight: any `if (cached
 !== null) return cached` where the cached value is a failure.
+
+## The last seven photos (2026-11-18, `2026-11-18g`)
+
+The migration worked. Spiro's queue went **54 → 7** and his changes
+**36 → 0**: the temp job and everything on it went up.
+
+What was left was a different problem wearing the same clothes. Six of the
+seven read `NOT IN LOCAL DB` — the defect they were taken against is on
+neither the phone nor the cloud. Deleted after the photo was taken, or left
+behind when a temp job was replaced by its cloud copy under new ids. The
+photo outbox stores only a defect id, so there is nothing else to attach
+them to.
+
+**Nothing can upload those, ever.** Retrying them is why a counter saying
+"7 photos waiting" never reaches zero, and why the toast kept promising a
+background retry that could not possibly work. `uploadDefectPhoto` now
+tells the two cases apart — a defect that is on the phone and not yet in
+the cloud WILL get there and its photo should wait; a defect on neither
+never will — and the panel offers a Discard for exactly the second kind,
+behind a confirm. Never quietly: these are photographs of someone's work,
+not ours to bin on a guess.
+
+**`lastPhotoError` was one variable for the whole queue.** Whichever item
+the sweep touched last wrote over everyone else's reason, so a diagnostic
+listing seven photos could only ever give one explanation between them —
+and it was not necessarily any of theirs. That is why the panel showed "the
+defect it belongs to has not synced yet" directly above a defect reading
+`defectInCloud=yes`: two different photos, one shared variable. Each photo
+now carries its own reason and the diagnostic prints it per line.
+
+**On the remaining one.** `defect 999666157` reports every link good —
+`jobMapped=yes defectInCloud=yes queued=no contractor=mapped` — so its
+failure is downstream of all of them, at the storage upload itself. With
+per-item reasons it will now say which, instead of borrowing an orphan's.
+
+Also fixed in the suite: the copy check compared two separate
+`photoDiagnostic()` calls, which is a race rather than a property. It now
+stubs the clipboard, clicks Copy, and compares what landed against what is
+on the screen.
