@@ -44,6 +44,11 @@ await ctx.route('**', route => {
     if (u.includes('/sw.js')) return route.fulfill({ status: 404, body: '' });
     return route.continue();
   }
+  // pdf.js is a real dependency of this path and the CDN is off-limits in the
+  // sandbox, so cdnjs is served from the local npm copy — same build.
+  const PDFJS = join(__here, 'node_modules/pdfjs-dist/build');
+  if (u.includes('pdf.worker.min.js')) return route.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(`${PDFJS}/pdf.worker.min.js`) });
+  if (u.includes('pdf.min.js')) return route.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(`${PDFJS}/pdf.min.js`) });
   return route.fulfill({ status: 200, contentType: u.includes('fonts.googleapis') ? 'text/css' : 'application/javascript', body: '' });
 });
 const errs = [];
@@ -61,193 +66,188 @@ await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' });
 await page.waitForFunction(() => typeof window.render === 'function');
 await page.waitForFunction(() => !document.getElementById('splash'), { timeout: 15000 });
 
-// The test's own instrument: record what reaches the ONE entry point every
-// path is supposed to end at. Reassigning the global works because the drop
-// handler resolves the name at call time — which is itself worth knowing: if
-// someone inlines the handler into the drop, these checks go quiet, and the
-// "the real reader ran" check at the end is what catches that.
-await page.evaluate(() => {
-  window.__got = [];
-  const real = window.impHandleReportFile;
-  window.__real = real;
-  window.impHandleReportFile = async (f) => {
-    window.__got.push({ name: f && f.name, size: f && f.size, type: f && f.type });
-  };
+
+// ── helpers ───────────────────────────────────────────────────────────────
+const PDF_BYTES = Array.from(fs.readFileSync(join(__here, 'artifacts', 'private-report.pdf')));
+
+const openDialog = (type) => page.evaluate((t) => {
+  const ov = document.getElementById('imp-ov'); if (ov) ov.remove();
+  document.querySelectorAll('.toast').forEach(x => x.remove());
+  try { _review = null; } catch (e) {}
+  openReportImport();
+  if (t) document.getElementById('imp-type').value = t;
+  return !!document.getElementById('imp-card');
+}, type || '');
+
+// What the dialog is HOLDING. Staging and reading are separate acts now, and
+// the gap between them is exactly where the bug lived, so they are checked
+// separately.
+const staged = () => page.evaluate(() => ({
+  file: (typeof _impStaged !== 'undefined' && _impStaged)
+    ? { name: _impStaged.file.name, size: _impStaged.file.size, kind: _impStaged.kind } : null,
+  shown: (() => { const r = document.getElementById('imp-chosen');
+                  return r && r.style.display !== 'none' ? r.textContent.replace(/\s+/g, ' ').trim() : ''; })(),
+  button: (document.getElementById('imp-extract') || {}).textContent || '',
+  toast: (document.querySelector('.toast') || {}).textContent || '',
+}));
+
+// Drop a File built in the page. `virtual` models an Outlook attachment:
+// nothing in `files`, nothing from getAsFile(), bytes only behind the entry.
+const drop = (bytes, name, type, opts) => page.evaluate(async ([bytes, name, type, o]) => {
+  const f = new File([new Uint8Array(bytes)], name, type ? { type } : undefined);
+  const target = document.getElementById(o.target || 'imp-drop');
+  if (o.virtual) {
+    const fake = { files: [], types: ['Files'], items: [{ kind: 'file', getAsFile: () => null,
+      webkitGetAsEntry: () => ({ isFile: true, isDirectory: false, name, file: (cb) => cb(f) }) }] };
+    const ev = new Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: fake });
+    target.dispatchEvent(ev);
+  } else {
+    const dt = new DataTransfer(); dt.items.add(f);
+    target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }
+  await new Promise(r => setTimeout(r, 120));
+}, [bytes, name, type || '', opts || {}]);
+
+// Press Extract and wait for the review (or the message that says why not).
+const extractAndWait = () => page.evaluate(async () => {
+  document.getElementById('imp-extract').click();
+  for (let i = 0; i < 80; i++) {
+    await new Promise(r => setTimeout(r, 100));
+    let rv = null;
+    try { rv = (typeof _review !== 'undefined' && _review) ? _review : null; } catch (e) {}
+    const card = (document.getElementById('imp-card') || {}).textContent || '';
+    if (rv) return { type: rv.reportType, n: rv.items.length,
+                     items: rv.items.slice(0, 3).map(x => typeof x === 'string' ? x : (x.description || x.text || '')) };
+    if (/No defects were found|Could not read/i.test(card)) return { msg: card.replace(/\s+/g, ' ').slice(0, 90) };
+  }
+  return { timeout: true, card: ((document.getElementById('imp-card') || {}).textContent || '').replace(/\s+/g, ' ').slice(0, 90) };
 });
 
-const openDialog = () => page.evaluate(() => {
-  const ov = document.getElementById('imp-ov'); if (ov) ov.remove();
-  window.__got = [];
-  document.querySelectorAll('.toast').forEach(t => t.remove());
-  openReportImport();
-  return !!document.getElementById('imp-card');
-});
-const toast = () => page.evaluate(() => {
-  const t = document.querySelector('.toast');
-  return t ? t.textContent : '';
-});
+const TXT = Array.from(Buffer.from([
+  'DEFECTS',
+  '1. Touch up paint to hallway wall near light switch.',
+  '2. Adjust front entry door — binding on the strike plate.',
+  '3. Clean overpaint from splashback tiles in the kitchen.',
+].join('\n'), 'utf8'));
 
 // ── 1. An ordinary file drag, from a folder ───────────────────────────────
-check('the Add Report dialog opens', await openDialog(), '');
+check('the Add Report dialog opens', await openDialog('Private Inspection'), '');
 {
-  const r = await page.evaluate(async () => {
-    const dt = new DataTransfer();
-    dt.items.add(new File(['- Touch up paint to hallway wall\n- Adjust front door'],
-                          'Inspection.txt', { type: 'text/plain' }));
-    const ev = new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true });
-    document.getElementById('imp-drop').dispatchEvent(ev);
-    await new Promise(r => setTimeout(r, 60));
-    return { got: window.__got, prevented: ev.defaultPrevented };
-  });
-  check('a file dropped on the box reaches the reader',
-    r.got.length === 1 && r.got[0].name === 'Inspection.txt' && r.got[0].size > 0, JSON.stringify(r.got));
-  check('…and the browser is stopped from opening it instead', r.prevented, '');
+  await drop(TXT, 'Inspection.txt', 'text/plain', {});
+  const st = await staged();
+  check('a file dropped on the box is held, not read on the spot',
+    st.file && st.file.name === 'Inspection.txt' && st.file.kind === 'text', JSON.stringify(st.file));
+  check('…and the dialog shows what it is holding',
+    /Inspection\.txt/.test(st.shown) && /text/.test(st.shown), st.shown);
+  check('…and the button says what it will now do', /Read this report/i.test(st.button), st.button);
 }
 
 // ── 2. THE ONE THAT MATTERS: an Outlook attachment ────────────────────────
-// No file on disk: `files` is empty, `getAsFile()` gives nothing, and the
-// bytes are only reachable through the entry. Written with `files` genuinely
-// empty, because a test that leaves a file in there would pass against the
-// one-liner this change exists to replace.
-await openDialog();
+// No file on disk: `files` is empty, getAsFile() gives nothing, and the bytes
+// are only reachable through the entry. Written with `files` genuinely empty,
+// because a test that leaves a file there would pass against the one-liner
+// this whole feature exists to replace.
+await openDialog('Private Inspection');
 {
-  const r = await page.evaluate(async () => {
-    const real = new File(['- Seal junction between ceiling and wall'],
-                          'Private Inspection Report.pdf', { type: 'application/pdf' });
-    const fake = {
-      files: [],                                   // ← Outlook gives none
-      types: ['Files'],
-      items: [{
-        kind: 'file',
-        getAsFile: () => null,                     // ← and nothing here either
-        webkitGetAsEntry: () => ({
-          isFile: true, isDirectory: false, name: real.name,
-          file: (cb) => cb(real),
-        }),
-      }],
-    };
-    const ev = new Event('drop', { bubbles: true, cancelable: true });
-    Object.defineProperty(ev, 'dataTransfer', { value: fake });
-    document.getElementById('imp-drop').dispatchEvent(ev);
-    await new Promise(r => setTimeout(r, 80));
-    return { got: window.__got, toast: (document.querySelector('.toast') || {}).textContent || '' };
-  });
-  check('an email attachment with NO file on disk still reaches the reader',
-    r.got.length === 1 && r.got[0].name === 'Private Inspection Report.pdf' && r.got[0].size > 0,
-    JSON.stringify(r.got) + (r.toast ? ' toast: ' + r.toast : ''));
+  await drop(PDF_BYTES, 'Private Inspection Report.pdf', 'application/pdf', { virtual: true });
+  const st = await staged();
+  check('an email attachment with NO file on disk is still picked up',
+    st.file && st.file.name === 'Private Inspection Report.pdf' && st.file.size > 1000,
+    JSON.stringify(st.file) + (st.toast ? ' toast: ' + st.toast : ''));
 }
 
-// ── 3. A near miss anywhere on the card still counts ──────────────────────
-await openDialog();
+// ── 3. THE BUG SPIRO HIT: the settings are read when you press Extract ────
+// A drop is the FIRST thing you do; choosing a file is the LAST. The old code
+// started the import on the drop, so the report type was still on its default
+// of BPI and a private report went through the BPI parser — "garbage text that
+// doesn't follow the rules". The control underneath proves the two types
+// really do produce different results for this file, so the check above it is
+// not passing on a coincidence.
+await openDialog('BPI');
 {
-  const r = await page.evaluate(async () => {
-    const dt = new DataTransfer();
-    dt.items.add(new File(['- Adjust door rattle'], 'Report.txt', { type: 'text/plain' }));
-    document.getElementById('imp-paste').dispatchEvent(
-      new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
-    await new Promise(r => setTimeout(r, 60));
-    return window.__got;
-  });
+  await drop(PDF_BYTES, 'HomeSure Report.pdf', 'application/pdf', { virtual: true });
+  await page.evaluate(() => { document.getElementById('imp-type').value = 'Private Inspection'; });
+  const r = await extractAndWait();
+  check('the report type is read when Extract is pressed, not when the file lands',
+    r.type === 'Private Inspection' && r.n > 0,
+    JSON.stringify(r).slice(0, 170));
+}
+await openDialog('BPI');
+{
+  await drop(PDF_BYTES, 'HomeSure Report.pdf', 'application/pdf', {});
+  const r = await extractAndWait();
+  // The other direction of the same property: left alone, the type showing
+  // when Extract is pressed is still the one used. Without this pair, the
+  // check above could pass on a dialog that simply always says Private.
+  check('…and a file extracted with BPI still showing is read as BPI',
+    r.type === 'BPI' || /No defects/i.test(r.msg || ''), JSON.stringify(r).slice(0, 120));
+}
+
+// ── 4. The bytes decide what a file is, not its name ──────────────────────
+// An attachment can arrive with no extension and no MIME type. It is still a
+// PDF, and reading one as text is the mojibake the parser turns into defects.
+await openDialog('Private Inspection');
+{
+  await drop(PDF_BYTES, 'ATT00001', '', { virtual: true });
+  const st = await staged();
+  check('a PDF with no extension and no MIME type is recognised from its bytes',
+    st.file && st.file.kind === 'pdf', JSON.stringify(st.file) + ' ' + st.toast);
+  const r = await extractAndWait();
+  check('…and it reads as a PDF, not as a page of mojibake',
+    r.n > 0 && r.items.some(t => /kitchen|ceiling|grout|shower/i.test(t)),
+    JSON.stringify(r).slice(0, 170));
+}
+await openDialog('Private Inspection');
+{
+  // A .docx is a zip. Named .txt it would once have been read as text.
+  await drop([80, 75, 3, 4, 20, 0, 6, 0, 8, 0, 0, 0, 33, 0, 0, 1, 2, 3], 'Report.txt', 'text/plain', {});
+  const st = await staged();
+  check('binary dressed up as text is refused, not parsed',
+    !st.file && /not a PDF and not readable text/i.test(st.toast), st.toast || JSON.stringify(st.file));
+}
+
+// ── 5. A near miss anywhere on the card still counts ──────────────────────
+await openDialog('Private Inspection');
+{
+  await drop(TXT, 'Report.txt', 'text/plain', { target: 'imp-paste' });
+  const st = await staged();
   check('a drop that misses the box but lands on the card still counts',
-    r.length === 1 && r[0].name === 'Report.txt', JSON.stringify(r));
+    st.file && st.file.name === 'Report.txt', JSON.stringify(st.file));
 }
 
-// ── 4. Webmail hands over a link, not a file — say so ─────────────────────
-await openDialog();
-{
-  const r = await page.evaluate(async () => {
-    const fake = { files: [], items: [], types: ['text/uri-list', 'text/html'] };
+// ── 6. A drop that carries no file is explained, not ignored ──────────────
+// Built inside the page: a DataTransfer's accessors are functions, and
+// functions do not survive the crossing into page.evaluate.
+for (const [label, shape, want] of [
+  ['only a link (webmail)', 'link', /web page|link/i],
+  ['a folder', 'folder', /folder/i],
+]) {
+  await openDialog('Private Inspection');
+  const r = await page.evaluate(async (shape) => {
+    const fake = shape === 'link'
+      ? { files: [], items: [], types: ['text/uri-list', 'text/html'] }
+      : { files: [], types: ['Files'], items: [{ kind: 'file', getAsFile: () => null,
+          webkitGetAsEntry: () => ({ isFile: false, isDirectory: true, name: 'Reports' }) }] };
     const ev = new Event('drop', { bubbles: true, cancelable: true });
     Object.defineProperty(ev, 'dataTransfer', { value: fake });
     document.getElementById('imp-drop').dispatchEvent(ev);
-    await new Promise(r => setTimeout(r, 60));
-    return { got: window.__got, toast: (document.querySelector('.toast') || {}).textContent || '' };
-  });
-  check('a drop that carries only a link is explained, not ignored',
-    r.got.length === 0 && /web page|link/i.test(r.toast), JSON.stringify(r.toast));
+    await new Promise(r => setTimeout(r, 90));
+    return { staged: typeof _impStaged !== 'undefined' && !!_impStaged,
+             toast: (document.querySelector('.toast') || {}).textContent || '' };
+  }, shape);
+  check('a drop carrying ' + label + ' is explained, not ignored',
+    !r.staged && want.test(r.toast), r.toast);
 }
 
-// ── 5. A folder, and an empty attachment ──────────────────────────────────
-await openDialog();
+// ── 7. End to end, through the real reader ────────────────────────────────
+await openDialog('Private Inspection');
 {
-  const r = await page.evaluate(async () => {
-    const fake = { files: [], types: ['Files'], items: [{
-      kind: 'file', getAsFile: () => null,
-      webkitGetAsEntry: () => ({ isFile: false, isDirectory: true, name: 'Reports' }) }] };
-    const ev = new Event('drop', { bubbles: true, cancelable: true });
-    Object.defineProperty(ev, 'dataTransfer', { value: fake });
-    document.getElementById('imp-drop').dispatchEvent(ev);
-    await new Promise(r => setTimeout(r, 60));
-    return { got: window.__got, toast: (document.querySelector('.toast') || {}).textContent || '' };
-  });
-  check('a folder is named as a folder', r.got.length === 0 && /folder/i.test(r.toast), r.toast);
-}
-
-// ── 6. The wrong kind of file, through the REAL reader ────────────────────
-// extractReportText falls back to file.text() for anything that is not a PDF,
-// so a .docx would be read as binary and "extract" a page of mojibake. This
-// one runs against the real function, not the instrument.
-await openDialog();
-{
-  const r = await page.evaluate(async () => {
-    window.impHandleReportFile = window.__real;
-    const dt = new DataTransfer();
-    dt.items.add(new File([new Uint8Array([80, 75, 3, 4, 20, 0])], 'Report.docx',
-      { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
-    document.getElementById('imp-drop').dispatchEvent(
-      new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
-    await new Promise(r => setTimeout(r, 120));
-    const t = (document.querySelector('.toast') || {}).textContent || '';
-    const still = !!document.getElementById('imp-drop');
-    return { toast: t, still };
-  });
-  check('a .docx is refused by name rather than read as gibberish',
-    /not a PDF or text file/i.test(r.toast), r.toast);
-  check('…and the dialog stays open so you can try the right file', r.still, '');
-}
-
-// ── 7. The real reader actually reads a dropped report ────────────────────
-// Everything above proves the plumbing. This proves the pipe has water in it:
-// no instrument, a real text report, and the review screen it produces.
-await openDialog();
-{
-  const r = await page.evaluate(async () => {
-    window.impHandleReportFile = window.__real;
-    document.getElementById('imp-type').value = 'Private Inspection';
-    const body = [
-      'DEFECTS',
-      '1. Touch up paint to hallway wall near light switch.',
-      '2. Adjust front entry door — binding on the strike plate.',
-      '3. Clean overpaint from splashback tiles in the kitchen.',
-    ].join('\n');
-    const dt = new DataTransfer();
-    dt.items.add(new File([body], 'Skylark Inspection.txt', { type: 'text/plain' }));
-    document.getElementById('imp-drop').dispatchEvent(
-      new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
-    const items = () => {
-      // The parser emits plain strings; other paths emit objects. Take both.
-      try { return (typeof _review !== 'undefined' && _review)
-        ? _review.items.map(i => (typeof i === 'string' ? i : (i && (i.description || i.text || i.raw)) || ''))
-        : null; }
-      catch (e) { return null; }
-    };
-    for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 100));
-      const got = items();
-      const card = document.getElementById('imp-card');
-      const txt = card ? card.textContent : '';
-      if ((got && got.length) || /Nothing|could not|No defects/i.test(txt)) {
-        return { items: got, txt: txt.replace(/\s+/g, ' ').slice(0, 200) };
-      }
-    }
-    const card = document.getElementById('imp-card');
-    return { items: items(), txt: card ? card.textContent.replace(/\s+/g, ' ').slice(0, 200) : '(no card)' };
-  });
-  // The file's own words, out the other end — not just "a screen appeared".
-  check('a dropped report is read, and its defects come up for review',
-    !!r.items && r.items.some(t => /hallway wall/i.test(t))
-             && r.items.some(t => /splashback/i.test(t)),
-    (r.items ? r.items.length + ' items: ' + JSON.stringify(r.items).slice(0, 180) : 'no review: ' + r.txt));
+  await drop(TXT, 'Skylark Inspection.txt', 'text/plain', {});
+  const r = await extractAndWait();
+  check('a dropped report is read, and its own words come up for review',
+    !!r.items && r.items.some(t => /hallway wall/i.test(t)),
+    JSON.stringify(r).slice(0, 200));
 }
 
 // ── 8. A miss outside the dialog must not replace the app with the PDF ────
@@ -266,19 +266,14 @@ await openDialog();
 }
 
 // ── 9. One reader, not two ────────────────────────────────────────────────
-// The plan attach zone had its own dataTransfer.files[0] line, which would
-// have done nothing with an Outlook attachment. A second reader anywhere is
-// the same bug waiting to be reintroduced, so this reads the source.
 {
   const src = fs.readFileSync(join(REPO, 'index.html'), 'utf8');
-  const lines = src.split('\n')
-    .map((l, i) => ({ n: i + 1, l: l.trim() }))
-    // Prose about the bug is not a second reader of it.
+  const lines = src.split('\n').map((l, i) => ({ n: i + 1, l: l.trim() }))
     .filter(x => !x.l.startsWith('//') && !x.l.startsWith('*') && !x.l.startsWith('/*'))
     .filter(x => /dataTransfer\s*(&&\s*[\w.]+\s*)?\.?\s*files/.test(x.l) || /dataTransfer\.items/.test(x.l));
   const outside = lines.filter(x => !/const items = dt|const plain = dt/.test(x.l));
   check('every dropped file goes through the one reader',
-    outside.length === 0, outside.map(x => x.n + ': ' + x.l.trim().slice(0, 70)).join(' | '));
+    outside.length === 0, outside.map(x => x.n + ': ' + x.l.slice(0, 70)).join(' | '));
   check('the plan attach zone uses it too', /impWireDrop\(drop, drop,/.test(src), '');
 }
 

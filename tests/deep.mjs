@@ -108,6 +108,16 @@ const openImport = async (type) => {
   await page.waitForSelector('#imp-type');
   await page.selectOption('#imp-type', type);
 };
+// CHOOSING A FILE NO LONGER STARTS THE READ (2026-11-19). The file is held in
+// the dialog and the Extract button starts it, so that the report type and the
+// toggles are read when a person has finished setting them rather than at the
+// moment the file lands — see DECISIONS.md. These eight call sites now do what
+// a person does: choose, then press.
+const chooseFile = async (p) => {
+  await page.setInputFiles('#imp-file', p);
+  await page.waitForFunction(() => typeof _impStaged !== 'undefined' && !!_impStaged, null, { timeout: 10000 });
+  await page.click('#imp-extract');
+};
 const deepVisible = () => page.evaluate(() =>
   getComputedStyle(document.getElementById('imp-deep-wrap')).display !== 'none');
 
@@ -132,7 +142,7 @@ await page.screenshot({ path: `${OUT}/60-deep-option.png` });
 console.log('\n--- supervisor routes to the flat path ---');
 await setRole(false);
 await openImport('Private Inspection');
-await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+await chooseFile(`${OUT}/private-report.pdf`);
 await page.waitForFunction(() => window.__deepCalls.length > 0, null, { timeout: 20000 });
 check('supervisor import never calls extractDeep',
   await page.evaluate(() => window.__deepCalls.every(c => c.kind === 'flat')),
@@ -145,7 +155,7 @@ await page.evaluate(() => {
   const w = document.getElementById('imp-deep-wrap');
   w.style.display = 'flex'; document.getElementById('imp-deep').checked = true;
 });
-await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+await chooseFile(`${OUT}/private-report.pdf`);
 await page.waitForFunction(() => window.__deepCalls.length > 0, null, { timeout: 20000 });
 check('forcing the hidden checkbox still routes flat',
   await page.evaluate(() => window.__deepCalls.every(c => c.kind === 'flat')));
@@ -154,7 +164,7 @@ check('forcing the hidden checkbox still routes flat',
 console.log('\n--- manager deep import ---');
 await setRole(true);
 await openImport('Private Inspection');
-await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+await chooseFile(`${OUT}/private-report.pdf`);
 await page.waitForFunction(() => _review && _review.items.length, null, { timeout: 30000 });
 
 const call = await page.evaluate(() => window.__deepCalls[0]);
@@ -258,7 +268,7 @@ console.log('\n--- BPI regression ---');
 await page.evaluate(() => { db.data.defects = []; db.save(); _review = null; });
 await setRole(true);
 await openImport('BPI');
-await page.setInputFiles('#imp-file', `${OUT}/bpi-report.pdf`);
+await chooseFile(`${OUT}/bpi-report.pdf`);
 await page.waitForFunction(() => _review && _review.items.length, null, { timeout: 30000 });
 const bpi = await page.evaluate(() => ({
   n: _review.items.length,
@@ -291,7 +301,7 @@ await page.evaluate(() => {
   window.CloudAI.extractDeep = async () => { window.__deepCalls.push({ kind: 'deep' }); throw new Error('edge function timed out'); };
 });
 await openImport('Private Inspection');
-await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+await chooseFile(`${OUT}/private-report.pdf`);
 await page.waitForFunction(() => _review && _review.items.length, null, { timeout: 30000 });
 const fb = await page.evaluate(() => ({
   kinds: window.__deepCalls.map(c => c.kind).join(','),
@@ -314,7 +324,7 @@ await page.evaluate(() => {
   window.CloudAI.extractDeep = async () => { window.__deepCalls.push({ kind: 'deep' }); return { items: [], layout: '' }; };
 });
 await openImport('Private Inspection');
-await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+await chooseFile(`${OUT}/private-report.pdf`);
 await page.waitForFunction(() => _review && _review.items.length, null, { timeout: 30000 });
 check('an empty deep read also falls through to flat AI',
   await page.evaluate(() => window.__deepCalls.map(c => c.kind).join(',') === 'deep,flat'),
@@ -337,7 +347,7 @@ async function flatImport(stubItems) {
     };
   }, stubItems);
   await openImport('Private Inspection');
-  await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+  await chooseFile(`${OUT}/private-report.pdf`);
   await page.waitForFunction(() => _review && _review.items.length, null, { timeout: 30000 });
   return page.evaluate(() => ({
     itemNos: _review.items.map(i => i.itemNo).join(','),
@@ -392,7 +402,7 @@ check('no page → "PI #1 — <defect>" (still numbered)', s4.desc === 'PI #1 �
 await page.evaluate(() => { db.data.defects = []; db.save(); _review = null; });
 await openImport('Private Inspection');
 await page.evaluate(() => { document.getElementById('imp-ai').checked = false; });
-await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+await chooseFile(`${OUT}/private-report.pdf`);
 await page.waitForFunction(() => _review && _review.items.length, null, { timeout: 30000 });
 const bp = await page.evaluate(() => ({
   itemNos: _review.items.map(i => i.itemNo),

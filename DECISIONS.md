@@ -2,6 +2,47 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-19 (b) — the dropped file waits for the settings — build `2026-11-19g`
+
+Spiro, on the drag-and-drop shipped hours earlier: *"it just gives me garbage
+text that doesn't follow the rules that the other upload does."*
+
+**Both paths ran the same code.** That was checked, not assumed: the same PDF
+through the picker and through a drop, across five name/MIME combinations,
+produced byte-identical results in Chromium. So the difference was never the
+code — it was the RHYTHM, and that is the decision here.
+
+Choosing a file is the LAST thing you do: you open the dialog, set Report type,
+then click the box. A drop is the FIRST thing you do — and the old code started
+the extraction the instant the file landed, with Report type still on its
+default of **BPI**. A private inspection report run through the BPI parser is
+exactly "garbage text that doesn't follow the rules". The feature worked; the
+order of events was wrong.
+
+- **Nothing is read until Extract is pressed.** The file is held in the dialog
+  with its name, kind and size on show, and the button becomes *"Read this
+  report →"*. The report type and the AI/Deep toggles are read at that moment,
+  when a person has finished setting them.
+- **The picker stages too**, not just the drop. Spiro's complaint was that the
+  two did not behave the same way; two rhythms for one dialog is how they got
+  out of step in the first place. The cost is one extra press on a path that
+  used to fire immediately — say so plainly, and it is one line to revert if he
+  would rather have the old picker back.
+- **Showing the file is also the diagnostic.** If a mail client hands over the
+  message instead of the attachment, that is now visible as a name and a size
+  BEFORE anything is read, instead of having to be recognised in the output.
+- **The bytes decide what a file is.** `impSniffKind()` reads the first 1024
+  bytes: `%PDF-` anywhere in them means PDF whatever the name says, a NUL or
+  >10% control characters means binary and is refused. An attachment can arrive
+  as `ATT00001` with an empty MIME type — it is still a PDF, and reading one as
+  text is itself a source of mojibake. The name now only gets a say when the
+  bytes cannot be read at all.
+- **`tests/dropfile.mjs`** drops a real report with BPI showing, switches the
+  type afterwards, and fails unless the switch is what counted — with the
+  mirror case so the pair cannot pass on a dialog that simply always says
+  Private. `deep.mjs`'s eight pick-a-file sites now choose-then-press, which is
+  the behaviour change made visible rather than papered over.
+
 ## 2026-11-19 — a report dragged straight out of an email — build `2026-11-19f`
 
 Spiro: *"In the tap to choose PDF box I also want the ability that I can drag
