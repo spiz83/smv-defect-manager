@@ -11672,7 +11672,13 @@
             e.preventDefault();
         }));
 
-        // WHAT THE FILE ACTUALLY IS, from its first bytes.
+        // WHAT THE FILE ACTUALLY IS, from its first bytes — AS AN ADDITION,
+        // NEVER AS A VETO. Every caller reads it as "…or the bytes say PDF",
+        // after the name and the MIME type have had their say. A sniff that can
+        // DOWNGRADE a file named .pdf is a way to make a real report read as
+        // text — wrong items, and no photos, since the structured reader never
+        // runs on that path — and no upside, because pdf.js refusing the file
+        // is a better answer than guessing from 1024 bytes.
         //
         // The name and the MIME type are what the source chose to tell us, and
         // an attachment dragged out of a mail client may carry neither: a PDF
@@ -11726,9 +11732,9 @@
             if (!f) return;
             const kind = await impSniffKind(f);
             const nm = (f.name || '').toLowerCase();
-            // The sniff decides. The name only gets a say when the bytes could
-            // not be read at all.
-            const isPdf = kind === 'pdf' || (!kind && (nm.endsWith('.pdf') || f.type === 'application/pdf'));
+            // THE SNIFF ONLY EVER ADDS (see impSniffKind). A file that says it
+            // is a PDF is read as one, exactly as before today.
+            const isPdf = nm.endsWith('.pdf') || f.type === 'application/pdf' || kind === 'pdf';
             if (!f.size) {
                 showToast((f.name || 'That file') + ' came through empty — try saving it out of the email first.', true);
                 return;
@@ -11737,7 +11743,7 @@
                 showToast((f.name || 'That file') + ' is not a PDF and not readable text. If it came from an email, '
                     + 'check you dragged the attachment itself and not the message.', true);
                 return;
-            }
+            }   // …and a file that claims .pdf is never refused here: that call belongs to pdf.js
             _impStaged = { file: f, kind: isPdf ? 'pdf' : 'text' };
             const row = document.getElementById('imp-chosen');
             if (row) {
@@ -11865,10 +11871,14 @@
                 if (!f) return;
                 if (!kind) kind = await impSniffKind(f);
                 const nm = (f.name || '').toLowerCase();
-                // THE BYTES DECIDE, not the name. A PDF called ATT00001 with no
-                // MIME type is still a PDF; reading one as text is the mojibake
-                // the parser then turns into "defects".
-                const isPdf = kind === 'pdf' || (!kind && (nm.endsWith('.pdf') || f.type === 'application/pdf'));
+                // THE SNIFF ONLY EVER ADDS. A file that says .pdf goes to pdf.js
+                // exactly as it did before the sniff existed, and the bytes get a
+                // say only when the name and the type say NOTHING — the ATT00001
+                // case. Written the other way round for a few hours, and a real
+                // report whose header sits outside the first 1024 bytes would
+                // have been read as text: wrong items, and no photos, because
+                // the structured BPI reader never runs on the text path.
+                const isPdf = nm.endsWith('.pdf') || f.type === 'application/pdf' || kind === 'pdf';
                 if (!isPdf && kind === 'binary') {
                     showToast((f.name || 'That file') + ' is not a PDF and not readable text. If it came from an '
                         + 'email, check you dragged the attachment itself and not the message.', true);
@@ -12115,9 +12125,9 @@
         }
         async function extractReportText(file, kind) {
             const name = (file.name || '').toLowerCase();
-            // `kind` comes from impSniffKind — the bytes, which beat a name an
-            // email client may never have set.
-            if (kind === 'pdf' || (!kind && (name.endsWith('.pdf') || file.type === 'application/pdf'))) {
+            // The name decides, as it always has; `kind` (from impSniffKind)
+            // only ADDS the files whose name and type say nothing at all.
+            if (name.endsWith('.pdf') || file.type === 'application/pdf' || kind === 'pdf') {
                 await ensurePdfJs();
                 const buf = await file.arrayBuffer();
                 const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
@@ -16839,7 +16849,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19h';
+        const APP_VERSION = '2026-11-19i';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16937,7 +16947,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19h"></script>
+    <script src="cloud-sync.js?v=2026-11-19i"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

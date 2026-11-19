@@ -2,6 +2,43 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-19 (d) — the byte sniff adds, it never vetoes — build `2026-11-19i`
+
+Spiro: *"STILL NO GOOD IT IS NO LONGER EXTRACTING THE PHOTOS FROM THE BPI
+REPORT… and not reading the items correctly"* — then, minutes later,
+*"actually it seems ok"*.
+
+It is ok, and it was checked rather than taken on relief: the real BPI fixture
+through both paths at `2026-11-19h` takes `extractReportTextPaged` →
+`extractReportPhotos('bpi')`, returns structured items
+(`{description, location, page, itemNo, trade}`) and finds its photos —
+identical picker and drop. Three builds went out inside an hour, and a service
+worker serves the shell it already has until it can swap; a half-updated shell
+is the likeliest thing he was looking at.
+
+**But the symptom he named was real, and (b) had built a way to produce it.**
+The sniff was written as the authority — *the bytes decide, the name only gets
+a say when the bytes cannot be read*. Under that rule, a genuine report whose
+`%PDF-` header sits outside the first 1024 bytes, or whose first slice cannot
+be read, is handled as TEXT: `extractReportTextPaged` never runs, so the items
+come back as prose instead of structured rows AND no photos are extracted,
+because the photo pass only runs on the structured path. Exactly the two
+symptoms, from one wrong decision.
+
+So the rule is inverted, in all four places that asked the question: **name or
+MIME says PDF → PDF, as it was before the sniff existed; the sniff only ADDS
+the files whose name and type say nothing at all** (the `ATT00001` attachment
+it was written for). A file that claims `.pdf` is never refused by the sniff
+either — pdf.js failing on it is a better answer than a guess from 1024 bytes.
+
+`tests/dropfile.mjs` now carries a file named `.pdf` whose first 1200 bytes are
+deliberately unrecognisable, and fails unless it still goes to the PDF reader.
+
+**The lesson, since this is the second entry today correcting the first:** a
+new check that can OVERRULE the existing behaviour needs a reason that the
+existing behaviour is wrong. "The bytes are more reliable than the name" was
+true and still not a reason — nothing was failing on the name.
+
 ## 2026-11-19 (c) — the picker keeps its old rhythm — build `2026-11-19h`
 
 Spiro, within minutes of (b): *"Leave the picker how it was before — I just
