@@ -2,7 +2,7 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
-## 2026-11-19 — a report dragged straight out of an email — build `2026-11-19e`
+## 2026-11-19 — a report dragged straight out of an email — build `2026-11-19f`
 
 Spiro: *"In the tap to choose PDF box I also want the ability that I can drag
 and drop straight from an email attachment into that box and it can read it,
@@ -46,6 +46,43 @@ no bytes counts as a miss rather than a result.
 - **Wording is per device**, through `@media (hover:hover) and (pointer:fine)`:
   a phone cannot drag a file and a desktop has no "tap", so the box says one
   thing to each rather than the average of both.
+
+## 2026-11-19 — every private-inspection item carries `PI #N (p.X) — ` — build `2026-11-19f`
+
+Spiro, after a test import: *"each item needs to have a string like this —
+PI #5 (p.19) — Door margin to bottom right-hand side of door exceeds 5mm (max
+allowable 5mm). PI = private inspection report, # = item number, (p.19) page on
+the report, THEN — and the item."*
+
+- **Why it was missing:** the save step only prefixes an item that has an
+  `itemNo`, and only the deep read (and a pasted PI table) ever set one. The
+  ordinary flat AI read, the basic parser, and every deep-read fallback saved
+  bare text. And the flat read had no way to know pages: the text it was sent
+  had no page breaks in it.
+- **Numbering — `numberReportItems()`:** the report's own item numbers when it
+  prints one for EVERY item and they are unique ("3.27" stays "3.27");
+  otherwise position in the report, 1..N. Section numbers ("8. Bedrooms"),
+  gaps or duplicates fail that test and fall back to position, rather than
+  producing two "PI #8"s.
+- **Pages:** `extractReportText` opens each page with a `[[page N]]` line; the
+  AI returns the N for each defect. Local readers (table parser, basic parser,
+  address match) get the text with the markers stripped. Pasted text has no
+  pages and saves `PI #N — …` — numbered, just no page.
+- **Photos pair by text anchor for every private import.** Before, a flat read
+  used the BPI Tag pairer, which was harmless only because those items had no
+  number. Once numbered, it could attach whatever Tag-shaped text sat on the
+  page. Anchor mode attaches a photo only under a verbatim anchor; no anchor →
+  no photo, as before. The flat read now returns anchors too.
+- **Server:** both paths return `item_no`, `page`, `anchor` (deep also
+  `trade`). Function v2 deployed with Spiro's approval; anon callers now 401.
+- **Verified:** live read of the Lot 904 report through production → all 13
+  items `PI #1 (p.12)` … `PI #13 (p.30)`, every page right. `tests/deep.mjs`
+  §6b asserts Spiro's exact example string; all 57 suites green.
+- **Re-imports:** the 2026-10-15 duplicate guard already treats `PI #N — X`
+  and bare `X` (same job, room, supplier) as one defect and adopts the
+  reference, so re-importing a report saved bare before today upgrades those
+  rows rather than doubling them — provided the AI words the item the same
+  way, which a re-read does not guarantee. That caveat predates this change.
 
 ## 2026-11-19 — report reading moves to Claude Opus 5.5 (`extract-defects`)
 

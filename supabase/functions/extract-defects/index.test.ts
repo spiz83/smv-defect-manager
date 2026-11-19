@@ -68,7 +68,7 @@ globalThis.fetch = async (input: any, init?: any): Promise<Response> => {
     const deep = !!body.messages[0].content?.[0]?.source;
     const json = deep
       ? '{"layout":"grouped by room","defects":[{"description":"Door margin exceeds 5mm","location":"Bedroom 4","trade":"Carpenter","page":21,"anchor":"It has been observed, that door"}]}'
-      : '{"defects":[{"description":"Paint touch-ups throughout","location":""},{"description":"Bathtub scratched","location":"Bathroom"}]}';
+      : '{"defects":[{"description":"Paint touch-ups throughout","location":"Throughout","item_no":"","page":12,"anchor":"General note, check throughout"},{"description":"Bathtub scratched","location":"Bathroom","item_no":"","page":0,"anchor":""}]}';
     return sse([start(), ...think, ...textBlock(1, json), end("end_turn")]);
   }
   return realFetch(input, init);
@@ -110,6 +110,12 @@ console.log("2. flat read — request shape + result");
   check("fallbacks default", c.body.fallbacks === "default");
   check("fallback beta header", c.headers["anthropic-beta"] === "server-side-fallback-2026-07-01", c.headers);
   check("streams", c.body.stream === true);
+  const req = c.body.output_config.format.schema.properties.defects.items.required;
+  check("flat schema asks for item_no + page + anchor", ["item_no", "page", "anchor"].every((k) => req.includes(k)), req);
+  check("flat prompt explains the [[page N]] markers", (c.body.system as string).includes("[[page N]]"));
+  check("page passes through", r.json.defects?.[0]?.page === 12, r.json.defects?.[0]);
+  check("page 0 → null (no markers)", r.json.defects?.[1]?.page === null, r.json.defects?.[1]);
+  check("item_no + anchor pass through", r.json.defects?.[0]?.item_no === "" && r.json.defects?.[0]?.anchor === "General note, check throughout", r.json.defects?.[0]);
 }
 
 console.log("3. deep read — request shape + result");
@@ -123,6 +129,7 @@ console.log("3. deep read — request shape + result");
   check("deep effort high", c.body.output_config?.effort === "high");
   check("max_tokens 64000", c.body.max_tokens === 64000);
   check("trade enum from caller", JSON.stringify(c.body.output_config.format.schema).includes("Painter"));
+  check("deep schema asks for item_no", c.body.output_config.format.schema.properties.defects.items.required.includes("item_no"));
 }
 
 console.log("4. refusal across the whole chain");

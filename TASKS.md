@@ -6,10 +6,16 @@
       deep-read schema bug fixed (it 400'd every call), app location names +
       the "Throughout" rule. 13/13 on the Lot 904 report, both paths.
       `supabase/functions/extract-defects/index.test.ts`.
-- [ ] **Spiro: go-ahead to deploy `extract-defects` to production.** The
-      live one is v1 from June — no identity check, no working deep read.
-      Deploying ships the identity check too (auth change). NEXT_STEPS.md.
-- [ ] Then delete the `extract-defects-staging` function.
+- [x] **`extract-defects` v2 deployed to production** (Spiro approved
+      2026-11-19). Identity check is now live: anon-key callers get 401.
+      Staging copy deleted. This also closes the old "supabase functions
+      deploy extract-defects" item below.
+- [x] **Every private-inspection item saves as `PI #N (p.X) — <defect>`** —
+      on every import path, not just deep read. Report's own item numbers
+      when complete and unique, else report order; page from `[[page N]]`
+      markers. `tests/deep.mjs` §6b. Build `2026-11-19e`.
+- [ ] Spiro: re-run the test import that came out without references — it
+      should now read `PI #1 (p.12) — …`.
 - [ ] Golden set of 15–30 real reports + hand-checked lists → extraction eval.
 - [ ] Log review-screen deletes/adds/edits so extraction learns, not just trade.
 - [ ] Explicit map from code trade names to live placeholders.

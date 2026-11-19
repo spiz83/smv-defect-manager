@@ -11850,11 +11850,8 @@
                 const res = await window.CloudAI.extractDeep(
                     await fileToBase64(reportFile), Object.keys(CALLUP_TRADE_KEYWORDS));
                 if (!res || !res.items.length) return null;
-                // The photo pairer keys off itemNo the same way it does for a BPI
-                // Tag. A private report has no numbering of its own, so the list
-                // position becomes the number — and the supervisor sees the same
-                // "1 of 24" review either way.
-                res.items.forEach((it, i) => { it.itemNo = i + 1; });
+                // Numbering (the report's own, or list position) is done for every
+                // private-inspection path at once, in numberReportItems().
                 return res;
             } catch (err) {
                 console.error('[deep read]', err);
@@ -11865,15 +11862,53 @@
             }
         }
 
+        // ===========================================================================
+        //  EVERY PRIVATE-INSPECTION ITEM CARRIES ITS REPORT REFERENCE (Spiro 2026-11-19)
+        //
+        //  "Each item needs to have a string like this:
+        //     PI #5 (p.19) — Door margin to bottom right-hand side of door exceeds 5mm"
+        //  PI = private inspection, # = item number, (p.19) = page in the report.
+        //
+        //  It used to be deep-read only: a flat AI read (and the basic parser)
+        //  came back with no item number, and the save step prefixes nothing
+        //  without one — so an ordinary import saved bare text. Now every
+        //  private-inspection path is numbered here:
+        //    • the report's OWN numbers when it prints one for every item and
+        //      they are unique ("3.27" stays "3.27");
+        //    • otherwise the item's position in the report, 1..N — the same
+        //      numbering a supervisor would write down reading it top to bottom.
+        //  The page comes from the AI (flat reads see [[page N]] markers now);
+        //  a parser-only import has no pages and saves "PI #4 — …".
+        // ===========================================================================
+        const PAGE_MARK_RE = /^\[\[page \d+\]\]\n?/gm;
+        const stripPageMarks = s => String(s || '').replace(PAGE_MARK_RE, '');
+        function numberReportItems(items) {
+            const objs = (items || []).map(it => (typeof it === 'string')
+                ? { description: it, location: '', page: null, trade: '' }
+                : Object.assign({}, it));
+            const own = objs.map(o => String(o.reportItemNo || '').trim());
+            const useOwn = objs.length > 0
+                && own.every(n => /^\d+(?:\.\d+)?$/.test(n))
+                && new Set(own).size === own.length;
+            objs.forEach((o, i) => {
+                o.itemNo = useOwn ? own[i] : i + 1;
+                const pg = Number(o.page);
+                o.page = (Number.isFinite(pg) && pg >= 1) ? Math.floor(pg) : null;
+            });
+            return objs;
+        }
+
         // Decide between deep read, AI extraction and the built-in parser, then review.
         async function extractAndReview(rawText, sourceName, reportType, useAI, reportFile, deep) {
-            let items = [], opts = {};
+            let items = [], opts = {}, tabular = null;
+            // The AI gets the page markers; every local reader gets plain text.
+            const plain = stripPageMarks(rawText);
             if (deep && deepReadAllowed()) {
                 const res = await deepReadReport(reportFile);
                 if (res) { items = res.items; opts = { layout: res.layout, photoMode: 'anchor' }; }
             }
             if (!items.length) {
-                const tabular = parseTabularDefects(rawText);
+                tabular = parseTabularDefects(plain);
                 if (tabular) items = tabular.map(it => {
                     const cid = findContractorByExactName(it.trade);
                     return cid != null ? Object.assign({}, it, { _contractorId: cid }) : it;
@@ -11890,16 +11925,25 @@
                     // supervisor hunting for a fault when they have simply hit
                     // the limit, and the import still works either way.
                     showToast((err && err.message ? err.message : 'AI extraction failed') + ' — using basic parser', true);
-                    items = parseReportDefects(rawText);
+                    items = parseReportDefects(plain);
                 }
             } else if (!items.length) {
-                items = parseReportDefects(rawText);
+                items = parseReportDefects(plain);
             }
             if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
+            // A pasted PI table already carries the report's own Item # / Page.
+            // Everything else from a private report is numbered here — and its
+            // photos pair by text anchor, never by BPI Tag number: a private
+            // report has no Tags, so the Tag pairer could only ever attach the
+            // wrong photo to a numbered item. No anchor → no photo, as before.
+            if (reportType !== 'BPI' && !tabular) {
+                items = numberReportItems(items);
+                opts.photoMode = 'anchor';
+            }
             // Match the property from the report header even on the AI path, so the
             // address is pre-selected regardless of which extractor ran. The source
             // file name doubles as a match input (BPI names embed lot + street).
-            startReportReview(items, sourceName, reportType, matchAddressFromText(rawText, sourceName), reportFile, opts);
+            startReportReview(items, sourceName, reportType, matchAddressFromText(plain, sourceName), reportFile, opts);
         }
 
         function impSetBusy(msg) {
@@ -11970,7 +12014,11 @@
                         lastY = y;
                     }
                     if (line) out.push(line);
-                    text += out.join('\n') + '\n';
+                    // Each page opens with a [[page N]] line so the AI can say which
+                    // page a defect is on — the "(p.19)" in "PI #5 (p.19) — …".
+                    // Without it a flat read had no pages to give. Everything that
+                    // isn't the AI reads stripPageMarks(text). (2026-11-19)
+                    text += '[[page ' + p + ']]\n' + out.join('\n') + '\n';
                 }
                 return text;
             }
@@ -15240,8 +15288,10 @@
                 // the report. The Tag Id is the BPI report's per-defect identifier
                 // (shown as "Tag Id" in the Summary table, "Id" in the photos
                 // section — same number). The CLEAN desc is used for trade learning
-                // below so the reference doesn't pollute the classifier. AI/generic
-                // items have no itemNo and get no prefix.
+                // below so the reference doesn't pollute the classifier. Every
+                // private-inspection item has an itemNo (numberReportItems), so it
+                // always saves as "PI #N (p.X) — …"; only a non-structured BPI
+                // text import can still arrive without one.
                 const cur = r.items[r.index];
                 const ref = (cur && typeof cur === 'object' && cur.itemNo != null)
                     ? `${reportRefWord(r.reportType)} #${cur.itemNo}${cur.page ? ' (p.' + cur.page + ')' : ''} — ` : '';
@@ -16670,7 +16720,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19e';
+        const APP_VERSION = '2026-11-19f';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16768,7 +16818,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19e"></script>
+    <script src="cloud-sync.js?v=2026-11-19f"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
