@@ -302,7 +302,11 @@ const fb = await page.evaluate(() => ({
 console.log('fallback:', JSON.stringify(fb));
 check('a failed deep read falls back to the flat AI path', fb.kinds === 'deep,flat', fb.kinds);
 check('the supervisor still gets their import', fb.n === 1 && fb.first === 'flat fallback item', JSON.stringify(fb));
-check('pairing reverts to the safe mode on fallback', fb.mode === 'bpi', fb.mode);
+// Anchor mode IS the safe mode for a private report now that every item is
+// numbered: the BPI Tag pairer would match a private item's number to
+// whatever Tag-shaped text sat on its page. No anchor → no photo.
+check('pairing stays in anchor mode on fallback (never BPI Tags)', fb.mode === 'anchor', fb.mode);
+check('the fallback item is still numbered', await page.evaluate(() => _review.items[0].itemNo === 1));
 
 // a deep read that finds nothing also falls through
 await page.evaluate(() => {
@@ -315,6 +319,88 @@ await page.waitForFunction(() => _review && _review.items.length, null, { timeou
 check('an empty deep read also falls through to flat AI',
   await page.evaluate(() => window.__deepCalls.map(c => c.kind).join(',') === 'deep,flat'),
   await page.evaluate(() => window.__deepCalls.map(c => c.kind).join(',')));
+
+// ================= 6b. every PI item saves as "PI #N (p.X) — …" =============
+// Spiro 2026-11-19: "each item needs to have a string like this —
+// PI #5 (p.19) — Door margin to bottom right-hand side of door exceeds 5mm".
+// The flat path used to save bare text: no item number, no page.
+console.log('\n--- PI reference on the flat path ---');
+const DOOR = 'Door margin to bottom right-hand side of door exceeds 5mm (max allowable 5mm).';
+async function flatImport(stubItems) {
+  await page.evaluate(() => { db.data.defects = []; db.save(); _review = null; });
+  await setRole(false);                                   // a supervisor: flat path
+  await page.evaluate(items => {
+    window.__flatText = null;
+    window.CloudAI.extract = async (text) => {
+      window.__deepCalls.push({ kind: 'flat' }); window.__flatText = text;
+      return JSON.parse(JSON.stringify(items));
+    };
+  }, stubItems);
+  await openImport('Private Inspection');
+  await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+  await page.waitForFunction(() => _review && _review.items.length, null, { timeout: 30000 });
+  return page.evaluate(() => ({
+    itemNos: _review.items.map(i => i.itemNo).join(','),
+    pages: _review.items.map(i => i.page).join(','),
+    mode: _review.photoMode,
+    sentMarkers: /\[\[page 1\]\][\s\S]*\[\[page 2\]\]/.test(window.__flatText || ''),
+  }));
+}
+async function saveCurrent() {
+  return page.evaluate(async () => {
+    const before = (db.data.defects || []).length;
+    const btn = [...document.querySelectorAll('#imp-body button')].find(b => /save/i.test(b.textContent));
+    if (btn) btn.click();
+    await new Promise(r => setTimeout(r, 700));
+    const all = db.data.defects || [];
+    return { added: all.length - before, desc: all.length ? all[all.length - 1].description : '' };
+  });
+}
+// (a) the report doesn't number its items → position in the report
+let f1 = await flatImport([
+  { description: DOOR, location: 'Bedroom 2', page: 19, anchor: '', reportItemNo: '' },
+  { description: 'Bathtub appears scratched in various areas.', location: 'Bathroom', page: 24, anchor: '', reportItemNo: '' },
+]);
+console.log('flat review:', JSON.stringify(f1));
+check('the flat read was sent the [[page N]] markers', f1.sentMarkers);
+check('flat items are numbered by position 1..N', f1.itemNos === '1,2', f1.itemNos);
+check('flat items keep their pages', f1.pages === '19,24', f1.pages);
+check('flat private import pairs photos by anchor, not BPI Tag', f1.mode === 'anchor', f1.mode);
+let s1 = await saveCurrent();
+check('saved as "PI #1 (p.19) — <defect>"', s1.desc === 'PI #1 (p.19) — ' + DOOR, s1.desc);
+// (b) the report prints its own item numbers → those are kept
+let f2 = await flatImport([
+  { description: DOOR, location: 'Bedroom 2', page: 19, anchor: '', reportItemNo: '5' },
+  { description: 'Bathtub appears scratched in various areas.', location: 'Bathroom', page: 24, anchor: '', reportItemNo: '9' },
+]);
+check("the report's own item numbers are kept", f2.itemNos === '5,9', f2.itemNos);
+let s2 = await saveCurrent();
+check('saved exactly as Spiro specified: "PI #5 (p.19) — …"', s2.desc === 'PI #5 (p.19) — ' + DOOR, s2.desc);
+check('the reference strips back off for display', await page.evaluate(d => stripReportRef(d), s2.desc) === DOOR);
+// (c) section numbers / gaps / duplicates are not trusted → positions
+let f3 = await flatImport([
+  { description: 'A', location: '', page: 3, anchor: '', reportItemNo: '8' },
+  { description: 'B', location: '', page: 4, anchor: '', reportItemNo: '8' },
+  { description: 'C', location: '', page: 5, anchor: '', reportItemNo: '' },
+]);
+check('duplicate/missing report numbers fall back to positions', f3.itemNos === '1,2,3', f3.itemNos);
+// (d) no page from the AI (pasted text) → "PI #1 — …", still referenced
+let f4 = await flatImport([{ description: 'Caulking incomplete to tile trim.', location: 'Bathroom', page: null, anchor: '', reportItemNo: '' }]);
+let s4 = await saveCurrent();
+check('no page → "PI #1 — <defect>" (still numbered)', s4.desc === 'PI #1 — Caulking incomplete to tile trim.', s4.desc);
+// (e) AI off → basic parser: numbered too, and the markers never leak into text
+await page.evaluate(() => { db.data.defects = []; db.save(); _review = null; });
+await openImport('Private Inspection');
+await page.evaluate(() => { document.getElementById('imp-ai').checked = false; });
+await page.setInputFiles('#imp-file', `${OUT}/private-report.pdf`);
+await page.waitForFunction(() => _review && _review.items.length, null, { timeout: 30000 });
+const bp = await page.evaluate(() => ({
+  itemNos: _review.items.map(i => i.itemNo),
+  leaked: _review.items.some(i => /\[\[page/.test(typeof i === 'string' ? i : i.description)),
+}));
+check('basic-parser private items are numbered 1..N',
+  bp.itemNos.length > 0 && bp.itemNos.every((n, i) => n === i + 1), JSON.stringify(bp.itemNos));
+check('page markers never leak into a defect', !bp.leaked);
 
 // ================= 7. the cost guards =======================================
 console.log('\n--- cost guards ---');

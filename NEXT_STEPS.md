@@ -13,39 +13,38 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
-## 🤖 Report reading on Opus 5.5 — WRITTEN + TESTED, production deploy waiting on Spiro (2026-11-19)
+## 🤖 Report reading on Opus 5.5 — LIVE (2026-11-19, function v2, app `2026-11-19e`)
 
-**State of the live function — read this first.** The production
-`extract-defects` is **version 1, deployed ~June 2026**. It predates both the
-2026-09-19 identity check (an anon-key POST still reaches the handler — check:
-`{}` body returns *"Missing 'text'"*, not 401) and working deep read. So the
-long-standing TASKS item *"supabase functions deploy extract-defects"* was
-never done, and the open billing door it describes is still open.
+**Production `extract-defects` is now version 2** (deployed 2026-11-19 with
+Spiro's approval). It replaced v1 from ~June, which had neither the
+2026-09-19 identity check nor a working deep read. Verified after deploy:
 
-**What's ready:** `supabase/functions/extract-defects/index.ts` — Opus 5.5,
-explicit effort, refusal fallbacks, deep-read schema fix, app location names.
-Why each change: DECISIONS.md 2026-11-19. Proven on the Lot 904 report (13/13
-both paths). Offline test:
+- anon-key caller → **401** *"Sign in to use AI extraction."* (the billing door
+  the old TASKS item described is now shut);
+- signed-in read of the real Lot 904 report → 13/13 items, every one as
+  `PI #N (p.X) — …`, all 13 pages correct.
+
+What changed and why: DECISIONS.md 2026-11-19 (two entries). Offline test:
 
     cd supabase/functions/extract-defects
     deno run --allow-env --allow-net --allow-read index.test.ts
 
-**Deploying it is the step that changes production, and it ships the identity
-check with it** — AI extraction then requires a signed-in user. The app already
-sends the user's session token (`sb.functions.invoke`), so signed-in
-supervisors are unaffected; anyone calling with only the public anon key gets
-401. That is an auth change, so it waits for Spiro's go-ahead (CLAUDE.md).
-Deploy (CLI or the Management API with `SUPABASE_ACCESS_TOKEN`):
+**Every private-inspection item now saves as `PI #N (p.X) — <defect>`**, on
+every path (deep read, flat AI, basic parser, failures that fall back) —
+Spiro's spec. `numberReportItems()` in index.html does the numbering;
+`tests/deep.mjs` §6b asserts his exact example string. A pasted PI table still
+keeps its own Item #/Page.
 
-    supabase functions deploy extract-defects
-
-The daily cap needs `2026-09-19_ai_call_quota.sql`; until then it fails open
+The daily AI cap needs `2026-09-19_ai_call_quota.sql`; until then it fails open
 (logs `[quota unavailable]`) — identity is the part doing the work.
 
-**After the deploy:** delete the `extract-defects-staging` function (same
-code; it exists only to test against real reports without touching
-production). Watch the function logs — every read now logs one line:
-`{mode, model, effort, stop, fellBack, in, out, ms}`.
+Function logs carry one line per read:
+`{mode, model, effort, stop, fellBack, in, out, ms}` — watch cost and speed
+there. Effort is tunable without a deploy:
+`supabase secrets set EXTRACT_EFFORT_FLAT=low|medium|high`.
+
+The temporary `extract-defects-staging` function used for the live tests has
+been deleted.
 
 **Next steps on this feature, in order** (the roadmap Spiro was given):
 1. **Golden set + eval.** `live_eval`-style scoring worked on one report;

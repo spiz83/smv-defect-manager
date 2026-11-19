@@ -208,7 +208,25 @@ const commonRules = (locations: string[]) =>
   "• `description` is the tradesman's instruction: concise, actionable, in the inspector's own technical wording. Strip leading item numbers and 'Observation:' / 'Defect:' / 'Note:' labels.\n" +
   locationRule(locations) +
   "• Exclude headings, scores/ratings, page numbers, the date, the address, names, signatures, disclaimers, methodology and general boilerplate.\n" +
-  "• Do NOT invent, infer or summarise defects that are not explicitly stated. A report with 12 defects must return 12 rows, not 20.";
+  "• Do NOT invent, infer or summarise defects that are not explicitly stated. A report with 12 defects must return 12 rows, not 20.\n" +
+  "• Return the defects in the order they appear in the report — the app numbers them in that order.\n" +
+  "• `item_no` is the report's OWN number for that one defect, exactly as printed ('7', '3.27'), when the report numbers its individual " +
+  "items. A section or chapter number ('8. Bedrooms') is not an item number. If the report doesn't number its items, return ''. Never invent one.";
+
+// Every private-inspection item is saved as "PI #<item> (p.<page>) — <defect>",
+// so the page and the report's own item number come back on BOTH paths now —
+// they used to be deep-read only, and a flat import saved bare text.
+const ITEM_NO = {
+  type: "string",
+  description: "The report's own number for this defect as printed ('7', '3.27'), or '' if the report doesn't number its items.",
+};
+const ANCHOR = {
+  type: "string",
+  description:
+    "4-10 words copied EXACTLY, character for character, from the start of the line where this defect's text begins on that page. " +
+    "Used to locate the defect on the page so photos printed beneath it attach to it. Must be verbatim from the page — " +
+    "do not tidy, re-order, re-case or paraphrase it, and do not use words from a heading unless the defect text is in the heading itself.",
+};
 
 function flatSchema() {
   return {
@@ -223,14 +241,27 @@ function flatSchema() {
           properties: {
             description: { type: "string", description: "One concise, actionable defect in the inspector's own wording." },
             location: { type: "string", description: "Room/area of the home, or '' if not stated." },
+            item_no: ITEM_NO,
+            // No numeric bounds — see the note on the deep schema.
+            page: {
+              type: "integer",
+              description: "The N of the [[page N]] marker above this defect's text, or 0 if the text has no page markers.",
+            },
+            anchor: ANCHOR,
           },
-          required: ["description", "location"],
+          required: ["description", "location", "item_no", "page", "anchor"],
         },
       },
     },
     required: ["defects"],
   };
 }
+
+// The app marks where each PDF page starts with a line "[[page N]]" (see
+// extractReportText in index.html). Pasted text has none.
+const FLAT_PAGE_RULE =
+  "• The text marks the start of each PDF page with a line `[[page N]]`. `page` is the N of the marker above the defect's text " +
+  "(where its text is, not its photo); 0 if the text has no markers. `anchor` is copied from that page's text, never from a marker.\n";
 
 function deepSchema(trades: string[]) {
   return {
@@ -252,6 +283,7 @@ function deepSchema(trades: string[]) {
           properties: {
             description: { type: "string", description: "One concise, actionable defect in the inspector's own wording." },
             location: { type: "string", description: "Room/area of the home, or '' if not stated." },
+            item_no: ITEM_NO,
             trade: {
               type: "string",
               enum: ["", ...trades],
@@ -264,15 +296,9 @@ function deepSchema(trades: string[]) {
               type: "integer",
               description: "1-based PDF page where this defect's TEXT appears (not where its photo appears). The first page is 1.",
             },
-            anchor: {
-              type: "string",
-              description:
-                "4-10 words copied EXACTLY, character for character, from the start of the line where this defect's text begins on that page. " +
-                "Used to locate the defect on the page so photos printed beneath it attach to it. Must be verbatim from the page — " +
-                "do not tidy, re-order, re-case or paraphrase it, and do not use words from a heading unless the defect text is in the heading itself.",
-            },
+            anchor: ANCHOR,
           },
-          required: ["description", "location", "trade", "page", "anchor"],
+          required: ["description", "location", "item_no", "trade", "page", "anchor"],
         },
       },
     },
@@ -461,7 +487,7 @@ Deno.serve(async (req: Request) => {
         system:
           "You read a residential building inspection report and extract every distinct defect/item noted for rectification. " +
           "For each, return a concise, actionable one-line description in the inspector's own wording, plus the room/area it is in.\n" +
-          "Rules:\n" + commonRules(locations),
+          "Rules:\n" + FLAT_PAGE_RULE + commonRules(locations),
         messages: [{
           role: "user",
           content: "Extract the defects from this inspection report:\n\n" + text.slice(0, MAX_CHARS),
@@ -511,11 +537,11 @@ Deno.serve(async (req: Request) => {
           return {
             description: str(d?.description),
             location: str(d?.location),
-            ...(deep ? {
-              trade: str(d?.trade),
-              page: Number.isFinite(page) && page >= 1 ? Math.floor(page) : null,
-              anchor: str(d?.anchor),
-            } : {}),
+            // Both paths now: the app builds "PI #<item_no or position> (p.<page>) — ".
+            item_no: str(d?.item_no),
+            page: Number.isFinite(page) && page >= 1 ? Math.floor(page) : null,
+            anchor: str(d?.anchor),
+            ...(deep ? { trade: str(d?.trade) } : {}),
           };
         })
         .filter((d: { description: string }) => d.description);

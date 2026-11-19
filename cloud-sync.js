@@ -2829,10 +2829,13 @@
         : {
             description: (d && d.description) || '',
             location: (d && d.location) || '',
-            // Deep read only — absent on the flat path, and the review copes.
+            // trade is deep read only. page / anchor / item_no come back on BOTH
+            // paths since 2026-11-19 — they are what a private-inspection item's
+            // "PI #<item> (p.<page>) — " reference is built from.
             trade: (d && d.trade) || '',
             page: (d && typeof d.page === 'number') ? d.page : null,
             anchor: (d && d.anchor) || '',
+            reportItemNo: (d && d.item_no) || '',
           }))
       .filter((d) => d.description && d.description.trim());
   }
