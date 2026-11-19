@@ -13,6 +13,62 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## 🤖 Report reading on Opus 5.5 — WRITTEN + TESTED, production deploy waiting on Spiro (2026-11-19)
+
+**State of the live function — read this first.** The production
+`extract-defects` is **version 1, deployed ~June 2026**. It predates both the
+2026-09-19 identity check (an anon-key POST still reaches the handler — check:
+`{}` body returns *"Missing 'text'"*, not 401) and working deep read. So the
+long-standing TASKS item *"supabase functions deploy extract-defects"* was
+never done, and the open billing door it describes is still open.
+
+**What's ready:** `supabase/functions/extract-defects/index.ts` — Opus 5.5,
+explicit effort, refusal fallbacks, deep-read schema fix, app location names.
+Why each change: DECISIONS.md 2026-11-19. Proven on the Lot 904 report (13/13
+both paths). Offline test:
+
+    cd supabase/functions/extract-defects
+    deno run --allow-env --allow-net --allow-read index.test.ts
+
+**Deploying it is the step that changes production, and it ships the identity
+check with it** — AI extraction then requires a signed-in user. The app already
+sends the user's session token (`sb.functions.invoke`), so signed-in
+supervisors are unaffected; anyone calling with only the public anon key gets
+401. That is an auth change, so it waits for Spiro's go-ahead (CLAUDE.md).
+Deploy (CLI or the Management API with `SUPABASE_ACCESS_TOKEN`):
+
+    supabase functions deploy extract-defects
+
+The daily cap needs `2026-09-19_ai_call_quota.sql`; until then it fails open
+(logs `[quota unavailable]`) — identity is the part doing the work.
+
+**After the deploy:** delete the `extract-defects-staging` function (same
+code; it exists only to test against real reports without touching
+production). Watch the function logs — every read now logs one line:
+`{mode, model, effort, stop, fellBack, in, out, ms}`.
+
+**Next steps on this feature, in order** (the roadmap Spiro was given):
+1. **Golden set + eval.** `live_eval`-style scoring worked on one report;
+   15–30 real reports from different inspectors, each with its hand-checked
+   list, turns "seems better" into a number. Nothing else is measurable
+   without it.
+2. **Learn from the review screen.** The supervisor's deletes (false
+   positives), adds (misses) and edits during review are thrown away today —
+   only the trade assignment learns. Log them against the report.
+3. **Align the trade vocabularies** — code names (`Shower Screen`,
+   `Cabinet Maker`, `Supervisor`) vs live placeholders (`Shower Screen /
+   Mirrors / Robes`, `Cabinets`, no Supervisor) via an explicit map, not the
+   contains-match. See DECISIONS 2026-11-19 for why it can't be a swap.
+4. Deep read for everyone on Private Inspections, not managers only, once
+   the eval says it's reliable.
+
+**Also done today (data, not code):** the 13 PI items from the Lot 904
+Wollert iSPECT report (ref 3750269957) were written straight into
+`dm_defects` on job 306870 at Spiro's instruction, as `PI #1 (p.12)` …
+`PI #13 (p.30)`, `created_by` the manager account. Job went 73 → 86 defects.
+#2 and #9 deliberately unassigned. Reversible by description prefix `PI #`
+on that job.
+
 ## 📸 OPEN — one photo the bucket refuses, and a wrong theory to drop
 
 **Lot 5, 22 Skylark Rd. The app says `POLICY` — the job reads fine, the photo

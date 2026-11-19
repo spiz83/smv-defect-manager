@@ -1,6 +1,18 @@
 # Tasks
 
 ## Current sprint
+- [x] **Report reading on Claude Opus 5.5** — `extract-defects`: model,
+      always-adaptive thinking with explicit effort, refusal fallbacks,
+      deep-read schema bug fixed (it 400'd every call), app location names +
+      the "Throughout" rule. 13/13 on the Lot 904 report, both paths.
+      `supabase/functions/extract-defects/index.test.ts`.
+- [ ] **Spiro: go-ahead to deploy `extract-defects` to production.** The
+      live one is v1 from June — no identity check, no working deep read.
+      Deploying ships the identity check too (auth change). NEXT_STEPS.md.
+- [ ] Then delete the `extract-defects-staging` function.
+- [ ] Golden set of 15–30 real reports + hand-checked lists → extraction eval.
+- [ ] Log review-screen deletes/adds/edits so extraction learns, not just trade.
+- [ ] Explicit map from code trade names to live placeholders.
 - [x] **Recently visited jobs** — Recent band (8) above All jobs (A-Z) on the
       home list, per device, temp jobs still last. `tests/jobrecents.mjs`.
 - [x] **Copy the report as text** — Generate Report → 📋 Copy as text. Same
