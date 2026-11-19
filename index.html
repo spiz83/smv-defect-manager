@@ -2086,32 +2086,28 @@
            colour per palette is not a brand splash.
            ========================================================== */
         #splash {
-            position: fixed; top: 0; left: 0; right: 0; z-index: 100001;
-            /* A STABLE height, NOT inset:0 (Spiro 2026-11-19 screenshots: the
-               whole mark AND the Creation Homes logo slid DOWN together between
-               "Starting up…" and "Loading jobs…"). iOS brings the standalone
-               webview up a touch short and grows it to full height a beat later;
-               anything pinned by inset:0 / bottom tracks that growing viewport
-               and re-centres lower. 100lvh is the large, settled viewport — a
-               constant — so the centred mark holds one spot; 100vh is the
-               fallback for browsers without lvh. */
-            height: 100vh; height: 100lvh;
+            position: fixed; inset: 0; z-index: 100001;
+            /* TOP-ANCHORED, all fixed offsets — the one layout immune to iOS
+               reshaping the standalone viewport mid-boot (Spiro 2026-11-19: the
+               mark AND logo slid DOWN together on his phone through three
+               centred-layout attempts; centring, symmetric padding and 100lvh
+               each still left a value that iOS resolves a beat late). The
+               splash's top edge is 0 and never moves — a fixed element ignores
+               the body padding the app adds at sign-in — so everything measured
+               DOWN from it with a fixed length is pinned. Nothing here reads the
+               viewport height, a safe-area inset, or the centre; only the status
+               TEXT changes. */
             background: linear-gradient(180deg, #24406F 0%, #1A2F62 55%, #152748 100%);
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            /* SYMMETRIC, INSET-FREE PADDING so the centred mark holds ONE spot
-               for the whole boot (Spiro 2026-11-19: "the splash jitters halfway
-               through and slightly moves — it needs to be the same spot the
-               whole time"). env(safe-area-inset-bottom) is 0 on the first frame
-               and resolves to ~34px a beat later; while it sat in this padding
-               it moved the vertical centre up by ~17px mid-boot. The home
-               indicator is already cleared by .sp-foot's own inset-aware bottom,
-               so the centring box does not need it. */
-            padding: 32px 24px;
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+            padding: 0 24px;
             font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
             opacity: 1; transition: opacity .34s ease;
         }
         #splash.sp-out { opacity: 0; pointer-events: none; }
-        .sp-mark { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+        /* The fixed distance from the stable top edge. This is the anchor — it
+           does not move, whatever iOS does to the viewport. */
+        .sp-mark { display: flex; flex-direction: column; align-items: center; gap: 22px;
+                   margin-top: 200px; }
         .sp-badge {
             background: #90BFE9; color: #1A2F62;
             font-weight: 800; font-size: 58px; line-height: 1; letter-spacing: -.015em;
@@ -2143,17 +2139,34 @@
         }
         /* The logo keeps its white panel; the "in partnership with" line that
            sat above it is gone, as asked. */
+        /* In the flow now, a FIXED gap below the bar — not pinned to the moving
+           viewport bottom (which is what slid it down with the mark). align-items
+           centres it across the width. */
         .sp-foot {
-            position: absolute; left: 50%; transform: translateX(-50%);
-            bottom: calc(34px + env(safe-area-inset-bottom));
+            margin-top: 100px;
             background: #fff; border-radius: 12px; padding: 12px 20px;
         }
         .sp-foot img { display: block; height: 42px; width: auto; }
         @media (prefers-reduced-motion: reduce) { #splash, .sp-track i { transition: none; } }
+        /* Taller phones: sit the column a little lower so it reads close to the
+           original centred proportions, while still leaving ample room below the
+           logo for the viewport to grow into without moving anything. */
+        @media (min-height: 800px) {
+            .sp-mark { margin-top: 240px; }
+            .sp-foot { margin-top: 140px; }
+        }
+        /* Shorter phones: pull the whole top-anchored column up so the logo
+           still clears the bottom. */
+        @media (max-height: 740px) {
+            .sp-mark { margin-top: 140px; }
+            .sp-foot { margin-top: 70px; }
+        }
         @media (max-height: 640px) {
             .sp-badge { font-size: 46px; padding: 19px 24px; border-radius: 21px; }
             .sp-word { font-size: 34px; }
             .sp-status { margin-top: 30px; }
+            .sp-mark { margin-top: 110px; }
+            .sp-foot { margin-top: 48px; }
             .sp-foot img { height: 34px; }
         }
 
@@ -16476,7 +16489,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19c';
+        const APP_VERSION = '2026-11-19d';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16574,7 +16587,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19c"></script>
+    <script src="cloud-sync.js?v=2026-11-19d"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
