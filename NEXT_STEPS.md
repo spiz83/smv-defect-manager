@@ -24,10 +24,13 @@ Drag-and-drop into Add Report, so a report can come straight out of an email
   first thing you do, and starting the read there sent a private report through
   the BPI parser and came out as garbage. `tests/dropfile.mjs` pins both
   halves — make them the same and it fails.
-- **`impSniffKind()` decides what a file is, from its first 1024 bytes.** Not
-  the name, not the MIME type: an attachment can arrive as `ATT00001` with
-  neither. `%PDF-` means PDF; a NUL or >10% control bytes means binary and is
-  refused.
+- **`impSniffKind()` ADDS, it never vetoes.** Name or MIME says PDF → PDF, as
+  it always was. The sniff's first 1024 bytes only catch the files whose name
+  and type say nothing (an attachment can arrive as `ATT00001`), and only ever
+  to promote one to PDF or to refuse something binary that claims to be text.
+  A sniff that can downgrade a file named `.pdf` reads a real report as text —
+  wrong items AND no photos, since the structured BPI reader and the photo pass
+  only run on the PDF path. `tests/dropfile.mjs` pins it.
 
 Drag-and-drop into Add Report, so a report can come straight out of an email
 (Spiro 2026-11-19). One thing to know before touching any drop zone:

@@ -230,6 +230,21 @@ await openDialog('Private Inspection');
     r.n > 0 && r.items.some(t => /kitchen|ceiling|grout|shower/i.test(t)),
     JSON.stringify(r).slice(0, 170));
 }
+// A FILE THAT SAYS .pdf IS NEVER TALKED OUT OF IT (2026-11-19). The sniff adds;
+// it does not veto. A real report whose header sits outside the window this
+// reads — or whose first bytes cannot be read at all — must still go to pdf.js,
+// because the text path produces wrong items AND no photos: the structured
+// reader never runs on it. This file is deliberately unrecognisable in its
+// first 1024 bytes.
+await openDialog('BPI');
+{
+  const junk = Array.from({ length: 1200 }, (_, i) => (i % 64) + 32);
+  await drop(junk, 'Weird Header Report.pdf', 'application/pdf', {});
+  const st = await staged();
+  check('a file named .pdf still goes down the PDF path whatever the bytes look like',
+    st.file && st.file.kind === 'pdf', JSON.stringify(st.file) + ' ' + st.toast);
+}
+
 await openDialog('Private Inspection');
 {
   // A .docx is a zip. Named .txt it would once have been read as text.
