@@ -2115,7 +2115,14 @@
         .sp-word .sp-word2 { font-weight: 400; }
         .sp-status {
             margin-top: 46px; font-size: 15px; font-weight: 400;
-            color: rgba(255,255,255,.62); letter-spacing: .01em; min-height: 20px;
+            color: rgba(255,255,255,.62); letter-spacing: .01em;
+            /* A FIXED slot, not a min-height (Spiro 2026-11-19: "only the actual
+               text changes, the background is all the same location"). "Signing
+               in…", "Loading jobs…", "Checking photos…" swap IN PLACE — the slot
+               is one line tall whatever the message or the font, so nothing below
+               it moves and the centred block never changes height. */
+            height: 21px; line-height: 21px;
+            white-space: nowrap; overflow: hidden;
         }
         .sp-track {
             margin-top: 16px; width: min(58vw, 300px); height: 4px; border-radius: 3px;
@@ -16460,7 +16467,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19a';
+        const APP_VERSION = '2026-11-19b';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16558,7 +16565,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19a"></script>
+    <script src="cloud-sync.js?v=2026-11-19b"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
