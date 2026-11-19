@@ -2089,7 +2089,15 @@
             position: fixed; inset: 0; z-index: 100001;
             background: linear-gradient(180deg, #24406F 0%, #1A2F62 55%, #152748 100%);
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            padding: 32px 24px calc(28px + env(safe-area-inset-bottom));
+            /* SYMMETRIC, INSET-FREE PADDING so the centred mark holds ONE spot
+               for the whole boot (Spiro 2026-11-19: "the splash jitters halfway
+               through and slightly moves — it needs to be the same spot the
+               whole time"). env(safe-area-inset-bottom) is 0 on the first frame
+               and resolves to ~34px a beat later; while it sat in this padding
+               it moved the vertical centre up by ~17px mid-boot. The home
+               indicator is already cleared by .sp-foot's own inset-aware bottom,
+               so the centring box does not need it. */
+            padding: 32px 24px;
             font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
             opacity: 1; transition: opacity .34s ease;
         }
@@ -16452,7 +16460,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-18o';
+        const APP_VERSION = '2026-11-19a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16550,7 +16558,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-18o"></script>
+    <script src="cloud-sync.js?v=2026-11-19a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
