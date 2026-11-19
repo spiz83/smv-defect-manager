@@ -249,6 +249,22 @@ for (const [mode, why] of [
   await ctx.close();
 }
 
+// ── the splash must hold ONE spot through the whole boot ────────────────
+// The jitter (Spiro 2026-11-19) was env(safe-area-inset-bottom) inside
+// #splash's padding: 0 on the first frame, ~34px a beat later, which moved the
+// flex-centred mark up ~17px mid-boot. The centring box must not depend on a
+// value that only resolves after paint — the home indicator is cleared by
+// .sp-foot's own inset-aware bottom, not by this padding. Headless Chromium
+// can't set the inset, so this guards the source: the centring padding stays
+// inset-free.
+{
+  const css = fs.readFileSync(join(REPO, 'index.html'), 'utf8');
+  const m = css.match(/#splash\s*\{[^}]*\}/);
+  const padLine = ((m ? m[0] : '').match(/padding:[^;]*;/) || [''])[0];
+  check('the splash centring padding does not depend on a safe-area inset',
+    !!m && !/env\(\s*safe-area-inset/.test(padLine), padLine.trim());
+}
+
 console.log(fail.length ? `\nFAILED (${fail.length}):\n` + fail.map(f => ' - ' + f).join('\n') : '\nALL CHECKS PASSED');
 await browser.close();
 server.close();

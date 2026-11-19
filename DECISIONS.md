@@ -2,7 +2,7 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
-## 2026-11-19 — a report dragged straight out of an email — build `2026-11-19a`
+## 2026-11-19 — a report dragged straight out of an email — build `2026-11-19e`
 
 Spiro: *"In the tap to choose PDF box I also want the ability that I can drag
 and drop straight from an email attachment into that box and it can read it,
@@ -46,6 +46,52 @@ no bytes counts as a miss rather than a result.
 - **Wording is per device**, through `@media (hover:hover) and (pointer:fine)`:
   a phone cannot drag a file and a desktop has no "tap", so the box says one
   thing to each rather than the average of both.
+
+## 2026-11-19 — report reading moves to Claude Opus 5.5 (`extract-defects`)
+
+Spiro: *"Make a start with Opus 5.5 intelligence"* — the first step of
+tightening Add Report → Private Inspection so any inspector's report can be
+read into a defect list.
+
+- **Model `claude-opus-5` → `claude-opus-5-5`** in
+  `supabase/functions/extract-defects/index.ts`. 20% cheaper per token, and
+  better at the two things this function lives on: reading dense page layouts
+  and not stating what the input doesn't support.
+- **Thinking can't be disabled on Opus 5.5.** The flat path sent
+  `thinking:{type:"disabled"}` — a 400 on the new model, i.e. every import
+  would have failed. Both paths are adaptive now and **effort** is the dial:
+  flat `medium`, deep `high`, overridable with the `EXTRACT_EFFORT_FLAT` /
+  `EXTRACT_EFFORT_DEEP` secrets (no redeploy). `max_tokens` raised to 32k/64k
+  because thinking counts against it; only produced tokens are billed.
+- **Refusals are handled.** `fallbacks:"default"` (beta
+  `server-side-fallback-2026-07-01`) re-runs a classifier-declined read on
+  Anthropic's recommended fallback model on the same stream. A refusal across
+  the whole chain → 422 with a plain message; a truncated list (`max_tokens`)
+  → 413. Before, both came back as an empty or partial list that looked like
+  "no defects found". If the beta is ever rejected the read retries without it.
+- **Deep read had never worked.** Its schema put `minimum: 1` on `page`;
+  structured outputs reject numeric bounds, so every deep read 400'd. Found
+  on the first live run, not in review. The handler already drops page < 1.
+- **Locations use the app's own names.** The prompt's hint said "Bed 2/3/4"
+  and the model obliged, so bedrooms came back as "Bed 2" — not a dropdown
+  option, no floor-plan code. The hint is now the import dropdown's list plus
+  'Throughout', with Spiro's rule written in: an item the inspector applies to
+  the whole house ("check throughout", "general note") is `Throughout`, even
+  under a room heading. A caller may post `locations`.
+- **Deliberately NOT changed: the trade list sent to deep read.** It is
+  `Object.keys(CALLUP_TRADE_KEYWORDS)` ("Shower Screen", "Cabinet Maker"…), and
+  those names are the keys the call-up / directory matching uses to find the
+  real sub on the job. Sending the placeholder names ("Shower Screen / Mirrors
+  / Robes") instead would break that. The trade-mode chips already bridge the
+  two with a contains-match. Aligning the vocabularies is its own job.
+- **Measured, not assumed.** Staged as `extract-defects-staging` and run on the
+  real Lot 904 Wollert iSPECT report (34 pp) against the 13 items Spiro signed
+  off by hand: flat 13/13 found, 0 extras, 13/13 locations, 7 s; deep the same
+  plus every page reference right, 20 s. Offline regression test
+  `supabase/functions/extract-defects/index.test.ts` (36 checks, no network).
+- **Trade-off accepted:** thinking on the flat path makes it slower and dearer
+  than the old no-thinking Opus 5 call (still seconds and cents a report).
+  `EXTRACT_EFFORT_FLAT=low` is the lever if it ever matters.
 
 ## 2026-11-18 — the masthead holds still — build `2026-11-18l`
 

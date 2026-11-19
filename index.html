@@ -2087,14 +2087,27 @@
            ========================================================== */
         #splash {
             position: fixed; inset: 0; z-index: 100001;
+            /* TOP-ANCHORED, all fixed offsets — the one layout immune to iOS
+               reshaping the standalone viewport mid-boot (Spiro 2026-11-19: the
+               mark AND logo slid DOWN together on his phone through three
+               centred-layout attempts; centring, symmetric padding and 100lvh
+               each still left a value that iOS resolves a beat late). The
+               splash's top edge is 0 and never moves — a fixed element ignores
+               the body padding the app adds at sign-in — so everything measured
+               DOWN from it with a fixed length is pinned. Nothing here reads the
+               viewport height, a safe-area inset, or the centre; only the status
+               TEXT changes. */
             background: linear-gradient(180deg, #24406F 0%, #1A2F62 55%, #152748 100%);
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            padding: 32px 24px calc(28px + env(safe-area-inset-bottom));
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+            padding: 0 24px;
             font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
             opacity: 1; transition: opacity .34s ease;
         }
         #splash.sp-out { opacity: 0; pointer-events: none; }
-        .sp-mark { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+        /* The fixed distance from the stable top edge. This is the anchor — it
+           does not move, whatever iOS does to the viewport. */
+        .sp-mark { display: flex; flex-direction: column; align-items: center; gap: 22px;
+                   margin-top: 200px; }
         .sp-badge {
             background: #90BFE9; color: #1A2F62;
             font-weight: 800; font-size: 58px; line-height: 1; letter-spacing: -.015em;
@@ -2107,7 +2120,14 @@
         .sp-word .sp-word2 { font-weight: 400; }
         .sp-status {
             margin-top: 46px; font-size: 15px; font-weight: 400;
-            color: rgba(255,255,255,.62); letter-spacing: .01em; min-height: 20px;
+            color: rgba(255,255,255,.62); letter-spacing: .01em;
+            /* A FIXED slot, not a min-height (Spiro 2026-11-19: "only the actual
+               text changes, the background is all the same location"). "Signing
+               in…", "Loading jobs…", "Checking photos…" swap IN PLACE — the slot
+               is one line tall whatever the message or the font, so nothing below
+               it moves and the centred block never changes height. */
+            height: 21px; line-height: 21px;
+            white-space: nowrap; overflow: hidden;
         }
         .sp-track {
             margin-top: 16px; width: min(58vw, 300px); height: 4px; border-radius: 3px;
@@ -2119,17 +2139,34 @@
         }
         /* The logo keeps its white panel; the "in partnership with" line that
            sat above it is gone, as asked. */
+        /* In the flow now, a FIXED gap below the bar — not pinned to the moving
+           viewport bottom (which is what slid it down with the mark). align-items
+           centres it across the width. */
         .sp-foot {
-            position: absolute; left: 50%; transform: translateX(-50%);
-            bottom: calc(34px + env(safe-area-inset-bottom));
+            margin-top: 100px;
             background: #fff; border-radius: 12px; padding: 12px 20px;
         }
         .sp-foot img { display: block; height: 42px; width: auto; }
         @media (prefers-reduced-motion: reduce) { #splash, .sp-track i { transition: none; } }
+        /* Taller phones: sit the column a little lower so it reads close to the
+           original centred proportions, while still leaving ample room below the
+           logo for the viewport to grow into without moving anything. */
+        @media (min-height: 800px) {
+            .sp-mark { margin-top: 240px; }
+            .sp-foot { margin-top: 140px; }
+        }
+        /* Shorter phones: pull the whole top-anchored column up so the logo
+           still clears the bottom. */
+        @media (max-height: 740px) {
+            .sp-mark { margin-top: 140px; }
+            .sp-foot { margin-top: 70px; }
+        }
         @media (max-height: 640px) {
             .sp-badge { font-size: 46px; padding: 19px 24px; border-radius: 21px; }
             .sp-word { font-size: 34px; }
             .sp-status { margin-top: 30px; }
+            .sp-mark { margin-top: 110px; }
+            .sp-foot { margin-top: 48px; }
             .sp-foot img { height: 34px; }
         }
 
@@ -16633,7 +16670,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19a';
+        const APP_VERSION = '2026-11-19e';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16731,7 +16768,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19a"></script>
+    <script src="cloud-sync.js?v=2026-11-19e"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

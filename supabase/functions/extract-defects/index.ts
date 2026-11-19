@@ -132,18 +132,81 @@ const FALLBACK_TRADES = [
   "Cabinet Maker", "Garage Door", "Landscaper", "Shower Screen", "Paving", "Fencing",
 ];
 
-const LOCATION_HINT =
-  "Kitchen, Master Bedroom, Bed 2/3/4, Ensuite, Bathroom, Laundry, WIR/Robe, " +
-  "Hallway, Entry, Living, Dining, Garage, Alfresco, Porch, Facade / External, " +
-  "Roof, Driveway";
+// ===========================================================================
+//  THE MODEL  (Claude Opus 5.5, 2026-11-19)
+// ---------------------------------------------------------------------------
+//  Moved from claude-opus-5. Same 1M context and PDF/vision support, 20%
+//  cheaper per token, and markedly better at exactly what this function does:
+//  reading dense visual layouts (headings, photo clusters, tables) and not
+//  stating things the input doesn't support.
+//
+//  Three things changed with the move and all three are load-bearing:
+//
+//   1. THINKING CAN'T BE TURNED OFF. The flat path used to send
+//      thinking:{type:"disabled"} — that is a 400 on Opus 5.5 and would have
+//      broken every import. Thinking is always adaptive now; EFFORT is the dial
+//      for how hard it thinks (and so for latency and cost).
+//
+//   2. THE EFFORT DEFAULT DROPPED to "medium" (Opus 5 defaulted to "high"), so
+//      it is set explicitly per mode below. Opus 5.5 at "medium" out-reads
+//      Opus 5 at "high" in Anthropic's testing; deep read gets "high" because
+//      working out how a never-seen-before report is organised is the hard
+//      part. Both can be retuned with a Supabase secret, no redeploy:
+//        supabase secrets set EXTRACT_EFFORT_FLAT=low|medium|high
+//        supabase secrets set EXTRACT_EFFORT_DEEP=medium|high|xhigh
+//
+//   3. REFUSALS ARE A REAL STOP REASON. A safety classifier can (rarely, and
+//      wrongly for a building report) decline a request. fallbacks:"default"
+//      re-runs a declined read on Anthropic's recommended fallback model
+//      server-side, on the same stream. If the whole chain still declines we
+//      now say so plainly instead of returning an empty list that looks like
+//      "no defects found".
+// ===========================================================================
+const MODEL = "claude-opus-5-5";
+const EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+function effortFor(name: string, fallback: string): string {
+  const v = (Deno.env.get(name) || "").trim().toLowerCase();
+  return EFFORTS.has(v) ? v : fallback;
+}
+// Thinking counts against max_tokens even though its text isn't returned, so
+// these are sized for the thinking AND the JSON. Only tokens actually produced
+// are billed — a generous ceiling costs nothing, a tight one truncates the JSON.
+const MAX_TOKENS_FLAT = 32000;
+const MAX_TOKENS_DEEP = 64000;
+const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+
+// The app's own room names — the import screen's Location dropdown
+// (BPI_LOCATIONS in index.html) plus 'Throughout'. The old hint said
+// "Bed 2/3/4", and the model obliged: every bedroom came back as "Bed 2", which
+// is not a dropdown option, so it landed as a custom location and the
+// floor-plan code (b2) never matched. A caller may post its own list as
+// `locations`; this is the fallback and should track BPI_LOCATIONS.
+const APP_LOCATIONS = [
+  "Throughout",
+  "Entry", "Hallway", "Living", "Lounge", "Family", "Meals", "Dining", "Kitchen", "Pantry",
+  "Master Bedroom", "Bedroom 1", "Bedroom 2", "Bedroom 3", "Bedroom 4", "Bedroom 5",
+  "Walk In Robe", "Linen Cupboard", "Study", "Rumpus", "Theatre", "Sitting", "Retreat", "Stairs",
+  "Ensuite", "Bathroom", "Powder Room", "Toilet", "Laundry",
+  "Garage", "Garage Internal PA Door", "Garage External PA Door", "Roof Space", "General Internal",
+  "Front Door", "Porch", "Alfresco", "Balcony", "Driveway", "Roof",
+  "Front Elevation", "Rear Elevation", "Left Elevation", "Right Elevation", "General External",
+];
+
+function locationRule(locations: string[]): string {
+  return "• `location` is the room or area, written as EXACTLY one of these names whenever one fits: " + locations.join(", ") + ". " +
+    "Map the report's wording onto them ('Bed 2' → 'Bedroom 2', 'WIR' → 'Walk In Robe', 'Laundry room' → 'Laundry'); keep the report's own numbering " +
+    "('Bedroom 1' stays 'Bedroom 1', 'Master Bedroom' stays 'Master Bedroom'). " +
+    "If the inspector says the item applies across the whole house — 'check throughout', 'general note', 'throughout the home' — use 'Throughout', " +
+    "even if the note sits under one room's heading. Use '' only if the report never says where. Do NOT repeat the location inside `description`.\n";
+}
 
 // Rules both modes share, so a report imported either way reads the same on the
 // review screen.
-const COMMON_RULES =
+const commonRules = (locations: string[]) =>
   "• Capture each defect ONCE. Reports routinely list an item in a summary table AND again in a detailed or photo section — that is one defect, not two.\n" +
   "• One row per rectification item. If a paragraph describes three separate things to fix, that is three rows. If it describes one thing three ways, that is one row.\n" +
   "• `description` is the tradesman's instruction: concise, actionable, in the inspector's own technical wording. Strip leading item numbers and 'Observation:' / 'Defect:' / 'Note:' labels.\n" +
-  "• `location` is the room or area (" + LOCATION_HINT + "), or '' if the report never says. Do NOT repeat the location inside `description`.\n" +
+  locationRule(locations) +
   "• Exclude headings, scores/ratings, page numbers, the date, the address, names, signatures, disclaimers, methodology and general boilerplate.\n" +
   "• Do NOT invent, infer or summarise defects that are not explicitly stated. A report with 12 defects must return 12 rows, not 20.";
 
@@ -194,10 +257,12 @@ function deepSchema(trades: string[]) {
               enum: ["", ...trades],
               description: "Best-fit trade from the list, or '' if genuinely unclear. Only used when the app's own allocator can't place the item.",
             },
+            // No `minimum` here: structured outputs reject numeric bounds on
+            // integers ("property 'minimum' is not supported") and the whole
+            // deep read 400'd on it. The handler below drops anything < 1.
             page: {
               type: "integer",
-              minimum: 1,
-              description: "1-based PDF page where this defect's TEXT appears (not where its photo appears).",
+              description: "1-based PDF page where this defect's TEXT appears (not where its photo appears). The first page is 1.",
             },
             anchor: {
               type: "string",
@@ -215,7 +280,7 @@ function deepSchema(trades: string[]) {
   };
 }
 
-const DEEP_SYSTEM =
+const deepSystem = (locations: string[]) =>
   "You are reading a residential building inspection report — usually a private inspector's report on a new home, " +
   "written for a supervisor who has to hand each item to the right trade and get it fixed.\n\n" +
   "These reports have NO standard format. One is a numbered table. The next is grouped room by room. The next is grouped by " +
@@ -223,7 +288,7 @@ const DEEP_SYSTEM =
   "photos underneath each paragraph, the photos belonging to the text ABOVE them rather than being captioned individually.\n\n" +
   "So: read the whole report first and work out how THIS one is organised. Then re-express it as one flat list of defects, in " +
   "the order they appear. You are reformatting the report into the supervisor's worklist, not summarising it.\n\n" +
-  "Rules:\n" + COMMON_RULES + "\n" +
+  "Rules:\n" + commonRules(locations) + "\n" +
   "• When a defect sits under a room heading and its own line doesn't name the room, inherit the room from the heading. When the " +
   "report is grouped by defect TYPE instead, the heading gives you the trade and the line itself usually gives you the room.\n" +
   "• Photos are evidence, not defects. A photo cluster under a paragraph supports the defect(s) described in that paragraph — never " +
@@ -232,30 +297,57 @@ const DEEP_SYSTEM =
   "below it. Getting the anchor verbatim matters as much as getting the description right.\n" +
   "• The trade list is fixed — pick the closest fit or return ''. Never invent a trade name.";
 
-async function callAnthropic(apiKey: string, body: unknown) {
-  // Streamed: a deep read of a 40-page report with adaptive thinking can run for
-  // minutes, and a non-streaming request that long is refused outright by the
-  // API. Streaming also keeps the connection warm so the edge function isn't
-  // killed waiting on a silent socket.
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+type ReadResult = {
+  text: string;          // the concatenated TEXT blocks — the structured JSON
+  stopReason: string;    // end_turn | max_tokens | refusal | ...
+  model: string;         // the model that produced the final answer
+  fellBack: string;      // "" or "claude-opus-5-5 → <model>" if a fallback ran
+  inputTokens: number;
+  outputTokens: number;  // includes thinking
+};
+
+async function streamMessages(apiKey: string, body: Record<string, unknown>, withFallback: boolean): Promise<Response> {
+  return await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
+      ...(withFallback ? { "anthropic-beta": FALLBACK_BETA } : {}),
     },
-    body: JSON.stringify({ ...(body as Record<string, unknown>), stream: true }),
+    body: JSON.stringify({ ...body, ...(withFallback ? { fallbacks: "default" } : {}), stream: true }),
   });
+}
+
+async function callAnthropic(apiKey: string, body: Record<string, unknown>): Promise<ReadResult> {
+  // Streamed: a deep read of a 40-page report with adaptive thinking can run for
+  // minutes, and a non-streaming request that long is refused outright by the
+  // API. Streaming also keeps the connection warm so the edge function isn't
+  // killed waiting on a silent socket.
+  let resp = await streamMessages(apiKey, body, true);
+  if (resp.status === 400) {
+    // The fallback opt-in is a beta. If this account or region ever rejects
+    // it, read the report without the safety net rather than failing the
+    // import outright — a refusal is rare, an outage is not acceptable.
+    let msg = "";
+    try { msg = (await resp.clone().json())?.error?.message || ""; } catch (_) { /* ignore */ }
+    if (/fallback/i.test(msg)) {
+      console.warn("[extract-defects] fallbacks rejected, retrying without:", msg);
+      resp = await streamMessages(apiKey, body, false);
+    }
+  }
   if (!resp.ok || !resp.body) {
     let msg = "Anthropic API error";
     try { msg = (await resp.json())?.error?.message || msg; } catch (_) { /* keep default */ }
     throw Object.assign(new Error(msg), { status: resp.status });
   }
 
-  // Accumulate the assistant's TEXT blocks only. With adaptive thinking the
-  // stream also carries thinking_delta events; the structured JSON lives in the
-  // text block (grammars don't constrain thinking), so those are dropped.
-  let out = "";
+  // Accumulate the assistant's TEXT blocks only. Thinking blocks (always on
+  // with Opus 5.5) and `fallback` marker blocks are skipped; the structured
+  // JSON lives in the text blocks. After a MID-stream fallback the partial
+  // text stays and the fallback model continues it, so concatenating every
+  // text block still yields one document.
+  const r: ReadResult = { text: "", stopReason: "", model: "", fellBack: "", inputTokens: 0, outputTokens: 0 };
   let inText = false;
   let buf = "";
   const reader = resp.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -272,13 +364,26 @@ async function callAnthropic(apiKey: string, body: unknown) {
       if (!payload || payload === "[DONE]") continue;
       let ev: any;
       try { ev = JSON.parse(payload); } catch (_) { continue; }
-      if (ev.type === "content_block_start") inText = ev.content_block?.type === "text";
-      else if (ev.type === "content_block_stop") inText = false;
-      else if (ev.type === "content_block_delta" && inText && ev.delta?.type === "text_delta") out += ev.delta.text || "";
-      else if (ev.type === "error") throw new Error(ev.error?.message || "Anthropic stream error");
+      if (ev.type === "message_start") {
+        r.model = String(ev.message?.model || "");
+        r.inputTokens = Number(ev.message?.usage?.input_tokens) || 0;
+      } else if (ev.type === "content_block_start") {
+        const cb = ev.content_block || {};
+        inText = cb.type === "text";
+        if (cb.type === "fallback") {
+          const to = String(cb.to?.model || "");
+          r.fellBack = `${String(cb.from?.model || MODEL)} → ${to}`;
+          if (to) r.model = to;
+        }
+      } else if (ev.type === "content_block_stop") inText = false;
+      else if (ev.type === "content_block_delta" && inText && ev.delta?.type === "text_delta") r.text += ev.delta.text || "";
+      else if (ev.type === "message_delta") {
+        if (ev.delta?.stop_reason) r.stopReason = String(ev.delta.stop_reason);
+        if (ev.usage?.output_tokens != null) r.outputTokens = Number(ev.usage.output_tokens) || r.outputTokens;
+      } else if (ev.type === "error") throw new Error(ev.error?.message || "Anthropic stream error");
     }
   }
-  return out;
+  return r;
 }
 
 function str(v: unknown) { return String(v ?? "").trim(); }
@@ -304,6 +409,9 @@ Deno.serve(async (req: Request) => {
   const trades: string[] = Array.isArray(body?.trades) && body.trades.length
     ? body.trades.map(str).filter(Boolean).slice(0, 60)
     : FALLBACK_TRADES;
+  const locations: string[] = Array.isArray(body?.locations) && body.locations.length
+    ? body.locations.map(str).filter(Boolean).slice(0, 80)
+    : APP_LOCATIONS;
 
   if (!deep && !text.trim()) return json({ error: "Missing 'text'" }, 400);
   if (!deep && text.length > MAX_CHARS) return json({ error: "Report text too large" }, 413);
@@ -327,15 +435,16 @@ Deno.serve(async (req: Request) => {
     }, 429);
   }
 
-  const anthropicReq = deep
+  const effort = deep ? effortFor("EXTRACT_EFFORT_DEEP", "high") : effortFor("EXTRACT_EFFORT_FLAT", "medium");
+  const anthropicReq: Record<string, unknown> = deep
     ? {
-        model: "claude-opus-5",
-        max_tokens: 16000,
-        // Adaptive: working out how a report is organised is the hard part and
-        // deserves thinking; a tidy numbered report shouldn't pay for it. The
-        // model decides per report.
+        model: MODEL,
+        max_tokens: MAX_TOKENS_DEEP,
+        // Adaptive is the only mode on Opus 5.5; effort sets how hard it thinks.
+        // Working out how a report is organised is the hard part and deserves
+        // it; a tidy numbered report still finishes quickly.
         thinking: { type: "adaptive" },
-        system: DEEP_SYSTEM,
+        system: deepSystem(locations),
         messages: [{
           role: "user",
           content: [
@@ -343,31 +452,50 @@ Deno.serve(async (req: Request) => {
             { type: "text", text: "Read this inspection report end to end and return every item to be rectified." },
           ],
         }],
-        output_config: { format: { type: "json_schema", schema: deepSchema(trades) } },
+        output_config: { effort, format: { type: "json_schema", schema: deepSchema(trades) } },
       }
     : {
-        model: "claude-opus-5",
-        max_tokens: 8000,
-        thinking: { type: "disabled" },
+        model: MODEL,
+        max_tokens: MAX_TOKENS_FLAT,
+        thinking: { type: "adaptive" },
         system:
           "You read a residential building inspection report and extract every distinct defect/item noted for rectification. " +
           "For each, return a concise, actionable one-line description in the inspector's own wording, plus the room/area it is in.\n" +
-          "Rules:\n" + COMMON_RULES,
+          "Rules:\n" + commonRules(locations),
         messages: [{
           role: "user",
           content: "Extract the defects from this inspection report:\n\n" + text.slice(0, MAX_CHARS),
         }],
-        output_config: { format: { type: "json_schema", schema: flatSchema() } },
+        output_config: { effort, format: { type: "json_schema", schema: flatSchema() } },
       };
 
-  let raw = "";
+  let read: ReadResult;
+  const t0 = Date.now();
   try {
-    raw = await callAnthropic(apiKey, anthropicReq);
+    read = await callAnthropic(apiKey, anthropicReq);
   } catch (e: any) {
     const status = e?.status;
     if (status && status >= 400 && status < 500) return json({ error: e.message || "Anthropic API error", status }, 502);
     return json({ error: "Could not reach Anthropic: " + (e?.message || String(e)) }, 502);
   }
+  // One line per read in the function logs — model, effort, size, time and
+  // stop reason — so cost and quality can be checked against real reports.
+  console.log("[extract-defects]", JSON.stringify({
+    mode: deep ? "deep" : "flat", model: read.model, effort, stop: read.stopReason,
+    fellBack: read.fellBack || undefined, in: read.inputTokens, out: read.outputTokens,
+    ms: Date.now() - t0,
+  }));
+  if (read.stopReason === "refusal") {
+    // The whole chain declined (fallback included). Never hand back the
+    // partial: say so, and the app falls back to its own parser.
+    return json({ error: "The AI declined to read this report — falling back to the basic reader." }, 422);
+  }
+  if (read.stopReason === "max_tokens") {
+    // The JSON was cut off mid-list. A truncated list silently drops the
+    // defects at the end of the report, which is worse than an error.
+    return json({ error: "That report was too long to read in one pass." }, 413);
+  }
+  const raw = read.text;
 
   let defects: Record<string, unknown>[] = [];
   let layout = "";
@@ -394,5 +522,5 @@ Deno.serve(async (req: Request) => {
     }
   } catch (_) { /* fall through with empty list */ }
 
-  return json(deep ? { defects, layout, deep: true } : { defects });
+  return json(deep ? { defects, layout, deep: true, model: read.model } : { defects, model: read.model });
 });

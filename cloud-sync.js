@@ -787,12 +787,12 @@
     const dot = document.getElementById('cs-dot');
     const st = document.getElementById('cs-status');
     let { text, kind } = lastStatus;
-    // Only qualify the good state. "Offline" with photos waiting is already
-    // saying the right thing, and stacking two warnings helps nobody.
-    if (photosWaiting > 0 && text === 'Synced') {
-      text = `Synced · ${photosWaiting} photo${photosWaiting > 1 ? 's' : ''} to upload`;
-      kind = 'syncing';
-    }
+    // The status line stays a clean "Synced" when online, even with photos
+    // still in the outbox (Spiro 2026-11-18: a lingering "· N photo to upload"
+    // reads as a stuck, buggy app). The photos keep retrying and a failure is
+    // logged to the backend — nothing is lost, it is just not shown here.
+    // "Offline" is left exactly as it is: in a dead zone, saying so is honest
+    // and reassuring, not a glitch.
     if (dot) dot.className = 'dot' + (kind ? ' ' + kind : '');
     if (st) st.textContent = text;
   }
@@ -2162,12 +2162,22 @@
     _ppHideTimer = setTimeout(() => { el.style.display = 'none'; }, 1700);
   }
   function photoProgError(msg) {
+    // No alarming "⚠️ Upload failed" toast (Spiro 2026-11-18): the photo stays
+    // queued and keeps retrying, and the reason is logged to the backend — the
+    // supervisor should not see a glitch. We retire the progress chip QUIETLY,
+    // and never flip it to the ✓ "saved" state, which would be a lie. If other
+    // uploads are still in flight the chip keeps counting them down as normal.
+    void msg;
     _ppActive = Math.max(0, _ppActive - 1); _ppBatch = 0;
-    const el = _ppEl(); el.className = 'error';
-    el.querySelector('.cs-pp-ic').textContent = '⚠️';
-    el.querySelector('.cs-pp-text').textContent = msg || 'Upload failed';
+    if (_ppActive > 0) {
+      const el = _ppEl();
+      el.querySelector('.cs-pp-text').textContent = 'Uploading ' + _ppActive + ' photo' + (_ppActive > 1 ? 's' : '') + '…';
+      return;
+    }
+    const el = _ppEl();
+    el.className = '';
     clearTimeout(_ppHideTimer);
-    _ppHideTimer = setTimeout(() => { el.style.display = 'none'; }, 5000);
+    el.style.display = 'none';
   }
 
   // Returns true on success, false on any bail/failure (so the pending-photo
@@ -2226,6 +2236,12 @@
       if (await recoverOrphanToTempJob(legacyId, file, idKey)) return true;
       lastPhotoError = 'ORPHAN — not among the ' + defectHashCount
         + ' defects this login can read, nor in any temp job, so nothing can attach it';
+      logAppError('PHOTO_ORPHAN', 'warn',
+        'A photo has no defect to attach to (orphan) — kept on the phone.',
+        'legacyDefectId: ' + legacyId + '\nreadable defects: ' + defectHashCount
+          + '\nnot found in dm_defects by id or hash, nor in any temp job',
+        { legacyDefectId: legacyId, readableDefects: defectHashCount },
+        'photo:PHOTO_ORPHAN:' + legacyId);
       return false;
     }
     // Honest failure wording: only claim "No connection" when the device is
@@ -2268,6 +2284,23 @@
           }
         }
         lastPhotoError = msg;
+        // File it for the admin to triage; the supervisor just sees the calm
+        // "kept on your phone" line. One row per stuck photo (fingerprint keyed
+        // on the job/defect folders, not the filename, so retries coalesce).
+        const code = /^POLICY/.test(msg) ? 'PHOTO_POLICY'
+                   : /^ACCESS/.test(msg) ? 'PHOTO_ACCESS'
+                   : /row-level security|not authorized|permission denied/i.test(msg) ? 'PHOTO_REFUSED'
+                   : 'PHOTO_UPLOAD_FAILED';
+        const human = code === 'PHOTO_POLICY' ? 'A photo could not upload — the storage bucket refused it (job is readable, so a bucket policy gap).'
+                    : code === 'PHOTO_ACCESS' ? 'A photo could not upload — this login can no longer add photos to that job.'
+                    : code === 'PHOTO_REFUSED' ? 'A photo could not upload — the storage bucket refused the write.'
+                    : 'A photo could not upload — the storage upload failed.';
+        logAppError(code, 'error', human,
+          'bucket: ' + PHOTO_BUCKET + '\npath: ' + path + '\njob: ' + (jobUuid || '—')
+            + '\ndefect: ' + uuid + '\nserver said: ' + String(up.error.message || up.error),
+          { bucket: PHOTO_BUCKET, path, jobUuid: jobUuid || null, defectUuid: uuid,
+            raw: String(up.error.message || up.error).slice(0, 300) },
+          'photo:' + code + ':' + folder1 + '/' + uuid);
         if (!quiet) photoProgError(failMsg());
         return false;
       }
@@ -2301,6 +2334,73 @@
 
   // Can this login still see that job at all? Only asked after a refusal, and
   // remembered per job, because the answer is what turns one unreadable
+  // ---- Backend error telemetry (Spiro 2026-11-18) -----------------------
+  // "I don't want to expose [supervisors] to errors — log it into CH Tracker's
+  // hidden Defect Manager tab so I can resolve it in the backend and it sorts
+  // itself out without causing an issue for the person viewing the app."
+  //
+  // BEST-EFFORT AND SILENT. This must never throw, never block a sync and never
+  // surface anything. If the RPC, the network or the table isn't there, it is
+  // swallowed — a logger that can break the app is worse than no log. The
+  // server (migration 195) dedups by fingerprint; we also throttle the same
+  // fingerprint client-side so a photo retrying every sync isn't a round trip
+  // every sync.
+  const _loggedErrAt = new Map();                 // fingerprint -> last send (ms)
+  const ERR_RELOG_MS = 30 * 60 * 1000;            // at most ~twice an hour per problem
+  function _buildTag() {
+    try { const el = document.getElementById('app-ver'); if (el) return (el.textContent || '').trim(); } catch (e) {}
+    return '';
+  }
+  async function logAppError(code, severity, summary, detail, context, fingerprint) {
+    try {
+      const fp = String(fingerprint || ('defect-manager:' + code + ':' + summary)).slice(0, 300);
+      const now = Date.now();
+      if (now - (_loggedErrAt.get(fp) || 0) < ERR_RELOG_MS) return;
+      _loggedErrAt.set(fp, now);
+      const ctx = Object.assign({
+        build: _buildTag(),
+        ua: (typeof navigator !== 'undefined' && navigator.userAgent) || '',
+        online: (typeof navigator !== 'undefined') ? navigator.onLine : null,
+        at: new Date().toISOString(),
+      }, context || {});
+      await sb.rpc('log_app_error', {
+        p_app: 'defect-manager',
+        p_code: String(code || 'UNKNOWN'),
+        p_severity: severity || 'error',
+        p_summary: String(summary || '').slice(0, 300),
+        p_detail: detail != null ? String(detail) : null,
+        p_context: ctx,
+        p_fingerprint: fp,
+        p_reporter_email: userEmail || null,
+      });
+    } catch (e) { /* telemetry must never break the app */ }
+  }
+  // Expose for use elsewhere and for the global catchers below.
+  try { window.CloudLog = { error: (c, sev, sum, det, ctx, fp) => logAppError(c, sev, sum, det, ctx, fp) }; } catch (e) {}
+  // Uncaught script errors and promise rejections — the errors a user would
+  // otherwise hit with nothing recorded. Deduped on message+source so a
+  // repeating one is a single climbing row.
+  if (typeof window !== 'undefined' && !window.__ezErrHooked) {
+    window.__ezErrHooked = true;
+    window.addEventListener('error', (ev) => {
+      try {
+        const m = (ev && ev.message) || 'script error';
+        const src = (ev && (ev.filename || '')) + ':' + (ev && ev.lineno || '');
+        logAppError('JS_ERROR', 'error', 'App script error: ' + m,
+          m + '\n' + src + '\n' + ((ev && ev.error && ev.error.stack) || ''),
+          { source: src }, 'js:' + m + ':' + src);
+      } catch (e) {}
+    });
+    window.addEventListener('unhandledrejection', (ev) => {
+      try {
+        const r = ev && ev.reason;
+        const m = (r && (r.message || r)) || 'unhandled rejection';
+        logAppError('JS_REJECTION', 'error', 'Unhandled promise rejection: ' + String(m).slice(0, 160),
+          String((r && r.stack) || m), {}, 'jsrej:' + String(m).slice(0, 160));
+      } catch (e) {}
+    });
+  }
+
   // Postgres sentence into something a person can act on.
   const jobReach = {};
   async function jobReadable(jobUuid) {
@@ -2892,7 +2992,21 @@
     photosWaiting = n;
     paintStatus();
     let el = document.getElementById('cs-photo-pending');
-    if (!n) { if (el) el.style.display = 'none'; lastPhotoError = ''; return; }
+    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+    // DISGUISE ONLINE PENDING / FAILURE (Spiro 2026-11-18). On signal, a photo
+    // still in the outbox — whether mid-retry or being refused by the server —
+    // must NOT be surfaced: "waiting · tap to see why" and "uploading…" that
+    // never clears are what made a working retry loop look like a broken app.
+    // The blob stays in IndexedDB, the loop keeps retrying, and the failure is
+    // filed to the backend for admin triage. Nothing is lost; it is just not
+    // shown. The ONE case still shown is genuinely OFFLINE: supervisors work in
+    // dead zones and the "your photos are safe, they'll go up when you have
+    // signal" reassurance is honest, not a glitch — it was never the problem.
+    if (!n || !offline) {
+      if (el) el.style.display = 'none';
+      if (!n) lastPhotoError = '';
+      return;
+    }
     if (!el) {
       el = document.createElement('div');
       el.id = 'cs-photo-pending';
@@ -2902,15 +3016,7 @@
     }
     el.style.display = 'block';
     el.title = photoWaitingReason();
-    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
-    // THREE different situations were all being described as "waiting for
-    // signal", including the one where there is signal and the server is
-    // refusing. That is what made a working retry loop look like a stuck app.
-    el.textContent = offline
-      ? `📸 ${n} photo${n > 1 ? 's' : ''} saved on this phone · uploading when you have signal`
-      : (lastPhotoError
-          ? `📸 ${n} photo${n > 1 ? 's' : ''} waiting · tap to see why`
-          : `📸 ${n} photo${n > 1 ? 's' : ''} uploading…`);
+    el.textContent = `📸 ${n} photo${n > 1 ? 's' : ''} saved on this phone · uploading when you have signal`;
   }
   // Which jobs the stuck photos belong to, so the message can name them
   // instead of leaving the user to guess which of 56 jobs it means. Filled by
@@ -4821,11 +4927,20 @@
     await flushDefectOutbox();   // and any photos waiting on those defects
     uploadPendingPhotos().catch(() => {});
     if (ok) { lastPushError = ''; setBanner('✅ Uploaded ' + ok + ' change(s) from this phone', 'ok', 4000); }
-    // `if (ok)` alone left the "⬆️ Uploading N change(s)…" banner on screen
-    // for ever when EVERY commit failed — a total failure looked exactly like
-    // work in progress, which is how 36 stuck changes read as a busy app.
-    else setBanner('⚠️ ' + locals.length + ' change(s) could not be uploaded'
-      + (lastPushError ? ' — ' + lastPushError : '') + '. They are safe on this phone.', 'offline', 9000);
+    // When EVERY commit fails, DON'T surface it (Spiro 2026-11-18: the "N
+    // change(s) could not be uploaded" banner is exactly the kind of thing that
+    // reads as a broken app). The changes are already safe in the outbox and
+    // keep retrying; clear the "Uploading…" banner so the screen looks calm,
+    // and file the failure to the backend for admin triage instead. Nothing is
+    // lost — this only changes what the supervisor sees.
+    else {
+      hideBanner();
+      logAppError('PUSH_FAILED', 'error',
+        locals.length + ' change(s) could not be uploaded — kept on the phone, retrying.',
+        'changes held in outbox: ' + locals.length + '\nserver said: ' + (lastPushError || '(no detail)'),
+        { count: locals.length, raw: String(lastPushError || '').slice(0, 300) },
+        'push:' + String(lastPushError || 'failed').slice(0, 80));
+    }
     persistSyncState();
   }
 
