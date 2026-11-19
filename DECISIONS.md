@@ -2,6 +2,46 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-19 (f) — it was forgetting finished work — build `2026-11-19k`
+
+Spiro: *"it is set up to only learn on existing report or COMPLETE history,
+because I find that it forgets over time."*
+
+**It was forgetting, and the cause was the corpus, not the model.** Two separate
+things learn here, and only one of them had the problem:
+
+- **Phrase → TRADE** (`dm_trade_learning`) is server-side, append-only and
+  pulled with `selectAllRows`, so it is paged past the 1000-row cap. It does
+  not forget. Its only decay is deliberate: a correction decays the trade it
+  replaced (mig 099).
+- **Phrase → CONTRACTOR** (the 🧠 "learned ×N" suggestions) was built in
+  `buildBpiLearning()` from `db.data.defects` — **the defects on jobs the phone
+  can SEE**. The job list hides completed jobs, and a defect whose job is not
+  visible is dropped at the merge. So the day a job was marked complete, every
+  example it had taught left the phone with it, and the counts went DOWN as
+  work finished. The comment above that loop said "includes completed", which
+  was true of a completed DEFECT and false of a completed JOB — the distinction
+  that made this invisible for months.
+
+The rows were never missing: `dm_defects` is pulled in full and then filtered
+by visibility. So cloud-sync now keeps the text and the contractor of every
+defect this login can read BEFORE that filter (`CloudLearning.historyCorpus`),
+and the model is built from that. No extra query, no extra network.
+
+- **It is not part of `db.data`.** Nothing on screen may come from a job the
+  supervisor cannot open: the corpus is tokens and tallies, never a row anyone
+  can see. The existing policy still holds on top of it — global history is
+  CHIPS ONLY, never auto-filled, because a sub learned from another job may be
+  another region's contractor.
+- **`ensureBpiLearning` now rebuilds when either source changes.** Keyed on the
+  local count alone it would never have noticed the corpus landing, which
+  arrives with the pull, long after the first render.
+- **The local list stays as the fallback** — local-only mode, and the first
+  render of a cold boot before the pull lands.
+- `tests/assignmode.mjs` teaches it from a corpus with NOTHING matching on the
+  phone, and checks the control first: no corpus, no suggestion. Otherwise
+  "it suggests" proves nothing about where the knowledge came from.
+
 ## 2026-11-19 (e) — what the import SUGGESTS — build `2026-11-19j`
 
 Five things Spiro hit in one review session, from his screenshots.

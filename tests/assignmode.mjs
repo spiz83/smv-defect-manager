@@ -294,6 +294,54 @@ const matched = (text, fn) => page.evaluate(([t, f]) => {
   check('…and the lot settles it', r.street === 'Lot 202, 6 Kobi St', JSON.stringify(r));
 }
 
+// ── 10. IT MUST NOT FORGET WHEN A JOB IS COMPLETED ───────────────────────
+// Spiro 2026-11-19: "I find that it forgets over time." It did. The job list
+// hides completed jobs, and a defect whose job is not visible is dropped at
+// the merge — so everything a job had taught left the phone the day it was
+// marked complete. cloud-sync now keeps text+contractor for every readable
+// defect BEFORE that filter, and the model is built from that.
+//
+// Here, NOTHING about caulking is on the phone: db.data.defects is empty of
+// it. The teaching lives only in the corpus, as it would for a finished job.
+const CAULK_HISTORY = Array.from({ length: 6 }, () => ([
+  { t: 'Re-silicone the bath hob to the tiles', c: 20 },
+  { t: 'Silicone missing to shower hob junction', c: 20 },
+  { t: 'Re-seal silicone around the vanity splashback', c: 20 },
+])).flat();
+
+{
+  // Control FIRST, so "it suggests" is known to be the corpus and nothing else.
+  const before = await page.evaluate(() => {
+    window.CloudLearning = { suggestTrade: () => null, minExamples: () => 2, historyCorpus: () => [] };
+    try { _review = null; } catch (e) {}
+    state.assignByTrade = false;
+    startReportReview([{ description: 'Re-silicone the bath hob to the tiles', location: 'Bathroom', page: 1, itemNo: 1 }], 'BPI.pdf', 'BPI', 1, null);
+    return { value: (document.getElementById('rv-contractor-input') || {}).value,
+             chips: Array.from(document.querySelectorAll('.rv-chip b')).map(b => b.textContent) };
+  });
+  check('with nothing learned, a caulking defect suggests no sub from history',
+    !/Seal Tight/.test(before.value) && !before.chips.includes('Seal Tight Caulking'),
+    JSON.stringify(before));
+
+  const after = await page.evaluate((hist) => {
+    db.data.contractors.push({ id: 20, name: 'Seal Tight Caulking', trades: 'Caulker', isActive: true });
+    window.CloudLearning = { suggestTrade: () => null, minExamples: () => 2, historyCorpus: () => hist };
+    try { _review = null; } catch (e) {}
+    state.assignByTrade = false;
+    startReportReview([{ description: 'Re-silicone the bath hob to the tiles', location: 'Bathroom', page: 1, itemNo: 1 }], 'BPI.pdf', 'BPI', 1, null);
+    return { chips: Array.from(document.querySelectorAll('.rv-chip b')).map(b => b.textContent),
+             hints: Array.from(document.querySelectorAll('.rv-chip i')).map(b => b.textContent),
+             localDefects: (db.data.defects || []).length };
+  }, CAULK_HISTORY);
+  check('a completed job still teaches: the sub comes up from history',
+    after.chips.includes('Seal Tight Caulking'), JSON.stringify(after).slice(0, 200));
+  check('…and it learned it from the corpus, not from anything on the phone',
+    after.localDefects === 0 || !(await page.evaluate(() => (db.data.defects || []).some(d => /silicone/i.test(d.description || '')))),
+    'local defects: ' + after.localDefects);
+  check('…shown as learned, never auto-filled (global history is chips only)',
+    after.hints.some(h => /learned/i.test(h)), JSON.stringify(after.hints));
+}
+
 check('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
 await browser.close();
 server.close();
