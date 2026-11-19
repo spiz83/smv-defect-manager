@@ -2,6 +2,51 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-19 — a report dragged straight out of an email — build `2026-11-19a`
+
+Spiro: *"In the tap to choose PDF box I also want the ability that I can drag
+and drop straight from an email attachment into that box and it can read it,
+saves me having to save onto my computer."*
+
+**The one-line version of this feature does not do that job**, and that is the
+decision worth recording. `e.dataTransfer.files[0]` handles a file dragged out of a
+folder and does **nothing at all** with an attachment dragged out of the
+Outlook desktop app: that is a VIRTUAL file, there is no file on disk, and
+`files` is empty. The drop looks like it was ignored — the worst outcome,
+because it reads as a feature that shipped broken. Chromium hands those bytes
+over through `items[i].webkitGetAsEntry()`, so all three accessors are tried
+(`getAsFile` → `webkitGetAsEntry` → `getAsFileSystemHandle`), and a File with
+no bytes counts as a miss rather than a result.
+
+- **Everything is read synchronously.** A DataTransfer is neutered the moment
+  the drop handler returns, so `impCollectDrop()` grabs the entries and
+  `impResolveDrop()` awaits them after. One `await` before the read and there
+  is nothing left to read. That is why this is two functions and not one tidy
+  async loop.
+- **Every path out of a drop ends in a file or a sentence.** Silence is the bug
+  being fixed, so a folder, a webmail link (`text/uri-list`, which is all a
+  browser-based mail client gives — no bytes), a plain-text drag, an empty
+  attachment and a `.docx` each get told what happened and what to do instead.
+- **The whole card takes the drop, not just the dashed box.** Someone dragging
+  an attachment is aiming at a target under their own cursor; a near-miss that
+  does nothing is indistinguishable from the feature not working. The box is
+  what lights up, so the forgiving target still looks aimed.
+- **A miss anywhere else is swallowed.** The browser's default for a dropped
+  PDF is to navigate to it — replacing the app, mid-job. A window-level
+  handler now preventDefaults file drops that no zone claimed.
+- **The plan attach zone was rewritten onto the same reader.** It had its own
+  `dataTransfer.files[0]` line and would have failed on an Outlook attachment
+  in exactly the same way. A plan arrives by email as often as a report does,
+  and two readers of one gesture is the drift this file keeps recording.
+  `tests/dropfile.mjs` reads the source and fails if a second one appears.
+- **Trade-off accepted:** a `.docx` is refused by name rather than read.
+  `extractReportText()` falls back to `file.text()` for anything that is not a
+  PDF, so the alternative is extracting a page of mojibake and calling it
+  defects.
+- **Wording is per device**, through `@media (hover:hover) and (pointer:fine)`:
+  a phone cannot drag a file and a desktop has no "tap", so the box says one
+  thing to each rather than the average of both.
+
 ## 2026-11-18 — the masthead holds still — build `2026-11-18l`
 
 Spiro: *"When I press down on the screen, the whole thing goes down this needs

@@ -11205,8 +11205,15 @@
               #imp-head button{background:none;border:none;font-size:22px;cursor:pointer;color:inherit;}
               #imp-body{overflow:auto;padding:18px;}
               .imp-drop{border:2px dashed var(--border-color,#ccc);border-radius:14px;
-                padding:26px;text-align:center;cursor:pointer;}
+                padding:26px;text-align:center;cursor:pointer;transition:border-color .12s,background-color .12s;}
               .imp-drop:hover{border-color:var(--blue,#2563eb);}
+              /* A phone cannot drag a file and a desktop has no "tap", so the
+                 box says one thing to each rather than the average of both. */
+              .imp-drag{display:none;}
+              @media (hover:hover) and (pointer:fine){
+                .imp-tap{display:none;}
+                .imp-drag{display:inline;}
+              }
               .imp-or{text-align:center;color:var(--text-secondary,#888);margin:14px 0 6px;font-size:13px;}
               #imp-paste{width:100%;min-height:110px;box-sizing:border-box;padding:12px;
                 border:1px solid var(--border-color,#ccc);border-radius:12px;font:inherit;}
@@ -11485,6 +11492,141 @@
         }
 
         // ---- Step 1: choose a file or paste text ----
+        // ===================================================================
+        //  A DROPPED FILE — INCLUDING THE ONES THAT ARE NOT ON THE DISK
+        //
+        //  Spiro 2026-11-19: "I also want the ability that I can drag and drop
+        //  straight from an email attachment into that box and it can read it,
+        //  saves me having to save onto my computer."
+        //
+        //  The one-line version of this feature does not do that job. An
+        //  attachment dragged out of the Outlook desktop app is a VIRTUAL
+        //  file: there is no file on disk, so `dataTransfer.files` is EMPTY
+        //  and `e.dataTransfer.files[0]` is undefined — the drop appears to do
+        //  nothing at all, which is the worst possible answer. The bytes come
+        //  through `items[i].webkitGetAsEntry()`, which Chromium grew for
+        //  exactly this case, so all three accessors are tried.
+        //
+        //  EVERY read of the DataTransfer happens SYNCHRONOUSLY. It is
+        //  neutered the moment the drop handler returns, so the entries are
+        //  collected first and awaited afterwards; one `await` before the read
+        //  and there is nothing left to read. That is why this is split into a
+        //  collect and a resolve rather than written as one tidy async loop.
+        // ===================================================================
+        function impEntryToFile(entry) {
+            return new Promise((resolve) => {
+                try { entry.file((f) => resolve(f || null), () => resolve(null)); }
+                catch (e) { resolve(null); }
+            });
+        }
+        // SYNCHRONOUS. Returns handles to chase, not files.
+        function impCollectDrop(dt) {
+            const picks = [];
+            let folder = false;
+            const items = dt && dt.items ? Array.from(dt.items) : [];
+            items.forEach((it) => {
+                if (it && it.kind && it.kind !== 'file') return;
+                const p = { file: null, entry: null, handle: null };
+                try { p.file = it.getAsFile ? it.getAsFile() : null; } catch (e) {}
+                try { p.entry = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null; } catch (e) {}
+                try { p.handle = it.getAsFileSystemHandle ? it.getAsFileSystemHandle() : null; } catch (e) {}
+                if (p.entry && p.entry.isDirectory) { folder = true; return; }
+                if (p.file || p.entry || p.handle) picks.push(p);
+            });
+            // Plain file drags from a file manager: `files` is populated and the
+            // items above have already covered it. Kept as the fallback for a
+            // browser that gives one and not the other.
+            const plain = dt && dt.files ? Array.from(dt.files) : [];
+            const types = dt && dt.types ? Array.from(dt.types) : [];
+            return { picks, plain, types, folder };
+        }
+        async function impResolveDrop(got) {
+            const out = [];
+            for (const p of got.picks) {
+                // A real file wins when it has bytes. A virtual file can come
+                // back from getAsFile() as null OR as an empty File, so size is
+                // the test, not existence.
+                let f = (p.file && p.file.size > 0) ? p.file : null;
+                if (!f && p.entry && p.entry.isFile) f = await impEntryToFile(p.entry);
+                if ((!f || !f.size) && p.handle) {
+                    try {
+                        const h = await p.handle;
+                        if (h && h.getFile) { const g = await h.getFile(); if (g && g.size) f = g; }
+                    } catch (e) { /* not a real filesystem handle — fine */ }
+                }
+                if (!f) f = p.file || null;
+                if (f) out.push(f);
+            }
+            if (!out.length) got.plain.forEach((f) => out.push(f));
+            return out.filter((f) => f);
+        }
+        // What to SAY when a drop produced nothing. Silence is the bug being
+        // fixed here, so every path out of a drop ends in either a file or a
+        // sentence that names the actual cause.
+        function impDropHint(got) {
+            if (got.folder) return 'That is a folder — drag the report itself in.';
+            if (got.types.some((t) => /uri-list|downloadurl|^text\/html$/i.test(t)))
+                return 'That came from a web page, not a file — webmail hands over a link, not the attachment. Open it in the Outlook app and drag it from there, or download it first.';
+            if (got.types.some((t) => /^text\/plain$/i.test(t)))
+                return 'That dropped as text, not a file. Paste it into the box below instead.';
+            return 'Nothing came through with that drop. If it was an email attachment, try the Outlook app rather than Outlook in a browser — or save it and choose it with the button.';
+        }
+        // `el` is the forgiving target (the whole card); `lit` is the box that
+        // lights up, so a near-miss still looks aimed.
+        function impWireDrop(el, lit, onFiles) {
+            if (!el) return;
+            // Lit while something is dragged anywhere over the TARGET, not just
+            // over the box: the drop is accepted on the whole card and the
+            // highlight has to say where it will land, or a forgiving target
+            // looks like a dead one.
+            // Inline, not a class. The plan zone carries its border in a style
+            // attribute, which no class can beat, and a highlight that works on
+            // one zone and silently not the other is how two drop zones drift
+            // apart. Removing the properties restores whatever CSS said.
+            const on = () => {
+                if (!lit) return;
+                lit.style.borderColor = 'var(--blue,#2563eb)';
+                lit.style.borderStyle = 'solid';
+                lit.style.backgroundColor = 'var(--bg-secondary,#f2f2f7)';
+            };
+            const off = () => {
+                if (!lit) return;
+                ['border-color', 'border-style', 'background-color']
+                    .forEach((k) => lit.style.removeProperty(k));
+            };
+            ['dragenter', 'dragover'].forEach((ev) => el.addEventListener(ev, (e) => {
+                e.preventDefault(); e.stopPropagation();
+                // Without this some sources draw a "no entry" cursor over a
+                // target that would in fact have taken the file.
+                try { if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } catch (x) {}
+                on();
+            }));
+            ['dragleave', 'dragend'].forEach((ev) => el.addEventListener(ev, (e) => {
+                // dragleave fires for every child boundary crossed. Only the one
+                // that leaves the CARD counts, or the box flickers all the way in.
+                if (ev === 'dragleave' && e.relatedTarget && el.contains(e.relatedTarget)) return;
+                off();
+            }));
+            el.addEventListener('drop', (e) => {
+                e.preventDefault(); e.stopPropagation(); off();
+                const got = impCollectDrop(e.dataTransfer);     // sync, before any await
+                impResolveDrop(got).then((files) => {
+                    if (files.length) onFiles(files);
+                    else onFiles([], impDropHint(got));
+                }).catch(() => onFiles([], impDropHint(got)));
+            });
+        }
+        // A PDF dropped anywhere ELSE replaces the whole app with the PDF — the
+        // browser's default, and on a near-miss it loses whatever was on screen.
+        // The zones above stop propagation, so this only ever sees the misses,
+        // and all it does is swallow them.
+        ['dragover', 'drop'].forEach((ev) => window.addEventListener(ev, (e) => {
+            const dt = e.dataTransfer;
+            const types = dt && dt.types ? Array.from(dt.types) : [];
+            if (!types.length || !types.some((t) => /^Files$/i.test(t) || /uri-list|downloadurl/i.test(t))) return;
+            e.preventDefault();
+        }));
+
         function openReportImport() {
             const aiOn = window.CloudAI ? 'checked' : '';
             impOverlay(`
@@ -11499,8 +11641,14 @@
                     </div>
                     <div class="imp-drop" id="imp-drop">
                         <div style="font-size:40px">📎</div>
-                        <div style="font-weight:600;margin-top:6px">Tap to choose a PDF or text file</div>
-                        <div style="font-size:13px;color:var(--text-secondary,#888);margin-top:4px">Your inspection report</div>
+                        <div style="font-weight:600;margin-top:6px">
+                            <span class="imp-tap">Tap to choose a PDF or text file</span>
+                            <span class="imp-drag">Drag the report in, or click to choose</span>
+                        </div>
+                        <div style="font-size:13px;color:var(--text-secondary,#888);margin-top:4px">
+                            <span class="imp-tap">Your inspection report</span>
+                            <span class="imp-drag">Straight from an email attachment — no need to save it first</span>
+                        </div>
                         <input type="file" id="imp-file" accept=".pdf,.txt,text/plain,application/pdf" style="display:none">
                     </div>
                     <div class="imp-or">— or paste the report text —</div>
@@ -11527,9 +11675,57 @@
             };
             typeSel.onchange = syncDeep;
             syncDeep();
-            fileInput.onchange = async (e) => {
+            fileInput.onchange = (e) => {
                 const f = e.target.files && e.target.files[0];
+                if (f) impHandleReportFile(f);
+            };
+            // THE WHOLE CARD TAKES THE DROP, not just the dashed box. Someone
+            // dragging an attachment out of Outlook is aiming at a target they
+            // cannot see under their own cursor, and a near-miss that does
+            // nothing reads as "it doesn't work" (Spiro 2026-11-19). The box is
+            // what lights up, so the forgiving target still looks aimed.
+            impWireDrop(document.getElementById('imp-card'),
+                        document.getElementById('imp-drop'),
+                        (files, why) => {
+                            if (!files.length) { showToast(why, true); return; }
+                            if (files.length > 1) showToast('One report at a time — taking ' + files[0].name);
+                            impHandleReportFile(files[0]);
+                        });
+            document.getElementById('imp-extract').onclick = async () => {
+                const text = document.getElementById('imp-paste').value;
+                if (!text.trim()) { showToast('Paste some text or choose a file', true); return; }
+                const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
+                const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
+                if (reportType === 'BPI') {
+                    const items = parseBpiDefects(text);
+                    if (!items.length) { impOverlayMessage('No defects were found in that text.'); return; }
+                    startReportReview(items, 'Pasted report', reportType, matchAddressFromText(text));
+                    return;
+                }
+                await extractAndReview(text, 'Pasted report', reportType, useAI);
+            };
+        }
+
+        // The file, however it arrived — picked, or dragged out of an email.
+        // ONE path, so the drop cannot quietly diverge from the button.
+        async function impHandleReportFile(f) {
                 if (!f) return;
+                // The picker's `accept` filters nothing on a drop, and
+                // extractReportText falls back to file.text() for anything that
+                // is not a PDF — so a .docx dragged in would be read as binary
+                // and "extract" a page of mojibake. Name it instead.
+                const nm = (f.name || '').toLowerCase();
+                const readable = nm.endsWith('.pdf') || f.type === 'application/pdf'
+                    || nm.endsWith('.txt') || nm.endsWith('.md') || nm.endsWith('.csv')
+                    || /^text\//.test(f.type || '');
+                if (!readable) {
+                    showToast((f.name || 'That file') + ' is not a PDF or text file — only those can be read.', true);
+                    return;
+                }
+                if (!f.size) {
+                    showToast((f.name || 'That file') + ' came through empty. Try saving it out of the email first.', true);
+                    return;
+                }
                 // Every toggle has to be read BEFORE impSetBusy — it replaces the
                 // dialog body, so #imp-ai / #imp-deep are gone by the time the
                 // import routes.
@@ -11559,20 +11755,6 @@
                     console.error(err);
                     impOverlayMessage('Could not read that file: ' + (err.message || err));
                 }
-            };
-            document.getElementById('imp-extract').onclick = async () => {
-                const text = document.getElementById('imp-paste').value;
-                if (!text.trim()) { showToast('Paste some text or choose a file', true); return; }
-                const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
-                const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
-                if (reportType === 'BPI') {
-                    const items = parseBpiDefects(text);
-                    if (!items.length) { impOverlayMessage('No defects were found in that text.'); return; }
-                    startReportReview(items, 'Pasted report', reportType, matchAddressFromText(text));
-                    return;
-                }
-                await extractAndReview(text, 'Pasted report', reportType, useAI);
-            };
         }
 
         // ===========================================================================
@@ -13492,16 +13674,15 @@
             drop.appendChild(input);
             input.onchange = () => { if (input.files && input.files[0]) _planDoUpload(addressId, input.files[0]); };
             drop.onclick = () => input.click();
-            // Drag-and-drop for a desktop; the picker is the whole story on a phone.
-            ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, (e) => {
-                e.preventDefault(); drop.style.borderColor = 'var(--blue,#2563eb)';
-            }));
-            ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, (e) => {
-                e.preventDefault(); drop.style.borderColor = 'var(--border-color,#ccc)';
-            }));
-            drop.addEventListener('drop', (e) => {
-                const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-                if (f) _planDoUpload(addressId, f);
+            // Drag-and-drop for a desktop; the picker is the whole story on a
+            // phone. Through impWireDrop, which is the ONLY reader of a dropped
+            // file in the app: this zone used to take dataTransfer.files[0] on
+            // its own and would have done nothing at all with an attachment
+            // dragged out of Outlook, which has no file on disk to offer. A
+            // plan arrives by email as often as a report does.
+            impWireDrop(drop, drop, (files, why) => {
+                if (!files.length) { showToast(why, true); return; }
+                _planDoUpload(addressId, files[0]);
             });
         }
         async function _planDoUpload(addressId, file) {
@@ -16452,7 +16633,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-18m';
+        const APP_VERSION = '2026-11-19a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16550,7 +16731,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-18m"></script>
+    <script src="cloud-sync.js?v=2026-11-19a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
