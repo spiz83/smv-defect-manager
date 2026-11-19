@@ -13,6 +13,25 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## 📎 A dropped file may not be a file — build `2026-11-19a`
+
+Drag-and-drop into Add Report, so a report can come straight out of an email
+(Spiro 2026-11-19). One thing to know before touching any drop zone:
+
+- **`dataTransfer.files` is EMPTY for an Outlook attachment.** It is a virtual
+  file with nothing on disk; the bytes come through
+  `items[i].webkitGetAsEntry()`. `impCollectDrop()` / `impResolveDrop()` in
+  index.html are the ONLY reader of a dropped file in the app, and
+  `tests/dropfile.mjs` reads the source and fails if a second one appears.
+  Both drop zones (Add Report, plan attach) go through `impWireDrop()`.
+- **Read the DataTransfer synchronously.** It is neutered when the handler
+  returns. Collect first, await after.
+- **A drop that yields nothing must say why** — folder, webmail link, plain
+  text, empty file, wrong type. Silence is the bug this replaced.
+- A file dropped anywhere the zones do not claim is swallowed by a
+  window-level handler, because the browser's default is to navigate to the
+  PDF and replace the app with it.
+
 ## 📸 OPEN — one photo the bucket refuses, and a wrong theory to drop
 
 **Lot 5, 22 Skylark Rd. The app says `POLICY` — the job reads fine, the photo
