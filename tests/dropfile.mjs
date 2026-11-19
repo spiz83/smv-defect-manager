@@ -143,6 +143,38 @@ check('the Add Report dialog opens', await openDialog('Private Inspection'), '')
   check('…and the button says what it will now do', /Read this report/i.test(st.button), st.button);
 }
 
+// ── 1b. The picker reads straight away; the drop waits ───────────────────
+// The two paths behave DIFFERENTLY on purpose, and that is worth pinning down
+// rather than leaving to luck. Picking a file is the last thing you do, after
+// setting Report type, so there is nothing left to wait for (Spiro 2026-11-19:
+// "leave the picker how it was before"). A drop is the first thing you do, so
+// it holds the file until Extract is pressed. Both halves are checked here:
+// if either drifts into the other's behaviour, one of these fails.
+await openDialog('Private Inspection');
+{
+  // Something is already waiting from a drop …
+  await drop(TXT, 'Dropped.txt', 'text/plain', {});
+  const before = await staged();
+  await page.setInputFiles('#imp-file', join(__here, 'artifacts', 'private-report.pdf'));
+  const r = await page.evaluate(async () => {
+    for (let i = 0; i < 80; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      let rv = null;
+      try { rv = (typeof _review !== 'undefined' && _review) ? _review : null; } catch (e) {}
+      const card = (document.getElementById('imp-card') || {}).textContent || '';
+      if (rv) return { n: rv.items.length, name: rv.reportName,
+                       stillStaged: typeof _impStaged !== 'undefined' && !!_impStaged };
+      if (/No defects were found|Could not read/i.test(card)) return { msg: card.slice(0, 80) };
+    }
+    return { timeout: true };
+  });
+  check('a file chosen with the button is read without pressing Extract',
+    r.n > 0 && /private-report\.pdf/i.test(r.name || ''), JSON.stringify(r).slice(0, 140));
+  check('…and it clears whatever a drop had left waiting',
+    before.file && before.file.name === 'Dropped.txt' && r.stillStaged === false,
+    'was holding ' + JSON.stringify(before.file) + ', still staged after: ' + r.stillStaged);
+}
+
 // ── 2. THE ONE THAT MATTERS: an Outlook attachment ────────────────────────
 // No file on disk: `files` is empty, getAsFile() gives nothing, and the bytes
 // are only reachable through the entry. Written with `files` genuinely empty,

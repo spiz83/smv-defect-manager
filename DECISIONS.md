@@ -2,6 +2,35 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-19 (c) — the picker keeps its old rhythm — build `2026-11-19h`
+
+Spiro, within minutes of (b): *"Leave the picker how it was before — I just
+tried it and it no longer works well."*
+
+(b) made the picker stage its file like the drop does, on the reasoning that
+one dialog should have one rhythm. Wrong call, and he is right. **The two paths
+are not symmetrical, so making them identical cost the good one its speed:**
+
+- **Picking a file is the LAST thing you do.** You open the dialog, set Report
+  type, then click the box — the settings are already right, so there is
+  nothing to wait for and the extra press is pure friction on a path that
+  worked.
+- **A drop is the FIRST thing you do.** That is the path where the settings
+  have not been touched yet, and the only one that needs to hold the file.
+
+So the picker reads immediately, as it always did, and the drop still waits for
+*Read this report →*. The difference is deliberate and
+`tests/dropfile.mjs` now pins **both** halves, so neither can drift into the
+other's behaviour unnoticed. A file chosen with the button also clears anything
+a drop left waiting, so the dialog is never holding one file while reading
+another.
+
+**The residual, stated plainly:** the picker keeps the settings race it always
+had — choose a file before setting Report type and it reads with whatever is
+showing. That has been the behaviour since the dialog existed and is not what
+he hit; the drop is where the race actually bit, and the drop is where it is
+fixed. `deep.mjs`'s eight pick-a-file sites are back to choose-and-go.
+
 ## 2026-11-19 (b) — the dropped file waits for the settings — build `2026-11-19g`
 
 Spiro, on the drag-and-drop shipped hours earlier: *"it just gives me garbage
