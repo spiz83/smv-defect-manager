@@ -12453,6 +12453,17 @@
             for (const r of rows) {
                 const act = String(r.activity || '').toLowerCase();
                 if (!act || !kws.some(k => kwMatch(act, k))) continue;
+                // "Supervisor Paint MarkUp" is the SUPERVISOR walking the house
+                // and marking paint up — not the painter painting it. It carries
+                // the trade's keyword, so it matched, and it put Ian Quayle
+                // against every paint defect on the job (Spiro 2026-11-19: "when
+                // it is a paint item it needs to bring up PAINTER not
+                // supervisor"). The activity names who was called; an activity
+                // that names the supervisor is not evidence about the trade.
+                // NOTE: 'Supervisor' is itself a legitimate trade in this app
+                // (see the defect wordings) — this excludes the ACTIVITY, never
+                // the trade or the person as something you can choose.
+                if (/\bsupervisors?\b/i.test(act)) continue;
                 if (ex && ex.some(k => kwMatch(act, k))) continue;   // "Roof Tiles" ≠ Tiler
                 const n = normCompanyName(r.supplier_name || '');
                 if (!n || n === 'supervisor to select') continue;
@@ -14518,6 +14529,15 @@
             { re: /\bfloat(ing)?\b[^.]{0,40}\bceiling|\bre-?float\b|\bfloat coat\b/, trade: 'Plasterer' },
             { re: /\bconduit\b/, trade: 'Electrician' },
             { re: /\bshower (rail|rose|head|arm)\b|\b(rail|bracket)\b[^.]{0,30}\bshower\b/, trade: 'Plumber' },
+            // A LEAKING shower screen is a tube of silicone, not a new screen
+            // (Spiro 2026-11-19: "shower screen leaking — suggested trade needs
+            // to be Caulker"). The bottom corner leaks because the seal to the
+            // hob has failed, so the screen installer is the expensive answer to
+            // a caulking job. Must sit ABOVE the Shower Screen rule — first
+            // match wins — and stays narrow: a cracked, scratched or misaligned
+            // screen is still the installer's, and only the leak/seal words
+            // divert it.
+            { re: /\bshower screens?\b[^.]{0,80}\b(leak\w*|water[^.]{0,20}escap\w*|silicone|caulk\w*|not sealed|unsealed|re-?seal\w*|needs? sealing)\b|\b(leak\w*|water[^.]{0,20}escap\w*|silicone|caulk\w*|not sealed|unsealed)\b[^.]{0,80}\bshower screens?\b/, trade: 'Caulker' },
             // Shower screens / mirrors / robe doors — must beat Carpenter's 'door'.
             { re: /\bshower screen|robe door|wardrobe door|sliding robe\b/, trade: 'Shower Screen' },
             { re: /\b(grout|tile|tiling)\b[^.]{0,50}\bshower\b|\bshower\b[^.]{0,50}\b(grout|tiles?|tiling)\b/, trade: 'Tiler' },
@@ -14538,7 +14558,16 @@
             { re: /\b(door (handle|lock|hinge|latch|catch|stop)|striker plate|deadlock)\b/, trade: 'Carpenter' },
             { re: /\b(light|down ?light|power ?point|gpo|switch|switchboard|exhaust fan|smoke alarm|globe|wiring)\b/, trade: 'Electrician' },
             { re: /\b(sewer|storm ?water|silt pit|drainage pit|agi (pipe|drain))\b/, trade: 'Drainer' },
-            { re: /\b(down ?pipe|gutter|fascia)\b/, trade: 'Roof Plumber' },
+            // DOWNPIPE IS THE PLUMBER'S, with the roof plumber as the second
+            // pick (Spiro 2026-11-19: "Downpipe primary suggested trade should
+            // be Plumber and Secondary Roof Plumber — have both in the
+            // selections"). The defect-wording bank has said Plumber for
+            // downpipe work for months ("Install downpipe brackets correctly",
+            // "Punch in downpipe pins"), so this rule was the odd one out.
+            // `alt` is the runner-up: it rides into the chips as a second
+            // one-tap option rather than being argued about in a rule.
+            { re: /\bdown ?pipes?\b/, trade: 'Plumber', alt: 'Roof Plumber' },
+            { re: /\b(gutter|fascia)\b/, trade: 'Roof Plumber' },
             { re: /\b(tap|mixer|toilet|cistern|basin waste|water hammer)\b/, trade: 'Plumber' },
         ];
         // The trade for a defect line: shared learning (confident) wins, then a
@@ -14557,7 +14586,7 @@
                 if (learned && learned.trade) return { trade: learned.trade, source: 'learned', n: learned.n };
             }
             const low = String(text || '').toLowerCase();
-            for (const o of CURATED_TRADE_OVERRIDES) if (o.re.test(low)) return { trade: o.trade, source: 'rule' };
+            for (const o of CURATED_TRADE_OVERRIDES) if (o.re.test(low)) return { trade: o.trade, source: 'rule', alt: o.alt || '' };
             // Admin-editable rules (bpi_trade_rules) — pulled each sync, so a rule
             // added in CH Tracker's Admin → BPI AI applies here without a deploy.
             const rules = (window.CloudLearning && window.CloudLearning.dbRules) ? window.CloudLearning.dbRules() : [];
@@ -15004,45 +15033,80 @@
         // "(1st_Inspection)_1403_20_Kobi_Street_Tarneit.pdf"), which survives even
         // when pdf.js fragments the extracted text.
         let _amftDbg = '';   // TEMP diagnostic, shown in the review meta line
+        // WHICH JOB IS THIS REPORT FOR?
+        //
+        // Spiro 2026-11-19, on a report for "Lot 7, 26 Skylark Rd, GREENVALE -
+        // 306629" that came up as "Lot 1113, 7 Ligar Rise":
+        //
+        //   the old lot rule pulled the lot number out of the text and then
+        //   looked for that number as ANY TOKEN of any address. The 7 of
+        //   "Lot 7" matched the HOUSE NUMBER of 7 Ligar Rise, and `find`
+        //   returned the first row that hit — no street check, no score, no
+        //   tie-break. `s.includes('lot ' + lot)` had the same hole from the
+        //   other side: "lot 71" contains "lot 7".
+        //
+        // A bare number cannot identify a job, and nothing here matches on one
+        // any more. The rules run strongest first and each fires ONLY if it
+        // names exactly one job; anything ambiguous leaves the field empty,
+        // because a wrong job files a house's defects against someone else's.
+        const _ADDR_STREET_TYPES = new Set(['rd','road','st','street','ave','avenue','av','cl','close',
+            'ct','court','dr','drive','cres','crescent','pl','place','way','rise','blvd','boulevard',
+            'tce','terrace','gr','grove','ln','lane','pde','parade','cct','circuit','esp','esplanade',
+            'walk','mews','green','gardens','gdns','loop','link','view','vista','ridge','chase','row',
+            'square','sq','grange','retreat','promenade','pkwy','parkway','hwy','highway']);
+        function _addrMatchParts(a) {
+            const norm = s => (s || '').toLowerCase().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ');
+            const s = norm(a.street);
+            // The lot as the RECORD states it, never as a number found loose in
+            // the string. lotNo first (CH Tracker sets it), then the "Lot NNN,"
+            // prefix the app builds its street from.
+            const lot = String(
+                (a.lotNo != null && a.lotNo !== '') ? a.lotNo
+                : ((s.match(/^lot\s*(\d+[a-z]?)\b/) || [])[1] || a.lot || '')
+            ).toLowerCase().trim();
+            const rest = s.replace(/^lot\s*[\w]+,?\s*/, '').trim();     // "(26) skylark rd"
+            const houseNum = (rest.match(/\d+/) || [])[0] || '';
+            // Street NAME words only: "rise" and "court" are types, and a report
+            // full of prose will contain them by accident.
+            const nameToks = rest.replace(/[()]/g, ' ').split(/\s+/)
+                .filter(w => /^[a-z]+$/.test(w) && w.length >= 4 && !_ADDR_STREET_TYPES.has(w));
+            return { lot, houseNum, nameToks, prop: String(a.propertyNumber || '').toLowerCase().trim() };
+        }
         function matchAddressFromText(text, fileName) {
             const addrs = db.getAddresses();
             const norm = s => (s || '').toLowerCase().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ');
             const low = norm((fileName || '') + ' ' + (text || ''));
             const squish = low.replace(/[^a-z0-9]+/g, '');   // tolerant of "L ot 14 03"-style fragmentation
+            const toks = new Set(low.split(/[^a-z0-9]+/).filter(Boolean));
+            // Every lot the TEXT mentions, in both shapes.
+            const lotsInText = new Set();
+            low.replace(/\blot\s*(\d+[a-z]?)\b/g, (m, d) => { lotsInText.add(d); return m; });
+            squish.replace(/lot(\d{1,5}[a-z]?)/g, (m, d) => { lotsInText.add(d); return m; });
+            const hasName = (p) => p.nameToks.some(t => toks.has(t) || squish.includes(t));
+            const P = addrs.map(a => ({ a, p: _addrMatchParts(a) }));
             let result = null, via = '';
-            // 1) Explicit "Lot NNNN" anywhere (incl. fragmented).
-            const lotM = low.match(/\blot\s*(\d+[a-z]?)\b/) || squish.match(/lot(\d{2,5}[a-z]?)/);
-            if (lotM) {
-                const lot = lotM[1];
-                const hit = addrs.find(a => { const s = norm(a.street); return s.includes('lot ' + lot) || s.split(/[\s,()]+/).includes(lot); });
-                if (hit) { result = hit.id; via = 'lot'; }
-            }
-            // 2) Score every address on its lot number / street name / house number
-            //    appearing as tokens in filename+text — needs no "Lot" keyword at all.
-            if (result == null) {
-                const toks = new Set(low.split(/[^a-z0-9]+/).filter(Boolean));
-                let best = null, ties = 0;
-                for (const a of addrs) {
-                    const s = norm(a.street);                                           // e.g. "lot 1403, (20) kobi st"
-                    if (!s) continue;
-                    const lotA = (s.match(/^lot\s*(\d+[a-z]?)\b/) || [])[1];            // "1403"
-                    const rest = s.replace(/^lot\s*\w+,?\s*/, '').trim();               // "(20) kobi st"
-                    const houseNum = (rest.match(/\d+/) || [])[0];                      // "20"
-                    const nameTok = rest.replace(/^[()\d\s]+/, '').split(/\s+/)[0];     // "kobi"
-                    let score = 0;
-                    if (nameTok && nameTok.length >= 4 && (toks.has(nameTok) || squish.includes(nameTok))) score += 2;
-                    if (lotA && (toks.has(lotA) || squish.includes('lot' + lotA))) score += 2;
-                    if (houseNum && toks.has(houseNum)) score += 1;
-                    if (score < 2) continue;
-                    if (!best || score > best.score) { best = { id: a.id, score }; ties = 1; }
-                    else if (score === best.score) ties++;
-                }
-                // A tie (e.g. 10 jobs on the same street, name-only match) is
-                // ambiguous — leave unmatched rather than pick the wrong job.
-                if (best && ties === 1) { result = best.id; via = 'score'; }
-            }
+            const rule = (name, fn) => {
+                if (result != null) return;
+                const hits = P.filter(fn);
+                // Exactly one, or nothing. Two jobs on the same street with no
+                // lot in the text is not a 50/50 worth taking.
+                if (hits.length === 1) { result = hits[0].a.id; via = name; }
+            };
+            // 1. The property number. Unique by construction, and it is printed
+            //    on the report — the one identifier that cannot mean two houses.
+            rule('property',      ({ p }) => p.prop.length >= 5 && toks.has(p.prop));
+            // 2. Lot AND street together: either alone has collided in the book.
+            rule('lot+street',    ({ p }) => !!p.lot && lotsInText.has(p.lot) && hasName(p));
+            // 3. Street name AND its house number.
+            rule('street+number', ({ p }) => hasName(p) && !!p.houseNum && toks.has(p.houseNum));
+            // 4. A lot number on its own, only while one job in the book has it.
+            rule('lot',           ({ p }) => !!p.lot && lotsInText.has(p.lot));
+            // 5. A street name on its own, only while one job in the book is on it.
+            rule('street',        ({ p }) => hasName(p));
             const matchedStreet = result != null ? ((db.getAddress(result) || {}).street || '?') : '—';
-            _amftDbg = 'addrs=' + addrs.length + ' fn=' + (fileName ? 'Y' : 'N') + ' lot=' + (lotM ? lotM[1] : 'NONE') + ' match=' + (result != null ? (via + ':' + matchedStreet) : 'NULL');
+            _amftDbg = 'addrs=' + addrs.length + ' fn=' + (fileName ? 'Y' : 'N')
+                + ' lots=' + (lotsInText.size ? [...lotsInText].join('/') : 'NONE')
+                + ' match=' + (result != null ? (via + ':' + matchedStreet) : 'NULL');
             return result;
         }
 
@@ -15260,12 +15324,46 @@
             }
             const learned = suggestFromHistory(_rvText);
             if (learned) addCand(learned.contractorId, '🧠', 'learned ×' + learned.support + ' (other jobs)', '', false);
+            // The placeholder record behind a trade name. One lookup, used by
+            // both the field and the chips, so what the box is pre-filled with
+            // and what the first chip offers cannot disagree.
+            const _phList = db.getContractors().filter(c => c.isTradePlaceholder && c.isActive !== false);
+            const phForTrade = (tn) => {
+                if (!tn) return null;
+                const t = String(tn).toLowerCase();
+                return _phList.find(x => (x.name || '').toLowerCase() === t)
+                    || _phList.find(x => (x.name || '').toLowerCase().includes(t)) || null;
+            };
             const kwId = effTrade ? suggestContractorForTrade(effTrade) : null;
             if (kwId != null) addCand(kwId, '🔎', 'directory: ' + effTrade, '', false);
             const autoCand = candidates.find(c => c.autofill) || null;
             const suggestedContractor = autoCand ? autoCand.contractorId : null;
-            // Sticky contractor: a manual pick survives address-change re-renders.
-            const chosenContractorId = (typeof raw === 'object' && raw._contractorId != null) ? raw._contractorId : suggestedContractor;
+            // WHAT THE BOX IS PRE-FILLED WITH FOLLOWS THE TOGGLE (Spiro
+            // 2026-11-19: "when TRADE toggle is selected it needs to preload the
+            // Trade ie Insulation — NOT Insulgreen; however when Contractor
+            // toggle is on then it preselects Insulgreen (supplier)").
+            // It used to fill in the suggested SUPPLIER either way, so Trade
+            // mode showed a company in a box that only accepts a trade — and on
+            // save, resolveAssignId found no trade matching that text and fell
+            // back to the hidden id, filing the defect against the supplier.
+            // Not cosmetic: the wrong assignee was being written.
+            const suggestedTradePh = state.assignByTrade ? phForTrade(effTrade) : null;
+            // Sticky pick: a manual choice survives address-change re-renders.
+            const _stickyId = (typeof raw === 'object' && raw._contractorId != null) ? raw._contractorId : null;
+            let _chosen = _stickyId != null ? _stickyId
+                : (state.assignByTrade ? (suggestedTradePh ? suggestedTradePh.id : null) : suggestedContractor);
+            // ONLY TRADE MODE IS FUSSY, and only about what the box accepts: a
+            // contractor id — a sticky pick from the other mode, or a supplier
+            // suggestion — cannot sit in a field that only resolves trades.
+            // Contractor mode keeps whatever it is given, placeholder included:
+            // the PI-table import pre-assigns the row's own trade there, and an
+            // earlier cut of this rule cleared it and saved those defects
+            // against nobody (tests/pitable.mjs).
+            if (state.assignByTrade) {
+                const _o = _chosen != null ? db.getContractor(_chosen) : null;
+                if (!_o || !_o.isTradePlaceholder) _chosen = suggestedTradePh ? suggestedTradePh.id : null;
+            }
+            const chosenContractorId = _chosen;
             // Quick-pick chips below the Assign box (Spiro's original scope): one tap
             // selects a suggestion instead of typing. Contractor mode shows the ranked
             // candidates (incl. global-history ones that are never auto-filled);
@@ -15274,22 +15372,39 @@
             {
                 let chips = [];
                 if (state.assignByTrade) {
-                    const ph = db.getContractors().filter(c => c.isTradePlaceholder && c.isActive !== false);
                     // Multiple trade suggestions (Spiro 2026-07-11): the resolved
                     // trade plus runner-ups from other signals, in case the top
                     // guess is wrong. Capped at 3, deduped by placeholder.
                     const wanted = [];
                     const addW = (tn, hint) => { if (tn && !wanted.some(w => w.tn.toLowerCase() === tn.toLowerCase())) wanted.push({ tn, hint }); };
                     addW(effTrade, 'suggested trade');
+                    // The rule's own runner-up, where it has one — second in the
+                    // row, so "both in the selections" means both, in that order.
+                    addW(resolved.alt, 'also likely');
                     addW(learned && learned.trade, 'from history');
                     addW(classifyBpiTrade(_rvText.toLowerCase()), 'keyword match');
                     chips = wanted.map(w => {
-                        const t = w.tn.toLowerCase();
-                        const p = ph.find(x => (x.name || '').toLowerCase() === t) || ph.find(x => (x.name || '').toLowerCase().includes(t));
+                        const p = phForTrade(w.tn);
                         return p ? { id: p.id, icon: '🛠', name: p.name, hint: w.hint } : null;
                     }).filter(Boolean)
                       .filter((c, i2, arr) => arr.findIndex(y => y.id === c.id) === i2)
                       .slice(0, 3);
+                    // SUPERVISOR IS ALWAYS THERE, ALWAYS LAST (Spiro 2026-11-19:
+                    // "in the suggested trade ALWAYS have the supervisor's name
+                    // last… just needs to be available, quick TRIGGER").
+                    // A supervisor keeps a lot of these items themselves, so the
+                    // chip is not a suggestion — it is a fixed one-tap target,
+                    // and a target that moves is one you have to look for. It is
+                    // pulled out of the suggestions and re-added at the end even
+                    // when it IS the suggested trade, so its place never changes;
+                    // the hint still says which of the two it is.
+                    const _sup = phForTrade('Supervisor');
+                    if (_sup) {
+                        const wasSuggested = chips.some(c => c.id === _sup.id);
+                        chips = chips.filter(c => c.id !== _sup.id);
+                        chips.push({ id: _sup.id, icon: '🛠', name: _sup.name,
+                                     hint: wasSuggested ? 'suggested trade' : 'always available' });
+                    }
                 } else {
                     chips = candidates.slice(0, 4).map(c => ({ id: c.contractorId, icon: c.icon, name: c.name, hint: c.hint }));
                 }
@@ -15300,7 +15415,11 @@
             const addrObj = r.lastAddressId != null ? db.getAddress(r.lastAddressId) : null;
             const addrLabel = (addrObj ? formatAddress(addrObj) : '').replace(/"/g, '&quot;');
             const cObj = chosenContractorId != null ? db.getContractor(chosenContractorId) : null;
-            const contractorLabel = (cObj ? cObj.name + (cObj.trades && cObj.trades !== 'No Trade Assigned' ? ' — ' + cObj.trades.split(',')[0] : '') : '').replace(/"/g, '&quot;');
+            // Spelled exactly as resolveAssignId's labelOf spells it, or what is
+            // typed in the box cannot be matched back to the record it came
+            // from: a trade placeholder is its bare name ("Painter"), never
+            // "Painter — Painter".
+            const contractorLabel = (cObj ? cObj.name + (!state.assignByTrade && cObj.trades && cObj.trades !== 'No Trade Assigned' ? ' — ' + cObj.trades.split(',')[0] : '') : '').replace(/"/g, '&quot;');
             // Location dropdown: keep the parsed value even when it isn't a preset.
             const locInList = BPI_LOCATIONS.some(l => l === item.location);
             const locEsc = (item.location || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -16849,7 +16968,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19i';
+        const APP_VERSION = '2026-11-19j';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16947,7 +17066,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19i"></script>
+    <script src="cloud-sync.js?v=2026-11-19j"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

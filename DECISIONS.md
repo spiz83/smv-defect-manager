@@ -2,6 +2,64 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-19 (e) — what the import SUGGESTS — build `2026-11-19j`
+
+Five things Spiro hit in one review session, from his screenshots.
+
+**1. The Assign box ignored the toggle.** With TRADE selected it was pre-filled
+with the SUPPLIER — "Insulgreen Solutions — Insulation to Ceilings" in a field
+that only resolves trades. Not cosmetic: on save, `resolveAssignId` found no
+trade matching that text and fell back to the hidden id, **filing the defect
+against the supplier while the screen said Trade**. Trade mode now pre-fills
+the trade placeholder; Contractor mode still pre-fills the supplier. Only Trade
+mode is fussy about what it is handed — Contractor mode keeps a placeholder
+pre-assignment, because the PI-table import puts the row's own trade there, and
+the first cut of this rule cleared it and saved those defects against nobody
+(caught by `tests/pitable.mjs`, which is why it exists).
+
+**2. A paint defect suggested "Ian Quayle — Supervisor".** The Called For
+archive row read *"Supervisor Paint MarkUp"* — the supervisor walking the house
+marking paint up, not the painter painting it. It carries the word "paint", so
+it matched the Painter keywords and became "did this work here". An activity
+naming the supervisor is not evidence about the trade, so those rows are
+skipped. Note `Supervisor` is itself a legitimate trade here (the wording bank
+is full of items supervisors keep): the exclusion is on the ACTIVITY, never on
+the trade or the person.
+
+**3. The address was another job entirely.** A report for *Lot 7, 26 Skylark
+Rd — 306629* came up as *Lot 1113, 7 Ligar Rise*. The old rule took the lot
+number out of the text and looked for it as ANY TOKEN of any address, so the 7
+of "Lot 7" matched the HOUSE NUMBER of 7 Ligar Rise — and `find` returned the
+first row that hit, with no street check and no tie-break. `includes('lot ' +
+lot)` had the same hole from the other side ("lot 71" contains "lot 7"). It was
+order-dependent: with the book sorted A-Z, as the app lists jobs, Ligar came
+first and won. Rebuilt around identifiers, strongest first — **property number;
+lot AND street; street AND house number; lot alone if unique; street alone if
+unique** — each firing only when it names exactly one job, and **a bare number
+never matching anything**. Ambiguous leaves the field empty: a wrong job files
+a house's defects against someone else's.
+
+**4. A leaking shower screen is the Caulker**, not the screen installer: the
+bottom corner leaks because the seal to the hob has failed. Narrow on purpose —
+cracked, scratched or misaligned screens stay with the installer, and only the
+leak/seal words divert it.
+
+**5. Downpipe is the Plumber's, with Roof Plumber second.** The defect-wording
+bank has said Plumber for downpipe work for months ("Install downpipe brackets
+correctly"), so the curated rule was the odd one out. A rule can now carry an
+`alt` — its runner-up — which rides into the chips as a second one-tap option
+rather than being argued about in the rule itself.
+
+**And: Supervisor is always the last chip**, present whether or not it was
+suggested (*"just needs to be available, quick TRIGGER"*). It is not a
+suggestion but a fixed target, and a target that moves is one you have to look
+for — so it is pulled out of the suggestions and re-added at the end even when
+it IS the suggested trade. The hint still says which it is.
+
+`tests/assignmode.mjs` covers all six, and its address book is deliberately
+ordered Ligar-before-Skylark: the old matcher took the first matching row, so
+with Skylark earlier the checks would have passed on luck.
+
 ## 2026-11-19 (d) — the byte sniff adds, it never vetoes — build `2026-11-19i`
 
 Spiro: *"STILL NO GOOD IT IS NO LONGER EXTRACTING THE PHOTOS FROM THE BPI
