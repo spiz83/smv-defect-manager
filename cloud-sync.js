@@ -175,6 +175,21 @@
   // BPI trade learning: normalised defect phrase -> { trade: count }. Rebuilt per
   // pull; the spine of "learn as you go" trade classification (shared by all users).
   let tradeLearning = {};
+  // EVERY defect this login can read, as learning material only — INCLUDING the
+  // ones on completed jobs.
+  //
+  // Spiro 2026-11-19: "it forgets over time." It did, and this is why. The job
+  // list hides completed jobs, and a defect whose job is not visible is dropped
+  // at the merge below — so the day a job was marked complete, every example it
+  // had taught ("this wording went to that sub") left the phone with it. The
+  // 🧠 counts shrank as work finished, which is the opposite of learning.
+  //
+  // The rows were already fetched: dm_defects is pulled in full and then
+  // filtered by visibility. So this costs no network and no extra query — it
+  // keeps a copy of the text and the contractor BEFORE the filter, and the
+  // suggestion model is built from it. It is deliberately NOT part of db.data:
+  // nothing on screen may come from a job the supervisor cannot see.
+  let learnCorpus = [];
   // Manager-editable keyword rules + live AI settings (bpi_trade_rules /
   // bpi_ai_settings), refreshed each pull so Admin edits reach the phone.
   // Defaults match the bpi_ai_settings row defaults for cold boots.
@@ -1280,7 +1295,15 @@
 
     let droppedNoJob = 0;
     const droppedJobIds = new Set();
+    learnCorpus = [];
     defects.data.forEach(d => {
+      // LEARNING MATERIAL FIRST, before anything is dropped for being invisible:
+      // a finished job is the best teacher the app has, and hiding it from the
+      // list must not unteach it. Text + contractor only.
+      const learnCid = uuidToLegacy.contractors[d.contractor_id];
+      if (learnCid != null && d.description) {
+        learnCorpus.push({ t: d.description + ' ' + (d.location || ''), c: learnCid });
+      }
       // d.job_id -> address legacy id. Skip any defect whose job isn't visible.
       const addressLid = d.job_id != null ? uuidToLegacy.addresses[d.job_id] : null;
       if (addressLid == null) { droppedNoJob++; if (d.job_id) droppedJobIds.add(d.job_id); return; }
@@ -4349,6 +4372,11 @@
         });
       } catch (e) { console.warn('[CloudLearning] example', e); }
     },
+    // Every readable defect as learning material, completed jobs included —
+    // the model index.html builds its contractor suggestions from. Empty before
+    // the first pull and in local-only mode, where it falls back to what is on
+    // the phone.
+    historyCorpus: () => learnCorpus,
     // Live DB rule set + min-examples gate (Admin-editable, pulled each sync).
     dbRules: () => bpiDbRules,
     minExamples: () => bpiAiSettings.min_examples,

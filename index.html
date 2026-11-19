@@ -14635,20 +14635,40 @@
         // import (cheap), and nudged live as the supervisor saves so later items in
         // the SAME report benefit before the sync round-trip.
         let _bpiLearn = null;   // { byToken: Map, tokenTotal: Map, defectCount }
+        // IT LEARNS FROM FINISHED WORK TOO (Spiro 2026-11-19: "I find that it
+        // forgets over time").
+        //
+        // It did forget, and the cause was not the model — it was the corpus.
+        // This read `db.data.defects`, which holds only the defects on jobs the
+        // phone can SEE, and the job list hides completed jobs. So the day a job
+        // was marked complete, every example it had taught left the phone with
+        // it and the 🧠 counts went down as work finished.
+        //
+        // cloud-sync now keeps the text + contractor of every defect this login
+        // can read, taken BEFORE the visibility filter (CloudLearning.
+        // historyCorpus), and that is what this learns from. Nothing on screen
+        // comes from it — it is tokens and tallies, never a row anyone can open.
+        // The local list is the fallback for local-only mode and for the first
+        // render of a cold boot, before the pull lands.
         function buildBpiLearning() {
             const byToken = new Map();   // token -> Map(contractorId -> count)
             const tokenTotal = new Map();
-            const defects = (db.data && db.data.defects) || [];   // includes completed
-            for (const d of defects) {
-                if (d.contractorId == null) continue;
+            const corpus = (window.CloudLearning && window.CloudLearning.historyCorpus
+                && window.CloudLearning.historyCorpus()) || [];
+            const local = (db.data && db.data.defects) || [];
+            const rows = corpus.length
+                ? corpus.map(x => ({ text: x.t, contractorId: x.c }))
+                : local.map(d => ({ text: (d.description || '') + ' ' + (d.location || ''), contractorId: d.contractorId }));
+            for (const r of rows) {
+                if (r.contractorId == null) continue;
                 // GLOBAL model excludes supervisor rows ("Ian Quayle — Supervisor"):
                 // another job's supervisor is never the right sub here. The
                 // job-scoped model keeps them (gated by trade consistency).
-                const c = db.getContractor(d.contractorId);
+                const c = db.getContractor(r.contractorId);
                 if (c && /\bsupervisor\b/i.test(c.trades || '')) continue;
-                addLearningExample(byToken, tokenTotal, (d.description || '') + ' ' + (d.location || ''), d.contractorId);
+                addLearningExample(byToken, tokenTotal, r.text, r.contractorId);
             }
-            _bpiLearn = { byToken, tokenTotal, defectCount: defects.length };
+            _bpiLearn = { byToken, tokenTotal, defectCount: local.length, corpusCount: corpus.length };
         }
         function addLearningExample(byToken, tokenTotal, text, contractorId) {
             for (const tok of bpiTokens(text)) {
@@ -14659,7 +14679,12 @@
         }
         function ensureBpiLearning() {
             const n = ((db.data && db.data.defects) || []).length;
-            if (!_bpiLearn || _bpiLearn.defectCount !== n) buildBpiLearning();
+            // Rebuilt when EITHER source changes: the corpus arrives with the
+            // pull, well after the first render, and a model keyed only on the
+            // local count would never notice it landing.
+            const m = ((window.CloudLearning && window.CloudLearning.historyCorpus
+                && window.CloudLearning.historyCorpus()) || []).length;
+            if (!_bpiLearn || _bpiLearn.defectCount !== n || _bpiLearn.corpusCount !== m) buildBpiLearning();
             return _bpiLearn;
         }
         // Record a fresh assignment immediately (incremental), without a full rebuild.
@@ -16968,7 +16993,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19j';
+        const APP_VERSION = '2026-11-19k';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -17066,7 +17091,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19j"></script>
+    <script src="cloud-sync.js?v=2026-11-19k"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

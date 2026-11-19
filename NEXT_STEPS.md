@@ -13,6 +13,21 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## 🧠 Learning: two models, and the one that used to forget — build `2026-11-19k`
+
+- **Phrase → TRADE** lives in `dm_trade_learning` on the server, is pulled
+  paged, and does not forget. It beats the curated rules in `resolveTrade`, so
+  a rule change shows only until the team teaches it otherwise.
+- **Phrase → CONTRACTOR** (🧠 "learned ×N") is built on the phone by
+  `buildBpiLearning()`. It used to read `db.data.defects`, which holds only
+  VISIBLE jobs — so completing a job untaught everything it had taught.
+  It now reads `CloudLearning.historyCorpus()`: text + contractor for every
+  readable defect, kept BEFORE the visibility filter in the pull. No extra
+  query. Never put it in `db.data` — nothing on screen may come from a job the
+  supervisor cannot open.
+- A model keyed only on the local defect count never notices the corpus
+  arriving with the pull; `ensureBpiLearning` watches both.
+
 ## 🔮 What the report import SUGGESTS — build `2026-11-19j`
 
 Six fixes from one review session (Spiro 2026-11-19). `tests/assignmode.mjs`
