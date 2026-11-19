@@ -13,16 +13,17 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
-## 📎 A dropped file may not be a file, and nothing is read until Extract — builds `2026-11-19f` / `2026-11-19g`
+## 📎 A dropped file may not be a file, and a DROP waits for Extract — builds `2026-11-19f` → `2026-11-19h`
 
 Drag-and-drop into Add Report, so a report can come straight out of an email
 (Spiro 2026-11-19). Four things to know before touching this dialog:
 
-- **Choosing or dropping a file STAGES it. `Read this report →` starts the
-  read.** Both paths, deliberately. The first cut started the extraction on the
-  drop, and a drop happens before you have set Report type — so a private
-  report went through the BPI parser and came out as garbage. The toggles are
-  read when the button is pressed.
+- **The picker reads straight away. The DROP waits for `Read this report →`.**
+  Different on purpose (Spiro tried both): picking a file is the last thing you
+  do, after setting Report type, so there is nothing to wait for; a drop is the
+  first thing you do, and starting the read there sent a private report through
+  the BPI parser and came out as garbage. `tests/dropfile.mjs` pins both
+  halves — make them the same and it fails.
 - **`impSniffKind()` decides what a file is, from its first 1024 bytes.** Not
   the name, not the MIME type: an attachment can arrive as `ATT00001` with
   neither. `%PDF-` means PDF; a NUL or >10% control bytes means binary and is
