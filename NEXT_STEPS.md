@@ -13,6 +13,27 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## 🔮 What the report import SUGGESTS — build `2026-11-19j`
+
+Six fixes from one review session (Spiro 2026-11-19). `tests/assignmode.mjs`
+is the suite; read it before touching any of this.
+
+- **The Assign box follows the toggle.** Trade mode pre-fills the trade
+  placeholder, Contractor mode the supplier. Only Trade mode is fussy about
+  what it will hold — Contractor mode keeps a placeholder pre-assignment,
+  because the PI-table import puts the row's trade there.
+- **A Called For activity naming the supervisor** ("Supervisor Paint MarkUp")
+  is skipped: it is the super marking up, not the trade working. `Supervisor`
+  is still a legitimate TRADE and still choosable.
+- **`matchAddressFromText` matches identifiers, never a bare number** —
+  property number, lot+street, street+number, then lot or street alone only
+  while unique. Ambiguous returns null on purpose.
+- **Supervisor is always the last trade chip**, suggested or not.
+- **A rule may carry `alt`** (downpipe → Plumber, alt Roof Plumber); the alt
+  becomes the second chip.
+- Curated rules are beaten by LEARNED history (`resolveTrade`), so a rule
+  change only shows until the team teaches it otherwise — by design.
+
 ## 📎 A dropped file may not be a file, and a DROP waits for Extract — builds `2026-11-19f` → `2026-11-19h`
 
 Drag-and-drop into Add Report, so a report can come straight out of an email
