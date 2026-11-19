@@ -13,7 +13,20 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
-## 📎 A dropped file may not be a file — build `2026-11-19f`
+## 📎 A dropped file may not be a file, and nothing is read until Extract — builds `2026-11-19f` / `2026-11-19g`
+
+Drag-and-drop into Add Report, so a report can come straight out of an email
+(Spiro 2026-11-19). Four things to know before touching this dialog:
+
+- **Choosing or dropping a file STAGES it. `Read this report →` starts the
+  read.** Both paths, deliberately. The first cut started the extraction on the
+  drop, and a drop happens before you have set Report type — so a private
+  report went through the BPI parser and came out as garbage. The toggles are
+  read when the button is pressed.
+- **`impSniffKind()` decides what a file is, from its first 1024 bytes.** Not
+  the name, not the MIME type: an attachment can arrive as `ATT00001` with
+  neither. `%PDF-` means PDF; a NUL or >10% control bytes means binary and is
+  refused.
 
 Drag-and-drop into Add Report, so a report can come straight out of an email
 (Spiro 2026-11-19). One thing to know before touching any drop zone:

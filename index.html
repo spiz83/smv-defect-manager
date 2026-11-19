@@ -11252,6 +11252,14 @@
                 .imp-drag{display:inline;}
               }
               .imp-or{text-align:center;color:var(--text-secondary,#888);margin:14px 0 6px;font-size:13px;}
+              /* The file WAITS here until Extract is pressed — see impStageFile. */
+              #imp-chosen{display:none;align-items:center;gap:10px;margin-top:10px;padding:11px 13px;
+                border:1px solid var(--blue,#2563eb);border-radius:12px;
+                background:var(--bg-secondary,#f2f2f7);font-size:14px;}
+              #imp-chosen b{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+              #imp-chosen .imp-meta{color:var(--text-secondary,#777);font-size:12.5px;white-space:nowrap;}
+              #imp-chosen .imp-x{margin-left:auto;background:none;border:0;color:var(--text-secondary,#777);
+                font-size:18px;line-height:1;cursor:pointer;padding:2px 4px;}
               #imp-paste{width:100%;min-height:110px;box-sizing:border-box;padding:12px;
                 border:1px solid var(--border-color,#ccc);border-radius:12px;font:inherit;}
               .imp-btn{display:block;width:100%;box-sizing:border-box;margin-top:14px;padding:13px;
@@ -11664,7 +11672,93 @@
             e.preventDefault();
         }));
 
+        // WHAT THE FILE ACTUALLY IS, from its first bytes.
+        //
+        // The name and the MIME type are what the source chose to tell us, and
+        // an attachment dragged out of a mail client may carry neither: a PDF
+        // called ATT00001 with an empty type is still a PDF, and reading it as
+        // text produces a page of mojibake that the parser then turns into
+        // "defects" (Spiro 2026-11-19: "it just gives me garbage text").
+        // The bytes cannot lie, so they decide.
+        async function impSniffKind(file) {
+            try {
+                const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+                // The spec allows junk before the header, so look for it rather
+                // than demanding offset 0.
+                for (let i = 0; i + 4 < head.length; i++) {
+                    if (head[i] === 0x25 && head[i+1] === 0x50 && head[i+2] === 0x44
+                        && head[i+3] === 0x46 && head[i+4] === 0x2D) return 'pdf';
+                }
+                let odd = 0;
+                for (let i = 0; i < head.length; i++) {
+                    const c = head[i];
+                    if (c === 0) return 'binary';              // no text file has these
+                    if (c < 9 || (c > 13 && c < 32)) odd++;
+                }
+                if (head.length && odd / head.length > 0.1) return 'binary';
+                return 'text';
+            } catch (e) { return ''; }   // unreadable — fall back to the name
+        }
+
+        // THE FILE WAITS FOR THE SETTINGS, NOT THE OTHER WAY ROUND.
+        //
+        // Spiro 2026-11-19: a dropped report came out as "garbage text that
+        // doesn't follow the rules that the other upload does". Both paths run
+        // the same code — proven, five name/type combinations through each —
+        // so the difference was never the code. It was the RHYTHM. Choosing a
+        // file is the last thing you do, after setting the report type; a drop
+        // is the FIRST thing you do, and it used to start the extraction on the
+        // spot, with Report type still on its default of BPI. A private report
+        // run through the BPI parser is exactly that garbage.
+        //
+        // So nothing is read until Extract is pressed. The file sits in the
+        // dialog with its name, kind and size on show — which also means that
+        // if the mail client hands over the wrong thing (the message instead of
+        // the attachment), you SEE it before anything is read, rather than
+        // having to recognise it in the output.
+        let _impStaged = null;
+        function impHumanSize(n) {
+            if (!n) return '0 KB';
+            return n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' KB'
+                                   : (n / 1024 / 1024).toFixed(1) + ' MB';
+        }
+        async function impStageFile(f) {
+            if (!f) return;
+            const kind = await impSniffKind(f);
+            const nm = (f.name || '').toLowerCase();
+            // The sniff decides. The name only gets a say when the bytes could
+            // not be read at all.
+            const isPdf = kind === 'pdf' || (!kind && (nm.endsWith('.pdf') || f.type === 'application/pdf'));
+            if (!f.size) {
+                showToast((f.name || 'That file') + ' came through empty — try saving it out of the email first.', true);
+                return;
+            }
+            if (!isPdf && kind === 'binary') {
+                showToast((f.name || 'That file') + ' is not a PDF and not readable text. If it came from an email, '
+                    + 'check you dragged the attachment itself and not the message.', true);
+                return;
+            }
+            _impStaged = { file: f, kind: isPdf ? 'pdf' : 'text' };
+            const row = document.getElementById('imp-chosen');
+            if (row) {
+                row.style.display = 'flex';
+                row.innerHTML = '<span style="font-size:17px">' + (isPdf ? '📕' : '📄') + '</span>'
+                    + '<b>' + _escHtml(f.name || 'file') + '</b>'
+                    + '<span class="imp-meta">' + (isPdf ? 'PDF' : 'text') + ' · ' + impHumanSize(f.size) + '</span>'
+                    + '<button type="button" class="imp-x" id="imp-unstage" aria-label="Remove this file">✕</button>';
+                const x = document.getElementById('imp-unstage');
+                if (x) x.onclick = () => { _impStaged = null; row.style.display = 'none'; row.innerHTML = ''; impSyncExtractLabel(); };
+            }
+            impSyncExtractLabel();
+        }
+        function impSyncExtractLabel() {
+            const b = document.getElementById('imp-extract');
+            if (!b) return;
+            b.textContent = _impStaged ? 'Read this report →' : 'Extract defects →';
+        }
+
         function openReportImport() {
+            _impStaged = null;
             const aiOn = window.CloudAI ? 'checked' : '';
             impOverlay(`
                 <div id="imp-head"><strong>📄 Add Report</strong><button id="imp-close">✕</button></div>
@@ -11688,6 +11782,7 @@
                         </div>
                         <input type="file" id="imp-file" accept=".pdf,.txt,text/plain,application/pdf" style="display:none">
                     </div>
+                    <div id="imp-chosen"></div>
                     <div class="imp-or">— or paste the report text —</div>
                     <textarea id="imp-paste" placeholder="Paste defect text here..."></textarea>
                     <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin:12px 0 4px">
@@ -11714,7 +11809,7 @@
             syncDeep();
             fileInput.onchange = (e) => {
                 const f = e.target.files && e.target.files[0];
-                if (f) impHandleReportFile(f);
+                if (f) impStageFile(f);
             };
             // THE WHOLE CARD TAKES THE DROP, not just the dashed box. Someone
             // dragging an attachment out of Outlook is aiming at a target they
@@ -11726,9 +11821,12 @@
                         (files, why) => {
                             if (!files.length) { showToast(why, true); return; }
                             if (files.length > 1) showToast('One report at a time — taking ' + files[0].name);
-                            impHandleReportFile(files[0]);
+                            impStageFile(files[0]);
                         });
             document.getElementById('imp-extract').onclick = async () => {
+                // A staged file wins: it is the thing on screen with a name
+                // against it, so it is what the button obviously refers to.
+                if (_impStaged) { await impHandleReportFile(_impStaged.file, _impStaged.kind); return; }
                 const text = document.getElementById('imp-paste').value;
                 if (!text.trim()) { showToast('Paste some text or choose a file', true); return; }
                 const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
@@ -11745,18 +11843,17 @@
 
         // The file, however it arrived — picked, or dragged out of an email.
         // ONE path, so the drop cannot quietly diverge from the button.
-        async function impHandleReportFile(f) {
+        async function impHandleReportFile(f, kind) {
                 if (!f) return;
-                // The picker's `accept` filters nothing on a drop, and
-                // extractReportText falls back to file.text() for anything that
-                // is not a PDF — so a .docx dragged in would be read as binary
-                // and "extract" a page of mojibake. Name it instead.
+                if (!kind) kind = await impSniffKind(f);
                 const nm = (f.name || '').toLowerCase();
-                const readable = nm.endsWith('.pdf') || f.type === 'application/pdf'
-                    || nm.endsWith('.txt') || nm.endsWith('.md') || nm.endsWith('.csv')
-                    || /^text\//.test(f.type || '');
-                if (!readable) {
-                    showToast((f.name || 'That file') + ' is not a PDF or text file — only those can be read.', true);
+                // THE BYTES DECIDE, not the name. A PDF called ATT00001 with no
+                // MIME type is still a PDF; reading one as text is the mojibake
+                // the parser then turns into "defects".
+                const isPdf = kind === 'pdf' || (!kind && (nm.endsWith('.pdf') || f.type === 'application/pdf'));
+                if (!isPdf && kind === 'binary') {
+                    showToast((f.name || 'That file') + ' is not a PDF and not readable text. If it came from an '
+                        + 'email, check you dragged the attachment itself and not the message.', true);
                     return;
                 }
                 if (!f.size) {
@@ -11768,16 +11865,18 @@
                 // import routes.
                 const reportType = (document.getElementById('imp-type') || {}).value || 'BPI';
                 const useAI = !!((document.getElementById('imp-ai') || {}).checked && window.CloudAI);
-                const isPdf = (f.name || '').toLowerCase().endsWith('.pdf') || f.type === 'application/pdf';
                 const deep = isPdf && reportType !== 'BPI' && deepReadAllowed()
                     && !!((document.getElementById('imp-deep') || {}).checked);
-                impSetBusy('Reading ' + f.name + '…');
+                // Says what it is reading AND what it decided the file is, so a
+                // wrong decision is visible on screen instead of inferred from
+                // a bad result.
+                impSetBusy('Reading ' + f.name + ' (' + (isPdf ? 'PDF' : 'text') + ', ' + impHumanSize(f.size) + ')…');
                 try {
                     // BPI reports: ALWAYS use structured extraction (location, page, trade)
                     // + job match — the AI path drops the structured columns, so we don't
                     // route BPI through it even when the AI toggle is on.
                     if (reportType === 'BPI' && isPdf) {
-                        const paged = await extractReportTextPaged(f);
+                        const paged = await extractReportTextPaged(f, 'pdf');
                         const items = parseBpiDefects(paged);
                         if (!items.length) { impOverlayMessage('No defects were found in that report.'); return; }
                         startReportReview(items, f.name, reportType, matchAddressFromText(paged, f.name), f);
@@ -11786,7 +11885,7 @@
                     // Text is still pulled locally even on the deep path — it costs
                     // nothing, matches the property from the report header, and is
                     // the fallback if the deep read doesn't come back.
-                    const text = await extractReportText(f);
+                    const text = await extractReportText(f, isPdf ? 'pdf' : 'text');
                     await extractAndReview(text, f.name, reportType, useAI, f, deep);
                 } catch (err) {
                     console.error(err);
@@ -11996,9 +12095,11 @@
             _pdfjsReady = _pdfjsReady.catch((e) => { _pdfjsReady = null; throw e; });
             return _pdfjsReady;
         }
-        async function extractReportText(file) {
+        async function extractReportText(file, kind) {
             const name = (file.name || '').toLowerCase();
-            if (name.endsWith('.pdf') || file.type === 'application/pdf') {
+            // `kind` comes from impSniffKind — the bytes, which beat a name an
+            // email client may never have set.
+            if (kind === 'pdf' || (!kind && (name.endsWith('.pdf') || file.type === 'application/pdf'))) {
                 await ensurePdfJs();
                 const buf = await file.arrayBuffer();
                 const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
@@ -14558,7 +14659,7 @@
         }
         // pdf.js text per page, with column gaps preserved (big x-jump → 3 spaces)
         // and page breaks (\f) so we can record each defect's page number.
-        async function extractReportTextPaged(file) {
+        async function extractReportTextPaged(file, kind) {   // kind: 'pdf' when sniffed
             await ensurePdfJs();
             const buf = await file.arrayBuffer();
             const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
@@ -16720,7 +16821,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19f';
+        const APP_VERSION = '2026-11-19g';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -16818,7 +16919,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19f"></script>
+    <script src="cloud-sync.js?v=2026-11-19g"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>
