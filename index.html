@@ -7488,6 +7488,9 @@
                         // decision with the job in front of them — so the trade
                         // it came FROM is passed as the wrong one and decays
                         // (mig 099), instead of both staying equally true.
+                        // The contractor side of the same correction.
+                        learnFromAssignment((d.location || '') + ' ' + stripReportRef(desc),
+                            contractorId, prevC ? prevC.id : null);
                         const wasTrade = contractorToBpiTrade(prevC) || '';
                         const nowTrade = contractorToBpiTrade(newC) || trade;
                         recordTradeLearning(phrase, nowTrade, (wasTrade && wasTrade !== nowTrade) ? wasTrade : null,
@@ -14777,7 +14780,39 @@
                 if (c && /\bsupervisor\b/i.test(c.trades || '')) continue;
                 addLearningExample(byToken, tokenTotal, r.text, r.contractorId);
             }
-            _bpiLearn = { byToken, tokenTotal, defectCount: local.length, corpusCount: corpus.length };
+            // ── THE SHARED MEMORY WINS, PER TOKEN ──────────────────────────
+            // What the whole team has taught about a word beats one device's
+            // reading of the jobs it happens to hold — and it already contains
+            // this device's own teaching, so it REPLACES rather than adds, or
+            // the same lesson would be counted twice.
+            // Empty until 2026-11-20_contractor_learning.sql is run, which is a
+            // supported state: the app then behaves exactly as it did before.
+            const shared = (window.CloudLearning && window.CloudLearning.contractorTokens
+                && window.CloudLearning.contractorTokens()) || {};
+            let sharedTokens = 0;
+            for (const tok in shared) {
+                const m = new Map();
+                let total = 0;
+                for (const row of (shared[tok] || [])) {
+                    const c = db.getContractor(row.cid);
+                    if (!c || c.isTradePlaceholder || /\bsupervisor\b/i.test(c.trades || '')) continue;
+                    // EVIDENCE AGES, deliberately. Halving at a year keeps a sub
+                    // who works every week sharp and lets one who left the panel
+                    // fade — the answer to "it forgets over time" is controlled
+                    // forgetting, not none. Applied on READ, so nothing is ever
+                    // mutated and the half-life can be re-tuned in a deploy.
+                    const w = (row.w || 0) * Math.pow(0.5, (row.ageDays || 0) / LEARN_HALF_LIFE_DAYS);
+                    if (!(w > 0.01)) continue;
+                    m.set(row.cid, (m.get(row.cid) || 0) + w);
+                    total += w;
+                }
+                if (!m.size) continue;
+                byToken.set(tok, m);
+                tokenTotal.set(tok, total);
+                sharedTokens++;
+            }
+            _bpiLearn = { byToken, tokenTotal, defectCount: local.length,
+                          corpusCount: corpus.length, sharedCount: sharedTokens };
         }
         function addLearningExample(byToken, tokenTotal, text, contractorId) {
             for (const tok of bpiTokens(text)) {
@@ -14786,6 +14821,10 @@
                 tokenTotal.set(tok, (tokenTotal.get(tok) || 0) + 1);
             }
         }
+        // A year. Long enough that a trade's regular sub is never in doubt,
+        // short enough that a sub who stopped working for Creation Homes stops
+        // being suggested within a season or two of leaving.
+        const LEARN_HALF_LIFE_DAYS = 365;
         function ensureBpiLearning() {
             const n = ((db.data && db.data.defects) || []).length;
             // Rebuilt when EITHER source changes: the corpus arrives with the
@@ -14793,7 +14832,10 @@
             // local count would never notice it landing.
             const m = ((window.CloudLearning && window.CloudLearning.historyCorpus
                 && window.CloudLearning.historyCorpus()) || []).length;
-            if (!_bpiLearn || _bpiLearn.defectCount !== n || _bpiLearn.corpusCount !== m) buildBpiLearning();
+            const k = Object.keys((window.CloudLearning && window.CloudLearning.contractorTokens
+                && window.CloudLearning.contractorTokens()) || {}).length;
+            if (!_bpiLearn || _bpiLearn.defectCount !== n || _bpiLearn.corpusCount !== m
+                || _bpiLearn.sharedTokensSeen !== k) { buildBpiLearning(); _bpiLearn.sharedTokensSeen = k; }
             return _bpiLearn;
         }
         // The assignment proved right by the work. Weaker evidence than a person
@@ -14816,11 +14858,24 @@
             learnFromAssignment((defect.location || '') + ' ' + clean, defect.contractorId);
         }
         // Record a fresh assignment immediately (incremental), without a full rebuild.
-        function learnFromAssignment(text, contractorId) {
+        function learnFromAssignment(text, contractorId, wrongContractorId) {
             if (contractorId == null) return;
             const L = ensureBpiLearning();
             addLearningExample(L.byToken, L.tokenTotal, text, contractorId);
             L.defectCount++;   // keep the cache key in step with the (soon-to-sync) defect
+            // …and teach the SHARED memory, so it is not this phone's secret.
+            // A placeholder is the absence of a decision and a supervisor row
+            // says nothing about which SUB the work belongs to — neither is
+            // worth teaching anyone else. Best-effort by design: the local
+            // model above has already been updated either way.
+            try {
+                const c = db.getContractor(contractorId);
+                if (!c || c.isTradePlaceholder || /\bsupervisor\b/i.test(c.trades || '')) return;
+                if (window.CloudLearning && window.CloudLearning.recordContractor) {
+                    window.CloudLearning.recordContractor([...bpiTokens(text)], contractorId,
+                        wrongContractorId != null ? wrongContractorId : null);
+                }
+            } catch (e) { /* learning never breaks a save */ }
         }
         // Suggest a contractor from history. Naive-Bayes-ish: sum P(contractor|token)
         // over the input's tokens (ignoring one-off tokens as noise), pick the best,
@@ -15479,8 +15534,12 @@
             // Support AND confidence. "learned ×37" says how much evidence there
             // is, not how much of it agrees — and those are different questions:
             // 37 examples split 20/17 is not 37 examples that all said the same.
+            // Rounded: support is a WEIGHT now, not a count — the shared memory
+            // is role-weighted and time-decayed, so it arrives as 13.7366…
+            // "learned ×13.736643853086093" is a number nobody asked for.
             if (learned) addCand(learned.contractorId, '🧠',
-                'learned ×' + learned.support + ' · ' + Math.round((learned.confidence || 0) * 100) + '%', '', false);
+                'learned ×' + Math.max(1, Math.round(learned.support)) + ' · '
+                + Math.round((learned.confidence || 0) * 100) + '%', '', false);
             // The placeholder record behind a trade name. One lookup, used by
             // both the field and the chips, so what the box is pre-filled with
             // and what the first chip offers cannot disagree.
@@ -15564,6 +15623,24 @@
                     }
                 } else {
                     chips = candidates.slice(0, 4).map(c => ({ id: c.contractorId, icon: c.icon, name: c.name, hint: c.hint }));
+                    // THE SAME QUICK TRIGGER ON THIS SIDE TOO (Spiro 2026-11-20:
+                    // "add the supervisor — for trade AND contractor suggestion,
+                    // always at the end — as a quick trigger without having to
+                    // scroll through menus and search").
+                    // In Contractor mode the supervisor is a PERSON: this job's
+                    // own supervisor record, the one the edit dialog already
+                    // falls back to when the supplier is left blank. Where the
+                    // job does not name one, the Supervisor trade stands in, so
+                    // the trigger is always in the same place — which is the
+                    // whole value of a fixed target.
+                    const _supId = (r.lastAddressId != null) ? db.supervisorContractorIdFor(r.lastAddressId) : null;
+                    const _supC = (_supId != null ? db.getContractor(_supId) : null) || phForTrade('Supervisor');
+                    if (_supC) {
+                        const _prev = chips.find(c => c.id === _supC.id);
+                        chips = chips.filter(c => c.id !== _supC.id);
+                        chips.push({ id: _supC.id, icon: '👷', name: _supC.name,
+                                     hint: _prev ? _prev.hint : 'always available' });
+                    }
                 }
                 const escC = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
                 if (chips.length) chipsHtml = '<div class="rv-chips" id="rv-chips">' + chips.map(c =>
@@ -17130,7 +17207,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19l';
+        const APP_VERSION = '2026-11-20a';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -17228,7 +17305,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19l"></script>
+    <script src="cloud-sync.js?v=2026-11-20a"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

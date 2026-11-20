@@ -28,10 +28,18 @@ second editor anywhere would be the mistake.
   records at 0.4 weight. Neither fires for a placeholder or a supervisor row.
 - Chips show support AND confidence.
 
-**Phase 2 — NOT DONE, needs Spiro's go-ahead:** a shared token table so
-CONTRACTOR learning (🧠 "learned ×N") becomes durable and cross-supervisor the
-way the trade side now is. Today it is still rebuilt per device from the
-corpus. Write the migration for Spiro to run; never run it blind.
+**Phase 2 (build `2026-11-20a`) — CODE SHIPPED, ⚠️ SQL NOT RUN YET:**
+`supabase/migrations/2026-11-20_contractor_learning.sql` is written and waiting
+for Spiro to paste into the Supabase SQL editor (expect five trues). Until he
+does, every pull of `dm_learn_contractor` errors, the phone uses its own
+corpus, and nothing behaves differently — that state is covered by a test.
+- `CloudLearning.contractorTokens()` → the shared memory, token-indexed.
+- `CloudLearning.recordContractor(tokens, cid, wrongCid)` → one RPC per
+  assignment; `learnFromAssignment()` calls it, so most call sites get it free.
+- The shared tallies REPLACE the local ones per token (never add — the shared
+  table already contains this device's teaching).
+- Weights decay on READ at a one-year half-life (`LEARN_HALF_LIFE_DAYS`).
+  Nothing mutates the table; re-tune in a deploy.
 
 ## 🧠 Learning: two models, and the one that used to forget — build `2026-11-19k`
 

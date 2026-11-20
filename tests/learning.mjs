@@ -224,8 +224,101 @@ const installLearning = (table) => page.evaluate((table) => {
     startReportReview([{ description: 'Re-silicone the bath hob to the tiles', location: 'Bathroom', page: 1, itemNo: 1 }], 'BPI.pdf', 'BPI', 1, null);
     return Array.from(document.querySelectorAll('.rv-chip i')).map(b => b.textContent);
   });
-  check('a learned chip shows support AND confidence, not just a count',
-    r.some(h => /learned ×\d+ · \d+%/.test(h)), JSON.stringify(r));
+  check('a learned chip shows support AND confidence, as whole numbers',
+    r.some(h => /learned ×\d+ · \d+%/.test(h)) && !r.some(h => /×\d+\.\d/.test(h)), JSON.stringify(r));
+}
+
+// ── 9. PHASE 2: the memory is SHARED, and it ages ────────────────────────
+// Until the migration is run, contractorTokens() is empty and the app behaves
+// exactly as it did — that is the first check, because a feature that breaks
+// the app when its table is missing is not shippable ahead of the SQL.
+{
+  // The phone is emptied of everything it could learn from locally, so the
+  // ONLY possible source of a suggestion in this block and the next is the
+  // shared table. Without this the pair proves nothing: the same chip could
+  // come from a defect sitting on this device.
+  const r = await page.evaluate(() => {
+    window.__defects = db.data.defects.slice();
+    db.data.defects = [];
+    window.CloudLearning.contractorTokens = () => ({});
+    window.CloudLearning.historyCorpus = () => [];
+    try { _review = null; } catch (e) {}
+    state.assignByTrade = false;
+    startReportReview([{ description: 'Re-silicone the bath hob', location: 'Bathroom', page: 1, itemNo: 1 }], 'r.pdf', 'BPI', 1, null);
+    return Array.from(document.querySelectorAll('.rv-chip')).map(c => ({
+      name: (c.querySelector('b') || {}).textContent, hint: (c.querySelector('i') || {}).textContent }));
+  });
+  // By the HINT, not the name. "Seal Tight Caulking" also appears here as a
+  // DIRECTORY match — a contractor whose trade contains "caulk" — which has
+  // nothing to do with learning and would make a name-based check pass in both
+  // directions. What must be absent is a chip that claims to have LEARNED it.
+  check('with no shared table and nothing local, nothing claims to have learned',
+    !r.some(c => /learned ×/.test(c.hint || '')), JSON.stringify(r));
+}
+{
+  // Nothing on this phone taught this — the knowledge is only in the shared
+  // table, as it would be if another supervisor had done the teaching.
+  const r = await page.evaluate(() => {
+    window.CloudLearning.historyCorpus = () => [];
+    window.CloudLearning.contractorTokens = () => ({
+      silicone: [{ cid: 11, w: 9, n: 9, ageDays: 10 }],
+      hob:      [{ cid: 11, w: 7, n: 7, ageDays: 10 }],
+      bath:     [{ cid: 11, w: 5, n: 5, ageDays: 10 }],
+    });
+    try { _review = null; } catch (e) {}
+    state.assignByTrade = false;
+    startReportReview([{ description: 'Re-silicone the bath hob', location: 'Bathroom', page: 1, itemNo: 1 }], 'r.pdf', 'BPI', 1, null);
+    return Array.from(document.querySelectorAll('.rv-chip')).map(c => ({
+      name: (c.querySelector('b') || {}).textContent, hint: (c.querySelector('i') || {}).textContent }));
+  });
+  check('another supervisor\'s teaching reaches this phone',
+    r.some(c => c.name === 'Seal Tight Caulking' && /learned ×/.test(c.hint || '')),
+    JSON.stringify(r).slice(0, 220));
+}
+{
+  // The same evidence, four years old. Halving at a year leaves it worth ~6%.
+  const r = await page.evaluate(() => {
+    window.CloudLearning.contractorTokens = () => ({
+      silicone: [{ cid: 11, w: 9, n: 9, ageDays: 1460 }],
+      hob:      [{ cid: 11, w: 7, n: 7, ageDays: 1460 }],
+      bath:     [{ cid: 11, w: 5, n: 5, ageDays: 1460 }],
+    });
+    try { _review = null; } catch (e) {}
+    state.assignByTrade = false;
+    startReportReview([{ description: 'Re-silicone the bath hob', location: 'Bathroom', page: 1, itemNo: 1 }], 'r.pdf', 'BPI', 1, null);
+    const chips = Array.from(document.querySelectorAll('.rv-chip b')).map(b => b.textContent);
+    const L = ensureBpiLearning();
+    const m = L.byToken.get('silicone');
+    return { chips, weight: m ? m.get(11) : null };
+  });
+  check('evidence ages: four-year-old teaching is worth a fraction of fresh',
+    r.weight != null && r.weight > 0 && r.weight < 9 * 0.1,
+    'w 9 → ' + (r.weight == null ? 'gone' : r.weight.toFixed(3)));
+}
+await page.evaluate(() => { db.data.defects = window.__defects || []; });
+{
+  // Teaching goes OUT as well as in, in one call, with the correction.
+  const r = await page.evaluate(async () => {
+    window.__rc = [];
+    window.CloudLearning.recordContractor = async (tokens, cid, wrong) => { window.__rc.push({ tokens, cid, wrong }); };
+    learnFromAssignment('Re-silicone the bath hob', 11, 10);
+    await new Promise(z => setTimeout(z, 60));
+    window.__rc2 = [];
+    const before = window.__rc.slice();
+    window.CloudLearning.recordContractor = async (t, c, w) => { window.__rc2.push({ t, c, w }); };
+    learnFromAssignment('Paint the hallway wall', 1);     // a trade PLACEHOLDER
+    learnFromAssignment('Paint the hallway wall', 12);    // a SUPERVISOR row
+    await new Promise(z => setTimeout(z, 60));
+    return { before, after: window.__rc2 };
+  });
+  const w = r.before[0] || {};
+  check('an assignment teaches the shared memory in ONE call',
+    r.before.length === 1 && Array.isArray(w.tokens) && w.tokens.length > 1 && w.cid === 11,
+    JSON.stringify(w).slice(0, 170));
+  check('…carrying the sub it was moved off, so that one decays too',
+    w.wrong === 10, String(w.wrong));
+  check('…and neither a placeholder nor a supervisor is taught to anyone',
+    r.after.length === 0, JSON.stringify(r.after).slice(0, 160));
 }
 
 check('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
