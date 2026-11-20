@@ -2,6 +2,58 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-19 (g) — Phase 1: memory that does not need the same words twice — build `2026-11-19l`
+
+Spiro: *"keeping a log / database to LEARN as you go… BUT MEMORY IS VERY
+IMPORTANT."*
+
+**The flaw was which model was durable.** `dm_trade_learning` is server-side,
+shared by every supervisor, role-weighted and permanent — and it was keyed on
+the WHOLE normalised phrase, so it only ever fired on word-for-word repeats.
+Free-typed BPI text is not word-for-word. The strongest memory in the system
+was the one that could least often speak, while the model that generalised
+lived on one phone. Phase 1 turns that round, without a schema change.
+
+- **Every verdict is also filed under SIGNATURES** — the pairs of the three
+  most distinctive words, alphabetised, under a `#ng:` prefix that
+  `normalizePhrase` can never produce (it strips everything but a-z and space),
+  so CH Tracker's exact lookups cannot collide with one and
+  `DELETE WHERE phrase_key LIKE '#ng:%'` undoes the lot.
+  **Three keys written, six read** (the pairs of the top four). One pair was
+  too thin: "Paint edge of skirt tile to left of trough cabinet" signed
+  cabinet+trough taught nothing to "Paint the skirt tile edge near the trough",
+  which has no cabinet. The suite caught that on the first run and it is the
+  check the design is built around. Distinctiveness is rarity measured against
+  the corpus, so the words that are everywhere ("paint", "door") drop out of
+  both sides by themselves.
+- **A read on a signature is gated one example higher** than an exact hit: the
+  same evidence read more loosely should need a little more of it.
+- **A REASSIGNMENT IS A CORRECTION.** Moving a defect off the painter and onto
+  the caulker is the strongest signal the app ever gets — someone fixing a
+  decision with the job in front of them — and it was recorded as a FIRST
+  opinion, leaving both trades equally true. The trade it moved off is now
+  passed as the wrong one and decays (mig 099).
+- **Finished work teaches.** Until now the app only learned at the moment of
+  assignment — the one moment the human was guessing. A defect the assigned sub
+  actually completed is that guess proved right by the work, recorded at 0.4 of
+  the weight (nobody re-examined the trade, they ticked it off). Never for a
+  placeholder, never for a supervisor row, and only on the transition.
+- **The chips say how much of the evidence AGREED**, not just how much there
+  is: "learned ×37 · 82%". Thirty-seven examples split 20/17 is not
+  thirty-seven examples that said the same thing.
+- **One funnel for writes** (`recordTradeLearning`), so a new call site cannot
+  forget the signatures and file a verdict the app will never find again.
+
+Confirmed on Spiro's request, by running the checks rather than reading the
+code: **all of 2026-11-19 (e) applies to Private Inspection reports too.** The
+review screen is one screen for both types, and all three routes into it —
+pasted text, the BPI branch, the private/deep branch — match the address
+through the same function. `tests/assignmode.mjs` asserts that from the source.
+
+Still to come (Phase 2, needs one migration and Spiro's go-ahead): the shared
+token table, so CONTRACTOR learning gets the same durable, cross-supervisor
+memory the trade side now has.
+
 ## 2026-11-19 (f) — it was forgetting finished work — build `2026-11-19k`
 
 Spiro: *"it is set up to only learn on existing report or COMPLETE history,

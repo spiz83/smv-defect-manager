@@ -13,6 +13,26 @@ second editor anywhere would be the mistake.
 
 # Next Steps / Handover
 
+## 🧠 MEMORY — Phase 1 shipped, Phase 2 waiting on one migration
+
+**Phase 1 (build `2026-11-19l`), no schema change:**
+- Every trade verdict is filed under its exact phrase AND three `#ng:`
+  SIGNATURES (pairs of the three most distinctive words). Reads try the exact
+  key, then six signatures (pairs of the top four). That is what lets the
+  shared store answer on wording it has not seen before.
+  `#ng:` cannot collide with a real phrase; `DELETE WHERE phrase_key LIKE
+  '#ng:%'` undoes every signature ever written.
+- **All writes go through `recordTradeLearning()`** — never call
+  `CloudLearning.record` directly, or the verdict is filed where nothing looks.
+- Reassignment records the OLD trade as the wrong one (it decays). Completion
+  records at 0.4 weight. Neither fires for a placeholder or a supervisor row.
+- Chips show support AND confidence.
+
+**Phase 2 — NOT DONE, needs Spiro's go-ahead:** a shared token table so
+CONTRACTOR learning (🧠 "learned ×N") becomes durable and cross-supervisor the
+way the trade side now is. Today it is still rebuilt per device from the
+corpus. Write the migration for Spiro to run; never run it blind.
+
 ## 🧠 Learning: two models, and the one that used to forget — build `2026-11-19k`
 
 - **Phrase → TRADE** lives in `dm_trade_learning` on the server, is pulled
