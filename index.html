@@ -3515,9 +3515,18 @@
             setDefectStatus(id, status) {
                 const defect = this.data.defects.find(d => d.id === id);
                 if (defect) {
+                    const was = defect.status;
                     defect.status = status;
                     defect.completed = (status === 'completed');
                     this.save();
+                    // FINISHED WORK IS EVIDENCE (Spiro 2026-11-19, "learn as you
+                    // go"). Until now the app only learned at the moment someone
+                    // assigned — the one moment they were guessing. A defect the
+                    // assigned sub actually completed is that guess proved right
+                    // by the work, and it was being thrown away.
+                    if (status === 'completed' && was !== 'completed') {
+                        try { learnFromCompletion(defect); } catch (e) { /* never break a save */ }
+                    }
                 }
             }
 
@@ -7447,6 +7456,11 @@
                 const contractorId = cidRaw === ''
                     ? db.supervisorContractorIdFor(d.addressId)
                     : parseInt(cidRaw, 10);
+                // Who it was assigned to BEFORE this save — read before the
+                // update, because a correction is only a correction if we still
+                // know what it corrected.
+                const prevC = (d.contractorId != null && d.contractorId !== contractorId)
+                    ? db.getContractor(d.contractorId) : null;
                 db.updateDefect(defectId, { description: desc, contractorId });
                 // "Assign all <Trade> tasks to <Supplier>?" (Spiro 2026-07-14, parity
                 // with CH Tracker): a real-sub pick offers to also assign every other
@@ -7467,8 +7481,18 @@
                         }
                         // The pick is a confirmation — teach the shared learner.
                         const phrase = normalizePhrase((d.location || '') + ' ' + stripReportRef(desc));
-                        if (phrase && window.CloudLearning) { try { window.CloudLearning.record(phrase, contractorToBpiTrade(newC) || trade, null,
-                            { observation: (d.location ? d.location + ' ' : '') + stripReportRef(desc), source: 'edit', jobId: window.CloudLearning.jobUuidForAddress(d.addressId) }); } catch (e) {} }
+                        // A REASSIGNMENT IS A CORRECTION, and until now it was
+                        // recorded as if it were a first opinion. Moving a defect
+                        // off the painter and onto the caulker is the strongest
+                        // signal the app ever gets — it is someone fixing a
+                        // decision with the job in front of them — so the trade
+                        // it came FROM is passed as the wrong one and decays
+                        // (mig 099), instead of both staying equally true.
+                        const wasTrade = contractorToBpiTrade(prevC) || '';
+                        const nowTrade = contractorToBpiTrade(newC) || trade;
+                        recordTradeLearning(phrase, nowTrade, (wasTrade && wasTrade !== nowTrade) ? wasTrade : null,
+                            { observation: (d.location ? d.location + ' ' : '') + stripReportRef(desc), source: 'edit',
+                              jobId: window.CloudLearning && window.CloudLearning.jobUuidForAddress(d.addressId) });
                     }
                 }
                 impClose(); render(); flushStatus();
@@ -14511,6 +14535,86 @@
             const toks = s.split(/\s+/).filter(w => w.length > 1 && !PHRASE_STOPWORDS.has(w));
             return toks.join(' ').trim();
         }
+        // ===================================================================
+        //  DURABLE MEMORY THAT DOES NOT NEED THE SAME WORDS TWICE
+        //
+        //  Spiro 2026-11-19: "keeping a log / database to LEARN as you go…
+        //  BUT MEMORY IS VERY IMPORTANT."
+        //
+        //  The shared store (dm_trade_learning) remembers forever and is shared
+        //  by every supervisor — but it is keyed on the WHOLE normalised
+        //  phrase, so it only ever fired on word-for-word repeats. Free-typed
+        //  BPI text almost never repeats word for word, so the strongest
+        //  memory in the system was the one that could least often speak. The
+        //  phone-side model generalised, and that was the fragile one.
+        //
+        //  So every verdict is also filed under a SIGNATURE: the two most
+        //  distinctive words of the phrase, alphabetised. "Paint edge of skirt
+        //  tile to left of trough cabinet" and "Paint the skirt tile edge near
+        //  the trough" land on the same key. One extra write, and reads are
+        //  free (the table is already in memory), so a read casts a wider net
+        //  than a write: every pair from the top four words, which absorbs the
+        //  drift in what counts as "distinctive" as the corpus grows.
+        //
+        //  The prefix cannot collide with a real phrase: normalizePhrase strips
+        //  everything but a-z and spaces, so no phrase can ever begin "#ng:".
+        //  CH Tracker reads the same table and will never look one up. One
+        //  DELETE WHERE phrase_key LIKE '#ng:%' undoes the lot.
+        // ===================================================================
+        const NG_PREFIX = '#ng:';
+        function phraseSignatures(phrase, forWrite) {
+            const toks = [...new Set(String(phrase || '').split(/\s+/).filter(w => w.length > 2))];
+            if (toks.length < 2) return [];
+            const L = (function () { try { return ensureBpiLearning(); } catch (e) { return null; } })();
+            // Rarer word = more distinctive. The corpus knows which words are
+            // everywhere ("door", "paint") and which name the actual thing.
+            const freq = (t) => {
+                if (!L || !L.tokenTotal) return 0;
+                return L.tokenTotal.get(t) || L.tokenTotal.get(t.replace(/s$/, '')) || 0;
+            };
+            const ranked = toks.slice().sort((a, b) =>
+                (freq(a) - freq(b)) || (b.length - a.length) || a.localeCompare(b));
+            const key = (a, b) => NG_PREFIX + [a, b].sort().join(' ');
+            const pairs = (n) => {
+                const top = ranked.slice(0, n), out = [];
+                for (let i = 0; i < top.length; i++)
+                    for (let j = i + 1; j < top.length; j++) out.push(key(top[i], top[j]));
+                return out;
+            };
+            // WRITE the three pairs of the top three; READ the six of the top
+            // four. One pair was too thin — a rewording that drops either word
+            // misses entirely, which is the whole failure this exists to end
+            // ("Paint edge of skirt tile to left of trough cabinet" taught
+            // nothing to "Paint the skirt tile edge near the trough", because
+            // the signature was cabinet+trough and the second has no cabinet).
+            // Three written against six read means the two phrases have to
+            // disagree about their distinctive words twice over before the
+            // memory is lost. Three small RPCs per assignment; reads are free.
+            return forWrite ? pairs(3) : pairs(4);
+        }
+        // The best-supported signature hit, or null. Deliberately gated one
+        // example HIGHER than an exact-phrase hit: it is the same evidence read
+        // more loosely, so it should need a little more of it.
+        function suggestTradeBySignature(phrase, minN) {
+            if (!window.CloudLearning || !window.CloudLearning.suggestTrade) return null;
+            let best = null;
+            for (const k of phraseSignatures(phrase, false)) {
+                let hit = null;
+                try { hit = window.CloudLearning.suggestTrade(k, minN + 1); } catch (e) { hit = null; }
+                if (hit && (!best || hit.n > best.n)) best = hit;
+            }
+            return best;
+        }
+        // EVERY write to the shared memory goes through here, so a new call site
+        // cannot forget the signatures and quietly file a verdict the app will
+        // never find again.
+        function recordTradeLearning(phrase, trade, wrongTrade, detail) {
+            if (!phrase || !trade || !window.CloudLearning || !window.CloudLearning.record) return;
+            try {
+                window.CloudLearning.record(phrase, trade, wrongTrade || null,
+                    Object.assign({ alsoKeys: phraseSignatures(phrase, true) }, detail || {}));
+            } catch (e) { /* learning is never allowed to break a save */ }
+        }
         // Curated CH trade conventions — the known classifier traps (sealing around
         // doors/trim is the PAINTER's gap-fill here, not the caulker, etc). Tested
         // against the lowercased defect text; first match wins. Extend freely.
@@ -14582,8 +14686,13 @@
         function resolveTrade(text) {
             const phrase = normalizePhrase(text);
             if (window.CloudLearning) {
-                const learned = window.CloudLearning.suggestTrade(phrase, window.CloudLearning.minExamples ? window.CloudLearning.minExamples() : 2);
+                const minN = window.CloudLearning.minExamples ? window.CloudLearning.minExamples() : 2;
+                const learned = window.CloudLearning.suggestTrade(phrase, minN);
                 if (learned && learned.trade) return { trade: learned.trade, source: 'learned', n: learned.n };
+                // Same durable store, read on the fuzzy key: what the team has
+                // taught about THIS KIND of defect, not this exact sentence.
+                const near = suggestTradeBySignature(phrase, minN);
+                if (near && near.trade) return { trade: near.trade, source: 'learned-similar', n: near.n };
             }
             const low = String(text || '').toLowerCase();
             for (const o of CURATED_TRADE_OVERRIDES) if (o.re.test(low)) return { trade: o.trade, source: 'rule', alt: o.alt || '' };
@@ -14686,6 +14795,25 @@
                 && window.CloudLearning.historyCorpus()) || []).length;
             if (!_bpiLearn || _bpiLearn.defectCount !== n || _bpiLearn.corpusCount !== m) buildBpiLearning();
             return _bpiLearn;
+        }
+        // The assignment proved right by the work. Weaker evidence than a person
+        // choosing — nobody re-examined the trade, they just ticked it off — so
+        // it lands at a fraction of the weight rather than counting as a vote.
+        function learnFromCompletion(defect) {
+            if (!defect || defect.contractorId == null) return;
+            const c = db.getContractor(defect.contractorId);
+            // A placeholder is the absence of a decision, and a supervisor doing
+            // it themselves says nothing about which SUB the work belongs to.
+            if (!c || c.isTradePlaceholder || /\bsupervisor\b/i.test(c.trades || '')) return;
+            const trade = contractorToBpiTrade(c);
+            if (!trade) return;
+            const clean = stripReportRef(defect.description || '');
+            recordTradeLearning(normalizePhrase((defect.location || '') + ' ' + clean), trade, null, {
+                observation: (defect.location ? defect.location + ' ' : '') + clean,
+                source: 'completed', weightFactor: 0.4,
+                jobId: window.CloudLearning && window.CloudLearning.jobUuidForAddress(defect.addressId),
+            });
+            learnFromAssignment((defect.location || '') + ' ' + clean, defect.contractorId);
         }
         // Record a fresh assignment immediately (incremental), without a full rebuild.
         function learnFromAssignment(text, contractorId) {
@@ -15348,7 +15476,11 @@
                     '', false);
             }
             const learned = suggestFromHistory(_rvText);
-            if (learned) addCand(learned.contractorId, '🧠', 'learned ×' + learned.support + ' (other jobs)', '', false);
+            // Support AND confidence. "learned ×37" says how much evidence there
+            // is, not how much of it agrees — and those are different questions:
+            // 37 examples split 20/17 is not 37 examples that all said the same.
+            if (learned) addCand(learned.contractorId, '🧠',
+                'learned ×' + learned.support + ' · ' + Math.round((learned.confidence || 0) * 100) + '%', '', false);
             // The placeholder record behind a trade name. One lookup, used by
             // both the field and the chips, so what the box is pre-filled with
             // and what the first chip offers cannot disagree.
@@ -15452,6 +15584,10 @@
             const locOpts = ['<option value="">— Location —</option>', customLocOpt].concat(BPI_LOCATIONS.map(l => `<option value="${l}" ${l === item.location ? 'selected' : ''}>${l}</option>`)).join('');
             const pct = Math.round((r.index / r.items.length) * 100);
             const tradeTag = resolved.source === 'learned' ? ' (learned' + (resolved.n ? ' ×' + resolved.n : '') + ')'
+                // Said out loud: this came from the team's history, matched on
+                // SIMILAR wording rather than the same sentence. If it is wrong,
+                // that is the thing to know when correcting it.
+                : resolved.source === 'learned-similar' ? ' (learned, similar wording' + (resolved.n ? ' ×' + resolved.n : '') + ')'
                 : resolved.source === 'rule' ? ' (rule)' : resolved.source === 'ai' ? ' (AI)' : '';
             // Only THIS-job evidence earns the authoritative note; global-history
             // suggestions live in the chips where the supervisor chooses.
@@ -15620,9 +15756,10 @@
                     // Role-weighted record; passing the engine's PREDICTED trade
                     // lets a correction decay the wrong association (mig 099).
                     // The detail object also logs an append-only training example.
-                    if (learnedTrade && window.CloudLearning) window.CloudLearning.record(
+                    if (learnedTrade) recordTradeLearning(
                         normalizePhrase((location || '') + ' ' + desc), learnedTrade, resolved && resolved.trade,
-                        { observation: (location ? location + ' ' : '') + desc, source: (resolved && resolved.source) || null, jobId: window.CloudLearning.jobUuidForAddress(addressId) });
+                        { observation: (location ? location + ' ' : '') + desc, source: (resolved && resolved.source) || null,
+                          jobId: window.CloudLearning && window.CloudLearning.jobUuidForAddress(addressId) });
                 }
                 // Feed the shared accuracy dashboard (best-effort): what the
                 // engine predicted for this line vs what was actually saved.
@@ -16993,7 +17130,7 @@
         window.isBusyEditing = isBusyEditing;
 
         // Build stamp — keep in step with the sw.js CACHE string on every deploy.
-        const APP_VERSION = '2026-11-19k';
+        const APP_VERSION = '2026-11-19l';
 
         // "Refresh / get latest version" — a manual escape hatch to force the
         // newest deploy (cache-busts the URL) if the auto-update hasn't kicked
@@ -17091,7 +17228,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- bump ?v= on every cloud-sync.js change so phones don't run a stale cached copy -->
-    <script src="cloud-sync.js?v=2026-11-19k"></script>
+    <script src="cloud-sync.js?v=2026-11-19l"></script>
     <!-- Service worker: precaches the app shell so the app OPENS with no signal,
          and auto-applies new versions (reload once when a new worker takes over). -->
     <script>

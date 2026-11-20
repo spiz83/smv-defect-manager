@@ -118,10 +118,10 @@ await page.evaluate(() => {
 const INSUL = { description: 'The ceiling insulation between roof members has been removed for the installation of services and needs to be reinstated.', location: 'Roof Space', page: 3, itemNo: 1 };
 const PAINT = { description: 'Paint edge of skirt tile to left of trough cabinet', location: 'Laundry', page: 3, itemNo: 4 };
 
-const review = (item, byTrade) => page.evaluate(([item, byTrade]) => {
+const review = (item, byTrade, type) => page.evaluate(([item, byTrade, type]) => {
   try { _review = null; } catch (e) {}
   state.assignByTrade = !!byTrade;
-  startReportReview([Object.assign({}, item)], 'BPI.pdf', 'BPI', 1, null);
+  startReportReview([Object.assign({}, item)], 'report.pdf', type || 'BPI', 1, null);
   const inp = document.getElementById('rv-contractor-input');
   const hid = document.getElementById('rv-contractor');
   const cid = parseInt(hid && hid.value);
@@ -133,7 +133,7 @@ const review = (item, byTrade) => page.evaluate(([item, byTrade]) => {
     meta: (document.querySelector('#imp-body div[style*="font-size:12px"]') || {}).textContent || '',
     chips: Array.from(document.querySelectorAll('.rv-chip b')).map(b => b.textContent),
   };
-}, [item, byTrade]);
+}, [item, byTrade, type]);
 
 // ── 1. Trade toggle → a TRADE in the box ──────────────────────────────────
 {
@@ -227,14 +227,14 @@ const review = (item, byTrade) => page.evaluate(([item, byTrade]) => {
 }
 
 // ── 8. The trade a defect's own words call for ───────────────────────────
-const tradeFor = (desc, loc) => page.evaluate(([desc, loc]) => {
+const tradeFor = (desc, loc, type) => page.evaluate(([desc, loc, type]) => {
   try { _review = null; } catch (e) {}
   state.assignByTrade = true;
-  startReportReview([{ description: desc, location: loc || '', page: 4, itemNo: 6 }], 'BPI.pdf', 'BPI', 1, null);
+  startReportReview([{ description: desc, location: loc || '', page: 4, itemNo: 6 }], 'report.pdf', type || 'BPI', 1, null);
   return { value: (document.getElementById('rv-contractor-input') || {}).value,
            chips: Array.from(document.querySelectorAll('.rv-chip b')).map(b => b.textContent),
            hints: Array.from(document.querySelectorAll('.rv-chip i')).map(b => b.textContent) };
-}, [desc, loc]);
+}, [desc, loc, type]);
 {
   // A leaking screen is a failed seal, not a new screen (Spiro 2026-11-19).
   const r = await tradeFor('Bottom corner of shower screen leaking opposite vanity', 'Ensuite');
@@ -340,6 +340,39 @@ const CAULK_HISTORY = Array.from({ length: 6 }, () => ([
     'local defects: ' + after.localDefects);
   check('…shown as learned, never auto-filled (global history is chips only)',
     after.hints.some(h => /learned/i.test(h)), JSON.stringify(after.hints));
+}
+
+// ── 11. ALL OF IT APPLIES TO A PRIVATE INSPECTION REPORT TOO ─────────────
+// Spiro asked to have this confirmed rather than assumed (2026-11-19). The
+// review screen is one screen for both report types, so these are the same
+// checks run with the type set to Private Inspection — if any of them were
+// quietly BPI-only, this is where it would show.
+{
+  const insul = await review(INSUL, true, 'Private Inspection');
+  check('PI: Trade mode pre-fills the trade, not the supplier',
+    insul.value === 'Insulation', JSON.stringify(insul).slice(0, 150));
+  const insulC = await review(INSUL, false, 'Private Inspection');
+  check('PI: Contractor mode still pre-fills the supplier',
+    /^Insulgreen Solutions/.test(insulC.value), JSON.stringify(insulC).slice(0, 150));
+  const paint = await review(PAINT, true, 'Private Inspection');
+  check('PI: a paint defect brings up Painter, not the supervisor',
+    paint.value === 'Painter' && !/Ian Quayle/.test(paint.meta), JSON.stringify(paint).slice(0, 150));
+  check('PI: Supervisor is still the last chip',
+    paint.chips[paint.chips.length - 1] === 'Supervisor', JSON.stringify(paint.chips));
+  const caulk = await tradeFor('Bottom corner of shower screen leaking opposite vanity', 'Ensuite', 'Private Inspection');
+  check('PI: a leaking shower screen is still the Caulker', caulk.value === 'Caulker', JSON.stringify(caulk).slice(0, 150));
+  const dp = await tradeFor('Down pipe bracket loose of wall.', 'Rear Elevation', 'Private Inspection');
+  check('PI: downpipe is still Plumber first, Roof Plumber second',
+    dp.value === 'Plumber' && dp.chips[1] === 'Roof Plumber', JSON.stringify(dp.chips));
+}
+{
+  // The address matcher is one function, and every way into a review goes
+  // through it: pasted text, the BPI branch, and the private/deep branch.
+  const src = fs.readFileSync(join(REPO, 'index.html'), 'utf8');
+  const calls = src.split('\n').filter(l => /startReportReview\(/.test(l) && !/function startReportReview/.test(l));
+  check('every route into the review matches the address the same way',
+    calls.length >= 3 && calls.every(l => /matchAddressFromText\(/.test(l)),
+    calls.length + ' call sites: ' + calls.map(l => l.trim().slice(0, 48)).join(' | ').slice(0, 220));
 }
 
 check('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));

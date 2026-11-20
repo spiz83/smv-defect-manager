@@ -4342,9 +4342,19 @@
     // `detail` ({ observation, source, jobId }) additionally logs an append-only
     // training example (bpi_training_examples) so phone-side confirmations show
     // in the Admin → BPI AI curation table exactly like Tracker ones.
+    // `detail.alsoKeys` records the SAME verdict under extra phrase keys — the
+    // fuzzy signatures index.html derives, so the shared store stops needing
+    // word-for-word identical wording to remember anything (2026-11-19). They
+    // ride the same RPC and the same weight; they do NOT get their own training
+    // example, because one human action is one example and the curation table
+    // in Admin should show it once.
+    // `detail.weightFactor` (0–1) is for evidence that is real but weaker than
+    // someone choosing: a defect COMPLETED by the sub it was assigned to.
     record: async (phraseKey, trade, wrongTrade, detail) => {
       if (!userId || !phraseKey || !trade) return;
-      const w = learnWeight();
+      const f = Math.max(0, Math.min(1, (detail && detail.weightFactor != null) ? detail.weightFactor : 1));
+      const w = Math.max(0.25, learnWeight() * f);
+      const alsoKeys = (detail && Array.isArray(detail.alsoKeys)) ? detail.alsoKeys.slice(0, 4) : [];
       try {
         if (!bpiAiSettings.auto_learning) { /* learning paused from Admin */ }
         else if (wrongTrade && wrongTrade !== trade) {
@@ -4357,6 +4367,23 @@
           (tradeLearning[phraseKey] = tradeLearning[phraseKey] || {})[trade] = (tradeLearning[phraseKey][trade] || 0) + w;
         }
       } catch (e) { console.warn('[CloudLearning] record', e); }
+      // The same verdict under its fuzzy keys. Best-effort and silent: a failure
+      // here costs recall on future wording, never the record above.
+      for (const k of alsoKeys) {
+        if (!k || k === phraseKey) continue;
+        try {
+          if (!bpiAiSettings.auto_learning) break;
+          if (wrongTrade && wrongTrade !== trade) {
+            await sb.rpc('dm_learn_trade_correct', { p_phrase: k, p_wrong: wrongTrade, p_right: trade, p_weight: w });
+            const m = (tradeLearning[k] = tradeLearning[k] || {});
+            if (m[wrongTrade]) m[wrongTrade] = Math.max(0, m[wrongTrade] - w);
+            m[trade] = (m[trade] || 0) + w;
+          } else {
+            await sb.rpc('dm_learn_trade_weighted', { p_phrase: k, p_trade: trade, p_weight: w });
+            (tradeLearning[k] = tradeLearning[k] || {})[trade] = (tradeLearning[k][trade] || 0) + w;
+          }
+        } catch (e) { console.warn('[CloudLearning] alsoKey', e); }
+      }
       // Append-only training example — always logged (even with auto-learning
       // off, examples accumulate for later curation), best-effort.
       try {
