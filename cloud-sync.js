@@ -175,6 +175,11 @@
   // BPI trade learning: normalised defect phrase -> { trade: count }. Rebuilt per
   // pull; the spine of "learn as you go" trade classification (shared by all users).
   let tradeLearning = {};
+  // The SHARED contractor memory (dm_learn_contractor, migration 2026-11-20).
+  // token -> [{ cid (legacy), w, n, ageDays }]. Empty when the table has not
+  // been created yet, which is a supported state: the phone falls back to the
+  // corpus below and behaves exactly as it did before Phase 2.
+  let contractorLearning = {};
   // EVERY defect this login can read, as learning material only — INCLUDING the
   // ones on completed jobs.
   //
@@ -1042,7 +1047,7 @@
     // from idMap.defects, so reconcileLocalDefectsUp read ~1000 cloud rows as
     // un-synced local work and re-uploaded them on every boot ("Uploaded 1000
     // change(s) from this phone").
-    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, supers, dbRules, aiSet, wordings, dLists, dListItems, supDir] = await Promise.all([
+    const [trades, contractors, links, jobs, defects, callups, calledFor, learning, cLearning, supers, dbRules, aiSet, wordings, dLists, dListItems, supDir] = await Promise.all([
       selectAllRows('dm_trades', '*', 'id'),
       selectAllRows('dm_contractors', '*', 'id'),
       selectAllRows('dm_contractor_trades', 'contractor_id, trade_id', 'contractor_id'),
@@ -1051,6 +1056,10 @@
       selectAllRows('job_call_up_archive', 'job_id, cost_centre, supplier_name', 'job_id'),   // Framework call-up archive (accumulates across uploads); best-effort
       selectAllRows('job_called_for_archive', 'job_id, activity, supplier_name, called_actual, last_seen_at', 'job_id'),   // Called For archive (who actually did each trade activity, with recency); best-effort
       selectAllRows('dm_trade_learning', 'phrase_key, trade, n, w', 'phrase_key'),   // learned trades (weighted); best-effort
+      // Shared contractor memory. Best-effort in the strongest sense: until
+      // 2026-11-20_contractor_learning.sql is run this errors every pull, and
+      // that is fine — the phone stays on its own corpus and nothing changes.
+      selectAllRows('dm_learn_contractor', 'token, contractor_id, w, n, last_seen_at', 'token'),
       // Current supervisor per job → drives the "My Jobs" list. Best-effort: the
       // view is readable by authenticated users; an error just means no My Jobs.
       selectAllRows('v_jobs_with_current_supervisor', 'id, current_supervisor_id, current_supervisor_name, status', 'id'),
@@ -1198,6 +1207,28 @@
       learning.data.forEach(row => {
         (tradeLearning[row.phrase_key] = tradeLearning[row.phrase_key] || {})[row.trade] = Number(row.w != null ? row.w : row.n) || 1;
       });
+    }
+
+    // Shared contractor memory -> token index, with each row's AGE carried
+    // through so the phone can decay old evidence when it reads (see
+    // buildBpiLearning). A contractor this login cannot resolve is skipped
+    // rather than guessed at.
+    contractorLearning = {};
+    if (cLearning && !cLearning.error && Array.isArray(cLearning.data)) {
+      const now = Date.now();
+      cLearning.data.forEach(row => {
+        const cid = uuidToLegacy.contractors[row.contractor_id];
+        if (cid == null || !row.token) return;
+        const w = Number(row.w); if (!(w > 0)) return;
+        const seen = row.last_seen_at ? Date.parse(row.last_seen_at) : now;
+        const ageDays = Math.max(0, (now - (isNaN(seen) ? now : seen)) / 86400000);
+        (contractorLearning[row.token] = contractorLearning[row.token] || [])
+          .push({ cid, w, n: Number(row.n) || 1, ageDays });
+      });
+      console.info('[CloudSync] shared contractor memory:', Object.keys(contractorLearning).length, 'tokens');
+    } else if (cLearning && cLearning.error) {
+      console.info('[CloudSync] shared contractor memory unavailable — using this device\'s own history.',
+        cLearning.error.message || '');
     }
 
     // Shared defect wordings. A failed pull (table not created yet, or no
@@ -4398,6 +4429,41 @@
           user_weight: w, job_id: (detail && detail.jobId) || null,
         });
       } catch (e) { console.warn('[CloudLearning] example', e); }
+    },
+    // The shared contractor memory, token-indexed. Empty until the migration
+    // is run; index.html treats that as "nothing shared yet" and uses the
+    // corpus, so the feature degrades to exactly today's behaviour.
+    contractorTokens: () => contractorLearning,
+    // Teach the shared memory which sub a wording belongs to. One call per
+    // assignment, however many tokens: eight round trips behind a Save on a
+    // phone on site is not a feature. `wrongLegacyId` is the sub it was moved
+    // OFF, because a reassignment is a correction and the trade side has
+    // treated it as one since 2026-11-19l.
+    recordContractor: async (tokens, legacyId, wrongLegacyId) => {
+      if (!userId || !Array.isArray(tokens) || !tokens.length || legacyId == null) return;
+      const uuid = idMap.contractors[legacyId];
+      if (!uuid) return;                       // not a cloud contractor (yet)
+      const wrong = (wrongLegacyId != null) ? (idMap.contractors[wrongLegacyId] || null) : null;
+      try {
+        if (!bpiAiSettings.auto_learning) return;      // learning paused from Admin
+        await sb.rpc('dm_learn_contractor_bulk', {
+          p_tokens: tokens.slice(0, 12), p_contractor: uuid,
+          p_weight: learnWeight(), p_wrong: wrong && wrong !== uuid ? wrong : null,
+        });
+        // Mirror it locally so the current session sees its own teaching
+        // without waiting for the next pull.
+        const now = 0;
+        tokens.slice(0, 12).forEach(t => {
+          const row = (contractorLearning[t] = contractorLearning[t] || []);
+          const hit = row.find(x => x.cid === legacyId);
+          if (hit) { hit.w += learnWeight(); hit.n += 1; hit.ageDays = now; }
+          else row.push({ cid: legacyId, w: learnWeight(), n: 1, ageDays: now });
+          if (wrongLegacyId != null) {
+            const bad = row.find(x => x.cid === wrongLegacyId);
+            if (bad) bad.w = Math.max(0, bad.w - learnWeight());
+          }
+        });
+      } catch (e) { console.warn('[CloudLearning] recordContractor', e); }
     },
     // Every readable defect as learning material, completed jobs included —
     // the model index.html builds its contractor suggestions from. Empty before

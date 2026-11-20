@@ -2,6 +2,55 @@
 
 Newest at top. Format: date — decision — why — trade-off accepted.
 
+## 2026-11-20 — Phase 2: the contractor memory becomes shared — build `2026-11-20a`
+
+Spiro: *"YES DO PHASE 2 WRITE THE MIGRATION"*, and separately: *"add the
+supervisor — for trade AND contractor suggestion, always at the end — as a
+quick trigger without having to scroll through menus and search."*
+
+**The app code ships now; the table is Spiro's to run.**
+`supabase/migrations/2026-11-20_contractor_learning.sql` creates
+`dm_learn_contractor` (token, contractor, weight, count, last_seen) plus one
+RPC. Until it exists every pull of it errors, the phone stays on its own
+corpus, and the app behaves exactly as it does today — which is why the code
+could ship ahead of the SQL, and the first check in `tests/learning.mjs`
+Phase 2 section is precisely that.
+
+- **No foreign key to `dm_contractors`, deliberately.** That table belongs to
+  CH Tracker, and a cascade would erase everything the team has taught about a
+  supplier the day someone tidies that supplier's row up — the exact forgetting
+  this exists to end. The phone resolves the uuid on read; one it cannot
+  resolve is skipped. A tidy-up elsewhere costs a suggestion, never the memory.
+- **Nobody writes directly.** SELECT is open to authenticated (the point is a
+  memory everyone shares); there is no write policy at all. The only door is a
+  `security definer` function with a pinned `search_path`, which bounds a
+  single call to 12 tokens and clamps the weight.
+- **One RPC per assignment, not one per token.** Eight round trips behind a
+  Save on a phone on site is not a feature.
+- **The shared memory REPLACES the local tallies per token**, rather than
+  adding to them: it already contains this device's own teaching, so adding
+  would count the same lesson twice.
+- **Evidence ages — on READ, never by a cron job.** Each row carries
+  `last_seen_at`, and the phone halves a weight's value per year
+  (`LEARN_HALF_LIFE_DAYS`). Nothing is ever mutated, the half-life is a deploy
+  away from being re-tuned, and no scheduled job can quietly eat the table.
+  This is the honest answer to "it forgets over time": controlled forgetting,
+  so a sub who left the panel fades while one who works every week stays sharp.
+- **Support is a WEIGHT now, so the chip rounds it.** It arrived as
+  "learned ×13.736643853086093" in the first run.
+
+**The supervisor quick trigger is on both sides now.** In Trade mode it is the
+Supervisor trade; in Contractor mode it is the PERSON — this job's own
+supervisor, the record the edit dialog already falls back to when the supplier
+is left blank — and where a job names none, the trade stands in, so the target
+never moves.
+
+One test lesson worth keeping: the first draft of the Phase 2 checks asserted
+on the contractor's NAME, and passed in both directions — "Seal Tight Caulking"
+also appears as a DIRECTORY match on the word "caulk", which has nothing to do
+with learning. The checks now read the chip's HINT, which is the only thing
+that distinguishes what was learned from what was looked up.
+
 ## 2026-11-19 (g) — Phase 1: memory that does not need the same words twice — build `2026-11-19l`
 
 Spiro: *"keeping a log / database to LEARN as you go… BUT MEMORY IS VERY

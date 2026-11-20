@@ -43,7 +43,7 @@ const check = (l, c, d) => { console.log((c ? 'PASS  ' : 'FAIL  ') + l + (d ? ' 
 const SEED = {
   addresses: [
     { id: 1, lot: '6', street: 'Lot 6, 24 Skylark Rd', streetName: 'Skylark Rd', lotNo: 6,
-      suburb: 'Greenvale', propertyNumber: '306640', active: true },
+      suburb: 'Greenvale', propertyNumber: '306640', active: true, supervisorName: 'Quayle, Ian' },
     // Spiro's own case: the report says Lot 7, 26 Skylark Rd … 306629, and the
     // old matcher answered "Lot 1113, 7 Ligar Rise" — the 7 of "Lot 7" against
     // the HOUSE NUMBER of 7 Ligar Rise.
@@ -221,9 +221,25 @@ const review = (item, byTrade, type) => page.evaluate(([item, byTrade, type]) =>
     JSON.stringify(r.chips) + ' ' + JSON.stringify(r.hints));
 }
 {
+  // Contractor mode gets the same fixed trigger, but as the PERSON — this
+  // job's own supervisor (Spiro 2026-11-20: "for trade AND contractor
+  // suggestion, always at the end… without having to scroll through menus").
   const r = await review(PAINT, false);
-  check('…and it is a TRADE chip: Contractor mode still shows contractors',
-    !r.chips.includes('Supervisor'), JSON.stringify(r.chips));
+  check('Contractor mode ends with the job\'s supervisor, as a person',
+    r.chips[r.chips.length - 1] === 'Ian Quayle', JSON.stringify(r.chips));
+  check('…and the real suggestions still come first',
+    r.chips.length > 1 && r.chips[0] !== 'Ian Quayle', JSON.stringify(r.chips));
+  const fallback = await page.evaluate(() => {
+    const a = db.getAddress(1); const keep = a.supervisorName; delete a.supervisorName;
+    try { _review = null; } catch (e) {}
+    state.assignByTrade = false;
+    startReportReview([{ description: 'Paint edge of skirt tile', location: 'Laundry', page: 3, itemNo: 4 }], 'report.pdf', 'BPI', 1, null);
+    const chips = Array.from(document.querySelectorAll('.rv-chip b')).map(b => b.textContent);
+    a.supervisorName = keep;
+    return chips;
+  });
+  check('…and where the job names no supervisor, the trade stands in',
+    fallback[fallback.length - 1] === 'Supervisor', JSON.stringify(fallback));
 }
 
 // ── 8. The trade a defect's own words call for ───────────────────────────
